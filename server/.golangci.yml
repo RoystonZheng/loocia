@@ -1,0 +1,154 @@
+# This configuration file is not a recommendation.
+#
+# We intentionally use a limited set of linters.
+# This configuration file is used with different version of golangci-lint to avoid regressions:
+# the linters can change between version,
+# their configuration may be not compatible or their reports can be different,
+# and this can break some of our tests.
+# Also, some linters are not relevant for the project (e.g. linters related to SQL).
+#
+# We have specific constraints, so we use a specific configuration.
+#
+# See the file `.golangci.reference.yml` to have a list of all available configuration options.
+linters:
+  disable-all: true
+  enable:
+    - gosimple
+    - goimports
+    - staticcheck
+    - errcheck
+    - govet
+    - unused
+    - funlen
+    - revive
+    - nuwalint
+    - stylecheck
+linters-settings:
+  govet:
+    enable-all: false
+    disable-all: true
+  funlen:
+    lines: 100
+    statements: 80
+  gosimple:
+    checks:
+      - S102
+      - S1002
+      - S1021
+  revive:
+    ignore-generated-header: true
+    severity: warning
+    rules:
+      - name: early-return
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+        arguments:
+          - "preserveScope"
+      - name: range-val-in-closure
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: range-val-address
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: identical-branches
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: receiver-naming
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: unconditional-recursion
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: indent-error-flow
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+        arguments:
+          - "preserveScope"
+      - name: confusing-naming
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: unused-parameter
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+        arguments:
+          - allowRegex: "^_"
+      - name: unreachable-code
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: dot-imports
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+        arguments: [ ]
+      - name: context-as-argument
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+        arguments:
+          - allowTypesBefore: "*testing.T,*github.com/user/repo/testing.Harness"
+      - name: unhandled-error
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+        arguments:
+          - "fmt.Printf"
+          - "fmt.Println"
+          - "myFunction"
+      - name: waitgroup-by-value
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: error-strings
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+      - name: var-naming
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+        arguments:
+          - [ "ID" ] # AllowList
+          - [ "VM" ] # DenyList
+          - - upperCaseConst: true
+      - name: add-constant
+        severity: warning
+        disabled: false
+        exclude: [ "" ]
+        arguments:
+          - maxLitCount: "3"
+            allowStrs: '""'
+            allowInts: "0,1,2,8,10,32,64"
+            allowFloats: "0.0,0.,1.0,1.,2.0,2."
+            ignoreFuncs: "os.*,fmt.Println,log.*,make"
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  nuwalint:
+    checks: [ "all" ]
+
+
+  # This list of linters is not a recommendation (same thing for all this configuration file).
+  # We intentionally use a limited set of linters.
+  # See the comment on top of this file.
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  include:
+    - EXC0011
+    - EXC0012
+    - EXC0013
+    - EXC0014
+    - EXC0015
+run:
+  timeout: 20m

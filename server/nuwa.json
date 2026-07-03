@@ -1,0 +1,9 @@
+{
+  "language": "go",
+  "project": "aihot-server",
+  "package": "aihot-server",
+  "nuwa_version": 4,
+  "proto": "http",
+  "http_gen": true,
+  "nuwa_json": true
+}

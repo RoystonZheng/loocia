@@ -1,0 +1,75 @@
+pid = "var/run/nuwa.pid"
+
+[rpc]
+# http server地址
+http_addr = ":8991"
+# Recieve http request timeout(ms), including the body, default 5000
+http_read_timeout = 5000
+# Keep-alive timeout(ms), default 60000
+http_idle_timeout = 60000
+
+[redis]
+addrs = ["127.0.0.1:6379"]
+auth = ""
+
+# pool_size, max_con 根据qps 设置
+pool_size = 100
+max_con = 1000
+
+#unit ms
+conn_timeout = 10
+read_timeout = 20
+write_timeout = 20
+disf_enable = false
+service_name = "" # DISF_NAME_OF_REDIS
+
+[mysql]
+dsn = "root:123456@(127.0.0.1:3306)/test?timeout=50ms&readTimeout=100ms&writeTimeout=100ms&charset=utf8&parseTime=true&loc=Local"
+disf_enable = true
+# connect_timeout 在disf 模式使用
+connect_timeout = 50
+metrics_enable = true
+
+# conn_max_lifetime <=0 connections are reused forever，并非一直重用，mysql服务端会有过期时间
+# 链接从创建到close的最大时间，应小于服务端的连接过期时间
+conn_max_lifetime = 60
+# 连接池最多的空闲链接
+max_idle_conns = 20
+# msyql最大打开的链接数
+max_open_conns = 200
+disf_name = "" # DISF_NAME_OF_MYSQL
+
+[console]
+file_prefix = "console"
+dir = "./log"
+level = "info"
+auto_clear = true
+clear_hours = 168
+separate = false
+disable_link = true
+enable_masking = false # 日志脱敏
+slow_masking_latency = 2000 # 微秒
+
+[log]
+file_prefix = "didi"
+dir = "./log"
+level = "info"
+auto_clear = true
+clear_hours = 168
+separate = true
+disable_link = true
+enable_masking = false # 日志脱敏
+slow_masking_latency = 2000 # 微秒
+
+[public]
+file_prefix = "public"
+dir = "./log"
+auto_clear = true
+clear_hours = 168
+separate = true
+disable_link = true
+enable_masking = false # 日志脱敏
+slow_masking_latency = 2000 # 微秒
+
+[disf]
+disf_path = "./conf/disf.yaml"

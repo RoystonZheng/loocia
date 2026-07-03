@@ -1,0 +1,56 @@
+namespace php Dirpc.SDK.AihotServer
+namespace go Dirpc.SDK.AihotServer
+
+/** IDL编写规范：http://wiki.intra.xiaojukeji.com/pages/viewpage.action?pageId=120245837 */
+
+/** Ping请求 */
+struct PingReq {
+    1: required string name // 姓名
+}
+
+/** Ping返回 */
+struct PingRsp {
+    1: required i32 errno     // 错误码
+    2: required string errmsg // 错误信息
+    3: required string data   // 返回值
+}
+
+/** 服务错误码, 会同步至idl/error/error.go文件中 */
+enum ErrCode {
+    /** 成功 */
+    ErrOk = 0
+    /** 参数错误 */
+    PARAM_ERROR = 8304001
+}
+
+/** AihotServer服务 */
+service AihotServer {
+
+    /** SSE 测试接口，NuwaSSEResp 是固定结构体，其他保持一致 **/
+    NuwaSSEResp ChatAI(1:PingReq req) (
+        path="/chatAI"
+        httpMethod="POST"
+        contentType="json"
+    )
+
+    /** ！！！！！！！Ping接口，服务探活使用，请不要删除！！！！！！！ */
+    PingRsp Ping(1:PingReq request) (
+        connectTimeoutMsec="50"
+        timeoutMsec="400"
+
+        /** HTTP接口请求URI */
+        path="/ping"
+        /** HTTP请求方法，GET/POST */
+        httpMethod="GET"
+        /** contentType主要支持两种: json和form，POST请求对应"json/form"，GET请求对应"form", 不能混淆 */
+        contentType="form"
+    )
+}(
+    version="1.0.0"
+    servName="disf!AihotServer"
+    servType="http"
+
+    /** 连接超时, 重试相关, 在生成的dirpc sdk中起作用, 这几个参数可以在每个接口中被覆盖 */
+    connectTimeoutMsec="50"
+    timeoutMsec="400"
+)

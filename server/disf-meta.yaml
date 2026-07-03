@@ -1,0 +1,27 @@
+# disf-meta.yaml作为本模块的服务元信息，必须存放到build.sh同级目录（一般情况下是代码库的根目录）
+# 语言、协议相关信息直接影响到本模块接入DiSF，请务必保证正确并及时更新维护。
+# 错误的格式、错误的配置，可能会导致scmpf打包失败，如遇到此问题请联系"DiSF人工客服"，或加入"服务治理用户群"。
+# 为方便后续同学维护，请复制本注释到您的disf-meta.yaml文件中。
+# 格式规范：http://wiki.intra.xiaojukeji.com/x/7Di9CQ
+ 
+# 模块负责人（必选，可填写多个，多个负责人之间以英文逗号分隔）
+owner: chenchenccx,pengweifeng
+# 模块语言（必选：php/go/c++/java/...）
+language: go
+# 模块描述（必选）
+description: 语音服务
+# 自身模块部署的odin节点（集群的父节点,不是集群），必须为odin的service节点（必选，可填写多个）。
+deployOdinNs:
+- test.biz.didi.com #此为示例，请改成对应odin的service节点名
+# 模块（服务自身）对外提供服务的默认协议、端口（必选）。提示：如果服务不对外提供接口，这里保持http+8000不变即可。
+# ！！！mainProtocol信息必须和服务实际情况一致！！！
+mainProtocol:
+  protocol: http
+  port: 8000
+# 模块扩充协议、端口（可选，只有服务存在多协议端口时才必须配置，如果不存在多协议端口下面可直接注释掉）
+# ！！！extProtocol信息必须和服务实际情况一致！！！
+#extProtocol:
+#- protocol: http
+#  port: 8008
+#- protocol: thrift
+#  port: 8888

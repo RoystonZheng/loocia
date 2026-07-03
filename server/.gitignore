@@ -1,0 +1,13 @@
+.idea/
+output/
+*.swp
+test.sh
+.deploy/
+.statsd/
+vendor/
+/log/
+*.log
+*.log.*
+NUWA-GOLANG-PROJECT
+!idl/CLAUDE.md
+vendor/

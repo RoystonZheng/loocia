@@ -1,0 +1,40 @@
+# 程序启动路径
+deployPath: ./
+    
+# 线下模式开关，方便测试，打开则使用下面offlineProviders配置。关闭则走DiSF平台配置。
+# *** 线上一定要为false ***
+offlineMode: true
+offlineUsn: offline-disf-usn # 服务自身usn，线下可随意指定
+offlineClusterName: hna      # 服务自身集群，线下可随意指定
+# 指定下游服务列表，每个下游服务的ip：port等信息，仅用于线下环境
+# 测试环境下：保证代码中依赖的下游，这里都能覆盖到
+offlineProviders:
+ - usn: biz-gs-api   # 某个下游服务标识，要和代码中下游的disf名字对应起来，注意：和DiSF名字相比，没有"disf!"前缀。
+   clusterName: hna  # 某个下游服务集群
+   defaultProtocol: http # 协议信息
+   endpoints: # ip列表
+    - ip: 192.168.1.100
+      port: 700
+      weight: 50
+      status: enabled
+      protocol: http
+    - ip: 192.168.1.101
+      port: 800
+      weight: 100
+      status: enabled
+      protocol: http
+ - usn: engine-duse-api # engine-duse-api服务下游的配置信息
+   clusterName: hnb
+   defaultProtocol: http
+   endpoints:
+    - ip: 127.0.0.1
+      port: 3307
+      weight: 50
+      status: disabled  # 机器不可用
+      protocol: http
+
+    - ip: 127.0.0.1
+      port: 3306
+      weight: 50
+      status: disabled  # 机器不可用
+      protocol: http

@@ -179,6 +179,66 @@ func TestListSearchMatchesTitleAndSummary(t *testing.T) {
 	}
 }
 
+func TestListKeysetTiebreakOnEqualPublishedAt(t *testing.T) {
+	s := newTestStore(t)
+	ts := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	// Four items, SAME published_at, distinct ids. Order must fall back to id DESC.
+	seed(t, s,
+		sampleItem("i1", ts), sampleItem("i2", ts),
+		sampleItem("i3", ts), sampleItem("i4", ts),
+	)
+	ctx := context.Background()
+	var seen []string
+	var after *Cursor
+	for {
+		page, err := s.List(ctx, ListParams{Limit: 2, After: after})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if len(page) == 0 {
+			break
+		}
+		seen = append(seen, ids(page)...)
+		last := page[len(page)-1]
+		after = &Cursor{SortKey: last.SortKey(), ID: last.ID}
+		if len(page) < 2 {
+			break
+		}
+	}
+	// same timestamp → pure id DESC, no dup across the page boundary
+	if !equal(seen, []string{"i4", "i3", "i2", "i1"}) {
+		t.Fatalf("equal-timestamp tiebreak paging: got %v", seen)
+	}
+}
+
+func TestListKeysetPagesAmongMultipleNullPublished(t *testing.T) {
+	s := newTestStore(t)
+	// Two items, both NULL published_at → both sort at epoch, tiebreak by id DESC.
+	n1 := sampleItem("n1", time.Time{})
+	n1.PublishedAt = nil
+	n2 := sampleItem("n2", time.Time{})
+	n2.PublishedAt = nil
+	seed(t, s, n1, n2)
+
+	ctx := context.Background()
+	page1, err := s.List(ctx, ListParams{Limit: 1})
+	if err != nil {
+		t.Fatalf("List page1: %v", err)
+	}
+	if g := ids(page1); !equal(g, []string{"n2"}) { // id DESC → n2 first
+		t.Fatalf("page1 among nulls: got %v", g)
+	}
+	// build the cursor FROM a null-published row (SortKey() == epoch)
+	after := &Cursor{SortKey: page1[0].SortKey(), ID: page1[0].ID}
+	page2, err := s.List(ctx, ListParams{Limit: 1, After: after})
+	if err != nil {
+		t.Fatalf("List page2: %v", err)
+	}
+	if g := ids(page2); !equal(g, []string{"n1"}) {
+		t.Fatalf("page2 among nulls (cursor from null row): got %v", g)
+	}
+}
+
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

@@ -1,0 +1,553 @@
+openapi: 3.1.0
+
+info:
+  title: AI HOT Public API
+  version: 1.1.0
+  summary: AI HOT 公开 REST API（匿名只读）
+  description: |
+    AI HOT (热点) 是中文 AI 资讯精选服务。本 API 提供每日精编日报的程序化访问。
+
+    匿名访问，无需 token。
+
+    如果你想给 LLM Agent 接入，参考 https://aihot.virxact.com/agent —— 那里同时
+    提供 Skill / RSS / REST API 三种接入方式。
+  contact:
+    name: AI HOT
+    url: https://aihot.virxact.com/agent
+  license:
+    name: Reference Use
+    url: https://aihot.virxact.com/about
+
+servers:
+  - url: https://aihot.virxact.com
+    description: Production
+
+externalDocs:
+  description: Agent 接入指南（Skill / RSS / REST API 三轨）
+  url: https://aihot.virxact.com/agent
+
+paths:
+  /api/public/items:
+    get:
+      operationId: listItems
+      summary: AI HOT items (selected / all / by category)
+      description: |
+        全部 AI 动态。可按精选 / 全部、按分类、按时间筛选。匿名只读，nginx proxy_cache 5 分钟。
+
+        **排序契约**：本接口按 `publishedAt`（真实发布时间）倒序，**不**按 timeline anchor。
+        因此跟 `/api/public/feed`（按 timelineAt 倒序）在慢推 RSS 源上可能有时间撕裂；
+        Agent / 二次开发者按 publishedAt 做去重和窗口查询是契约红线。
+
+        **cursor 翻页**：响应里的 `nextCursor` 直接作为下次请求的 `cursor` 参数。
+        cursor 失效 / 篡改 / 过期(早于 2020 / 晚于明天) → 静默回首屏，不报错。
+
+        **限流**：单 IP 600 r/min（burst 40，超出 429）。Agent 串行调用 + 翻页加 200ms 间隔即可。
+      parameters:
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: ["selected", "all"]
+            default: "selected"
+          description: |
+            `selected` = AI HOT 精选(每日精编候选池,**默认值**);`all` = 全部 AI 动态(含未精选次要条目)。
+
+            **路由优先级**:用户问的是"今天/最近 AI 圈"等宽问题 → 不传 mode 等同 `selected`(精选主菜单);用户明确说"全部/完整/所有/全量" → 显式 `mode=all` 拿全池。2026-05-08 默认从 `all` 切到 `selected`,跟 SKILL.md 路由规则对齐。
+
+            **隐式过滤(两个 mode 都生效)**:
+            - 已被合并的重复条目(`duplicateOfId` 非空) → 不返回
+            - 公众号 mp_hot 信源 → 不返回；当前公开 API 暂不提供公众号爆文，员工/博主可在 AI HOT 站内登录后进入 `/mp` 内部工作台
+            - 信源已禁用或 `present=false` → 不返回
+
+            **selected 额外过滤**:
+            - 同事件聚类的 secondary / related → 不返回(只保留 cluster primary,避免同事件重复露出)
+            - `aiSelected != true` → 不返回
+
+            **all 额外过滤**:
+            - `aiSelected IS NULL`(尚未跑评分) → 不返回
+            - `aiRelevance < 60`(评分判定相关性弱) → 不返回
+            - arxiv 论文源(arxiv-anthropic/deepmind/deepseek/openai) → 不返回(论文流量大会刷屏"全部";要论文走 `category=paper`)
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: ["ai-models", "ai-products", "industry", "paper", "tip"]
+          description: |
+            可选分类(英文 slug)。跟 `/api/public/daily` 返回的 `sections[].label`(中文) 对照:
+
+            | items API `category` | daily API section `label` |
+            |---|---|
+            | `ai-models` | 模型发布/更新 |
+            | `ai-products` | 产品发布/更新 |
+            | `industry` | 行业动态 |
+            | `paper` | 论文研究 |
+            | `tip` | 技巧与观点 |
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: |
+            ISO datetime,限最近 7 天内。**不传等同于 since = now - 7d**(服务端硬上限,
+            保护"土豆服务器"不被全表扫击穿)。早于 7 天前自动截到 7 天前;未来时间(超过 now+1min)
+            返回 400。需要更深历史 → 走日报存档 `/api/public/dailies` + `/api/public/daily/{date}`。
+        - name: take
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: |
+            **opaque pagination token** — 上一次响应中的 `nextCursor` 原样回传。
+            视作黑盒:不要尝试解析、不要 +1 递增、不要跨端点复用。
+            内部编码格式不属于公开契约,可能在不通知的情况下变更。
+            cursor 失效 / 损坏 / 过期 → 静默回首屏(不报错)。
+        - name: q
+          in: query
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 200
+          description: |
+            关键词搜索:在 title / 中文 title / 中文 summary / 正文 四列上 ILIKE 匹配,
+            走 PostgreSQL pg_trgm GIN 索引(2-6ms)。**1 个字符的 q 视作不搜索**
+            (trgm 对单字符退化为全表扫,会影响其他用户)。q 超过 200 字会自动截断。
+            同 IP 600r/m 限流跟其它 query 共享。
+      responses:
+        "200":
+          description: |
+            OK. 响应包含 weak ETag(`W/"items-..."`),客户端可在下次请求带 `If-None-Match`
+            实现 304 缓存(详见 304 response)。
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: |
+                Weak ETag,基于**整页内容**(count + nextCursor + 每条 item 的全部字段)的 SHA1 短哈希。
+                示例:`W/"items-d0112022d1961325"`。新条目入库、**已有条目被原地编辑(改摘要/分类/标题)**、
+                或 query 参数变化(mode/category/since/q/take/cursor) 时 ETag 都会变化,客户端应
+                **每个 query 组合各存一份 last-ETag**(典型用 query 的 hash 作 key)。
+            Cache-Control:
+              schema:
+                type: string
+              description: '`public, s-maxage=300, stale-while-revalidate=300`'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemList"
+        "304":
+          description: |
+            **Not Modified** — 客户端带的 `If-None-Match` header 等于当前 ETag,
+            服务器返回空 body,告诉你"自上次以来无变化"。
+
+            **强烈推荐 cron / 定时拉取场景使用**:无新条目时返回 < 1KB 的 304 空 body,
+            客户端 `return` 不用 parse JSON,服务器侧成本接近 0(99% 命中率)。
+
+            **行为**:跟 200 同样的 ETag + Cache-Control header,只是无 body。
+          headers:
+            ETag:
+              schema:
+                type: string
+        "400":
+          description: |
+            参数不合法（mode / category / since / take 越界、cursor 字符长度超限等）。
+            响应体 `{ "error": "<原因>" }`。
+        "429":
+          description: |
+            限流触发（单 IP 超 600 r/min 且突发 burst 已耗尽）。
+            nginx 返回 429 + 简短 JSON `{ "error": "rate_limited" }`，Agent 客户端退避 1-2 秒重试即可。
+            （注：429 是限流码；部署期 upstream 不可达另返 502/503 维护页，与限流是两回事。）
+
+  /api/public/daily:
+    get:
+      operationId: getLatestDaily
+      summary: Latest AI HOT daily report
+      description: 返回最新一天的精编日报。
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyReport"
+        "404":
+          description: 暂无可用日报
+        "429":
+          description: 限流触发(返回 429 + 简短 JSON,退避 1-2 秒重试)
+
+  /api/public/daily/{date}:
+    get:
+      operationId: getDailyByDate
+      summary: AI HOT daily report for a specific date
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: YYYY-MM-DD（UTC 0 点为基准）
+          example: "2026-05-07"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyReport"
+        "400":
+          description: 日期格式错误
+        "404":
+          description: 该日无日报
+        "429":
+          description: 限流触发(返回 429 + 简短 JSON,退避 1-2 秒重试)
+
+  /api/public/dailies:
+    get:
+      operationId: listDailies
+      summary: Index of recent AI HOT daily reports
+      description: |
+        返回最近 N 天日报的索引(不含正文,含 date / generatedAt / leadTitle / leadParagraph)。
+      parameters:
+        - name: take
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 180
+            default: 30
+          description: 严格整数 1-180,越界 / 非整数(1.5 / 1e2 / abc 等) → 400(跟 /api/public/items 行为一致)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyEntries"
+        "400":
+          description: 参数不合法(take 非整数 / 越界)
+        "429":
+          description: 限流触发(返回 429 + 简短 JSON,退避 1-2 秒重试)
+
+  /api/public/hot-topics:
+    get:
+      operationId: listHotTopics
+      summary: Current hot topics (multi-source heat ranking)
+      description: |
+        当前热点 —— 精选页置顶「当前热点」区的程序化访问。簇级多源热度排序（窗口内报道该事件的
+        独立信源数 + 指数衰减），回答「现在 AI 圈最热的是什么」。
+
+        **与 /api/public/items 排序不同**：items 按 publishedAt 倒序（最近发布），本端点按多源
+        热度排序（最热）。对外剥内部 clusterId / heat 数值，只留浏览器可见字段 + permalink。
+
+        匿名只读，weak ETag + 304（cron 轮询低成本），nginx proxy_cache。
+      responses:
+        "200":
+          description: OK（含 weak ETag `W/"hot-..."`，可带 If-None-Match 走 304）
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HotTopicList"
+        "304":
+          description: Not Modified（If-None-Match 命中当前 ETag，空 body）
+        "429":
+          description: 限流触发(返回 429 + 简短 JSON,退避 1-2 秒重试)
+
+  /api/public/version:
+    get:
+      operationId: getVersion
+      summary: API / Skill version info (machine-readable)
+      description: |
+        公开 API 与 Skill 的版本信息，供接入方（尤其 Skill：本地 SKILL.md 是冻结快照、不会自更新）
+        在程序里发现「线上有新版」。Skill 运行时对比返回的 skillVersion 与自身 UA 版本，不一致即提示用户重装。
+
+        版本极少变 → 长缓存（s-maxage=3600 + 1d stale）。weak ETag + 304 让轮询近零成本。
+      responses:
+        "200":
+          description: OK（含 weak ETag `W/"version-..."`）
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicVersion"
+        "304":
+          description: Not Modified（If-None-Match 命中当前 ETag，空 body）
+
+components:
+  schemas:
+    PublicVersion:
+      type: object
+      properties:
+        apiVersion:
+          type: string
+          example: "1.1.0"
+          description: REST API 契约版本（加端点/字段=minor，破坏性变更=major）
+        skillVersion:
+          type: string
+          example: "0.3.0"
+          description: Skill（SKILL.md）版本。Skill 用它与自身 UA `aihot-skill/X.Y.Z` 比对、不一致即提示用户重装
+        updatedAt:
+          type: string
+          example: "2026-06-27"
+        changelogUrl:
+          type: string
+          format: uri
+          example: "https://aihot.virxact.com/changelog"
+        recentChanges:
+          type: array
+          items:
+            type: string
+          description: 最近几条用户可感知变更摘要（精简；完整人读版在 changelogUrl）
+
+    DailyReportSection:
+      type: object
+      properties:
+        label:
+          type: string
+          example: "模型发布/更新"
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              summary:
+                type: string
+              sourceUrl:
+                type: string
+                format: uri
+              sourceName:
+                type: string
+              permalink:
+                type: string
+                format: uri
+                nullable: true
+                description: >
+                  站内读者详情页绝对 URL（/items/{itemId}，站内中文翻译 + 富文本 + 无墙），
+                  与 /api/public/items 的 permalink 同源。lead 占位 / 空 itemId 时为 null（回退用 sourceUrl）。
+
+    DailyReportFlash:
+      type: object
+      properties:
+        title:
+          type: string
+        sourceName:
+          type: string
+        sourceUrl:
+          type: string
+          format: uri
+        publishedAt:
+          type: string
+          format: date-time
+        permalink:
+          type: string
+          format: uri
+          nullable: true
+          description: 站内读者详情页绝对 URL（/items/{itemId}）。空 itemId 时为 null。
+
+    DailyReport:
+      type: object
+      properties:
+        date:
+          type: string
+          example: "2026-05-07"
+        generatedAt:
+          type: string
+          format: date-time
+        windowStart:
+          type: string
+          format: date-time
+        windowEnd:
+          type: string
+          format: date-time
+        lead:
+          type: [object, "null"]
+          properties:
+            title:
+              type: string
+            leadParagraph:
+              type: string
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyReportSection"
+        flashes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyReportFlash"
+
+    DailyEntries:
+      type: object
+      properties:
+        count:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              generatedAt:
+                type: string
+                format: date-time
+              leadTitle:
+                type: [string, "null"]
+              leadParagraph:
+                type: [string, "null"]
+                description: LLM 主编当日导语段落(若该期生成了 lead);RSS daily.xml 也用
+
+    Item:
+      type: object
+      description: |
+        AI HOT 内容条目(公开 shape)。仅暴露用户在浏览器能看到的字段：基础内容 +
+        score(总分) + selected(精选标记)。五轴评分明细 / editorialJudgment /
+        AI 标签 / 内部分类编号 / 模型 id 等机制仍不暴露。
+
+        **注意**:本 API 的 `source` 是字符串(信源人话名)。**老接口 `/api/public/feed`
+        给浏览器 SSR 翻页用,它的 `source` 是对象**(`{id, name, kind}`),字段名相同
+        语义不同 — Agent / 二次开发者请优先用本接口(`/api/public/items`),不要混用。
+      required:
+        - id
+        - title
+        - url
+        - permalink
+        - source
+        - selected
+      properties:
+        id:
+          type: string
+          description: 条目稳定唯一 id（可用于追溯）
+        title:
+          type: string
+          description: 显示标题（中文为主，无中译时回落原标题）
+        title_en:
+          type: [string, "null"]
+          description: 原标题（仅当与 title 不同时存在）
+        url:
+          type: string
+          format: uri
+          description: 第三方原文 URL（信源原始链接）。
+        permalink:
+          type: string
+          format: uri
+          description: |
+            站内读者详情页绝对 URL(`/items/{id}`)。该页是公开可见的最终呈现
+            (中文翻译 + 富文本 + 无 X/付费墙),适合深链回 aihot 给用户阅读;`url` 仍是第三方原文。
+            **始终非空**(对任意 id 都存在)。注:该页 `noindex`(避免被搜索引擎当原创正文收录),
+            但对读者/分享完全可用。站内正文本身不经 API 直出(去 permalink 页读),避免批量扒全文。
+        source:
+          type: string
+          description: |
+            来源名(如 "OpenAI Blog" / "Anthropic 推特" / "X：Berry Xia (@berry_xia)")。
+            **始终是字符串**,不会是对象——把它当 string 渲染就行。
+        publishedAt:
+          type: [string, "null"]
+          format: date-time
+        summary:
+          type: [string, "null"]
+          description: 中文摘要
+        category:
+          type: [string, "null"]
+          enum: ["ai-models", "ai-products", "industry", "paper", "tip", null]
+        score:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 100
+          description: |
+            内容总分(0-100),等于网页卡片右上角显示的分数。分越高=越值得读。
+            **不是排序字段**(items 按 publishedAt 倒序);可自行按 score 二次排序/过滤。
+            理论上公开条目都已评分,极端竞态下可能为 null,请判空。
+        selected:
+          type: boolean
+          description: |
+            是否进入 AI HOT 精选(网页「精选」标记)。`mode=selected` 时恒为 true;
+            `mode=all` 时区分精选主菜单(true)与全池次要条目(false)。
+
+    ItemList:
+      type: object
+      properties:
+        count:
+          type: integer
+        hasNext:
+          type: boolean
+        nextCursor:
+          type: [string, "null"]
+          description: 翻页用，下一次请求的 `cursor` 参数。
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+
+    HotTopic:
+      type: object
+      description: |
+        当前热点条目(公开 shape)。簇级多源热度的展示主条 + 报道该事件的信源数。
+        刻意剥内部 clusterId 与 heat 数值(产品壁垒),只留浏览器可见字段 + permalink。
+      required:
+        - id
+        - title
+        - url
+        - permalink
+        - source
+        - sourceCount
+        - sourceNames
+        - latestAt
+      properties:
+        id:
+          type: string
+          description: 热点展示主条的条目 id(与 /api/public/items 的 id 同一空间,可深链 / 关联)。
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+          description: 第三方原文 URL。
+        permalink:
+          type: string
+          format: uri
+          description: 站内读者详情页绝对 URL(/items/{id}),中文翻译 + 富文本 + 无墙;始终非空。
+        source:
+          type: string
+          description: 展示主条来源名。
+        sourceCount:
+          type: integer
+          description: 窗口内报道该事件的独立信源数(热度信号,= 网页「N 个来源」)。越多越热、排序越靠前。
+        sourceNames:
+          type: array
+          items:
+            type: string
+          description: 窗口内信源名去重列表(按首报时间序)。
+        latestAt:
+          type: string
+          format: date-time
+          description: 窗口内最新一条报道时间(ISO UTC)。
+
+    HotTopicList:
+      type: object
+      properties:
+        count:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HotTopic"

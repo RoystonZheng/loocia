@@ -18,6 +18,7 @@ type ListParams struct {
 	Selected *bool
 	Category *string
 	Since    *time.Time
+	Until    *time.Time // exclusive upper bound on published_at
 	Q        *string
 	After    *Cursor
 	Limit    int
@@ -45,6 +46,7 @@ func (s *Store) List(ctx context.Context, p ListParams) ([]Item, error) {
 		  AND ($1::boolean IS NULL OR selected = $1)
 		  AND ($2::text    IS NULL OR category = $2)
 		  AND ($3::timestamptz IS NULL OR published_at >= $3)
+		  AND ($8::timestamptz IS NULL OR published_at < $8)
 		  AND ($4::text IS NULL OR (
 		        title ILIKE '%'||$4||'%' OR title_en ILIKE '%'||$4||'%'
 		     OR summary ILIKE '%'||$4||'%' OR body ILIKE '%'||$4||'%'))
@@ -52,7 +54,7 @@ func (s *Store) List(ctx context.Context, p ListParams) ([]Item, error) {
 		       (COALESCE(published_at,'epoch'::timestamptz), id) < ($5, $6))
 		ORDER BY COALESCE(published_at,'epoch'::timestamptz) DESC, id DESC
 		LIMIT $7`,
-		p.Selected, p.Category, p.Since, p.Q, afterKey, afterID, limit)
+		p.Selected, p.Category, p.Since, p.Q, afterKey, afterID, limit, p.Until)
 	if err != nil {
 		return nil, err
 	}

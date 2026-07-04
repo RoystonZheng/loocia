@@ -250,3 +250,21 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+func TestListUntilExcludesLaterItems(t *testing.T) {
+	s := newTestStore(t)
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	seed(t, s,
+		sampleItem("in-window", base.Add(2*time.Hour)),
+		sampleItem("at-bound", base.Add(24*time.Hour)), // == until → excluded (half-open)
+		sampleItem("after", base.Add(30*time.Hour)),
+	)
+	until := base.Add(24 * time.Hour)
+	got, err := s.List(context.Background(), ListParams{Since: &base, Until: &until, Limit: 10})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if g := ids(got); !equal(g, []string{"in-window"}) {
+		t.Fatalf("until window: got %v", g)
+	}
+}

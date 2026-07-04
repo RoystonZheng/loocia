@@ -11,6 +11,7 @@ import (
 	"aihot-server/common/handlers/log"
 	"aihot-server/controller"
 	"aihot-server/idl/proto"
+	"aihot-server/internal/daily"
 	"aihot-server/internal/db"
 	"aihot-server/internal/health"
 	"aihot-server/internal/items"
@@ -99,6 +100,18 @@ func Run() error {
 	svr.AddHTTPHandle("/api/public/version", version.NewHandler())
 	svr.AddHTTPHandle("/healthz", health.NewHandler(healthPinger(pool, poolErr)))
 	svr.AddHTTPHandle("/api/public/items", publicapi.NewItemsHandler(itemsStore, time.Now))
+
+	// 日报路由：同一个 pool；EnsureSchema 尽力而为（失败只打日志，服务照常启动，
+	// 请求期由 handler 返回 500）。裸 /api/public/daily 精确匹配优先于 /daily/ 子树。
+	dailyStore := daily.NewStore(pool)
+	if pool != nil {
+		if err := dailyStore.EnsureSchema(context.Background()); err != nil {
+			fmt.Printf("[aihot] daily EnsureSchema failed: %v\n", err)
+		}
+	}
+	svr.AddHTTPHandle("/api/public/daily", publicapi.NewLatestDailyHandler(dailyStore))
+	svr.AddHTTPHandle("/api/public/daily/", publicapi.NewDailyByDateHandler(dailyStore))
+	svr.AddHTTPHandle("/api/public/dailies", publicapi.NewDailiesHandler(dailyStore))
 
 	/* 添加静态文件，配合 SSE 测试接口使用 */
 	svr.AddHTTPHandle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./public"))))

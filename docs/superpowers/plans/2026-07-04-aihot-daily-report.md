@@ -1255,6 +1255,11 @@ func NewDailyByDateHandler(s DailyStore) http.Handler {
 			writeError(w, http.StatusBadRequest, "date must be YYYY-MM-DD")
 			return
 		}
+		// The regex only checks digit shape; reject non-calendar dates like 1999-13-99.
+		if _, err := time.Parse("2006-01-02", date); err != nil {
+			writeError(w, http.StatusBadRequest, "date must be a valid YYYY-MM-DD calendar date")
+			return
+		}
 		rep, err := s.GetByDate(r.Context(), date)
 		if errors.Is(err, daily.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "no daily report for that date")
@@ -1448,8 +1453,9 @@ describe('DailyView', () => {
     expect(screen.getByText('快讯一')).toBeInTheDocument()
     // item links to permalink
     expect(screen.getByRole('link', { name: '条目一' })).toHaveAttribute('href', '/items/1')
-    // date shown
-    expect(screen.getByText(/2026-05-07/)).toBeInTheDocument()
+    // date shown (match the header line specifically — a bare /2026-05-07/ is
+    // ambiguous with the flash's Beijing timestamp from this same fixture)
+    expect(screen.getByText(/2026-05-07 · 生成于/)).toBeInTheDocument()
   })
 
   it('shows empty state on 404', async () => {

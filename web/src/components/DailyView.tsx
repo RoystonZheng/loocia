@@ -1,0 +1,67 @@
+import { useEffect, useState } from 'react'
+import { fetchLatestDaily, type DailyReport } from '../api/daily'
+import { formatBeijingTime } from '../format'
+
+type State = 'loading' | 'ready' | 'empty' | 'error'
+
+export function DailyView() {
+  const [state, setState] = useState<State>('loading')
+  const [report, setReport] = useState<DailyReport | null>(null)
+
+  useEffect(() => {
+    fetchLatestDaily()
+      .then((rep) => {
+        if (rep === null) {
+          setState('empty')
+        } else {
+          setReport(rep)
+          setState('ready')
+        }
+      })
+      .catch(() => setState('error'))
+  }, [])
+
+  if (state === 'loading') return <p className="daily-status">加载中…</p>
+  if (state === 'empty') return <p className="daily-status">暂无日报。</p>
+  if (state === 'error') return <p className="daily-status feed-error">加载失败，请稍后重试。</p>
+
+  const rep = report!
+  return (
+    <div className="daily">
+      <div className="daily-date">{rep.date} · 生成于 {formatBeijingTime(rep.generatedAt)}</div>
+      {rep.lead && (
+        <section className="daily-lead">
+          <h2>{rep.lead.title}</h2>
+          <p>{rep.lead.leadParagraph}</p>
+        </section>
+      )}
+      {rep.sections.map((sec) => (
+        <section key={sec.label} className="daily-section">
+          <h3>{sec.label}</h3>
+          {sec.items.map((it, i) => (
+            <div key={i} className="daily-item">
+              {it.permalink ? (
+                <a className="item-title" href={it.permalink}>{it.title}</a>
+              ) : (
+                <span className="item-title">{it.title}</span>
+              )}
+              {it.summary && <p className="item-summary">{it.summary}</p>}
+              <span className="item-meta">{it.sourceName}</span>
+            </div>
+          ))}
+        </section>
+      ))}
+      {rep.flashes.length > 0 && (
+        <section className="daily-section">
+          <h3>快讯</h3>
+          {rep.flashes.map((f, i) => (
+            <div key={i} className="daily-flash">
+              {f.permalink ? <a href={f.permalink}>{f.title}</a> : <span>{f.title}</span>}
+              <span className="item-meta"> {f.sourceName}{f.publishedAt ? ' · ' + formatBeijingTime(f.publishedAt) : ''}</span>
+            </div>
+          ))}
+        </section>
+      )}
+    </div>
+  )
+}

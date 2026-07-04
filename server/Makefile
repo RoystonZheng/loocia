@@ -33,8 +33,10 @@ run: export AIHOT_DATABASE_URL := $(AIHOT_DATABASE_URL)
 
 run:
 	go run main.go
+# -p 1: DB-backed test packages (items/ingest/daily/pipeline/publicapi) share the
+# same live tables and TRUNCATE them — parallel packages corrupt each other.
 test:
-	go test ./...
+	go test -p 1 ./...
 build:
 	go build ./...
 

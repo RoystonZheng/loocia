@@ -35,7 +35,7 @@ func newLiveStores(t *testing.T) (*Store, *items.Store) {
 func TestGenerateBuildsAndStoresReport(t *testing.T) {
 	s, itemsStore := newLiveStores(t)
 	ctx := context.Background()
-	day := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	day := time.Date(2026, 5, 7, 0, 0, 0, 0, beijing)
 
 	seedItems(t, itemsStore,
 		mkSelItem("in1", "ai-models", 90, day.Add(2*time.Hour)),
@@ -83,7 +83,7 @@ func TestGenerateBuildsAndStoresReport(t *testing.T) {
 
 func TestGenerateLLMFailureYieldsNilLead(t *testing.T) {
 	s, itemsStore := newLiveStores(t)
-	day := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	day := time.Date(2026, 5, 7, 0, 0, 0, 0, beijing)
 	seedItems(t, itemsStore, mkSelItem("in1", "ai-models", 90, day.Add(2*time.Hour)))
 
 	g := NewGenerator(itemsStore, s, fakeLLM{err: errors.New("llm down")})

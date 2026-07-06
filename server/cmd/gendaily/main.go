@@ -66,7 +66,8 @@ func main() {
 	if explicit {
 		days = []string{*date}
 	} else {
-		now := time.Now().UTC()
+		// Beijing days — the digest window is Beijing-midnight based (see daily pkg).
+		now := time.Now().In(time.FixedZone("CST", 8*3600))
 		days = []string{now.AddDate(0, 0, -1).Format("2006-01-02"), now.Format("2006-01-02")}
 	}
 

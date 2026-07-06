@@ -11,15 +11,22 @@ func TestLoadSourcesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSources(\"\"): %v", err)
 	}
-	if len(srcs) < 2 {
-		t.Fatalf("want >=2 default sources, got %d", len(srcs))
+	if len(srcs) < 4 {
+		t.Fatalf("want >=4 default sources, got %d", len(srcs))
 	}
 	names := map[string]bool{}
 	for _, s := range srcs {
 		names[s.Name()] = true
 	}
-	if !names["OpenAI Blog"] || !names["Google AI Blog"] {
-		t.Fatalf("default names: %v", names)
+	// Curated 2026-07-06: reachable-from-Melos AI feeds with real article content.
+	for _, want := range []string{"OpenAI Blog", "TechCrunch AI", "Simon Willison", "MIT Technology Review AI"} {
+		if !names[want] {
+			t.Fatalf("missing default source %q; got %v", want, names)
+		}
+	}
+	// Google AI Blog was dropped (unreachable from Melos).
+	if names["Google AI Blog"] {
+		t.Fatalf("Google AI Blog should have been removed; got %v", names)
 	}
 }
 

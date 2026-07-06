@@ -17,9 +17,16 @@ type SourceConfig struct {
 // defaultSources are feeds verified reachable from the deploy host (Melos).
 // Volume-heavy feeds (e.g. arXiv) are deliberately not defaults — each new item
 // costs one LLM enrichment call. Override with a JSON file when needed.
+// Chosen 2026-07-06 by probing reachability + freshness from the Melos host:
+// each is reachable there and ships real article content in its RSS (not just a
+// link stub), so LLM enrichment has substance to work with. Google AI Blog was
+// dropped (unreachable from Melos, http=000) and Hacker News skipped (link-only
+// descriptions → thin summaries). OpenAI publishes sporadically but stays.
 var defaultSources = []SourceConfig{
 	{Name: "OpenAI Blog", URL: "https://openai.com/news/rss.xml"},
-	{Name: "Google AI Blog", URL: "https://blog.google/technology/ai/rss/"},
+	{Name: "TechCrunch AI", URL: "https://techcrunch.com/category/artificial-intelligence/feed/"},
+	{Name: "Simon Willison", URL: "https://simonwillison.net/atom/everything/"},
+	{Name: "MIT Technology Review AI", URL: "https://www.technologyreview.com/topic/artificial-intelligence/feed"},
 }
 
 // LoadSources returns the RSS sources: the embedded defaults when path is

@@ -1,15 +1,30 @@
 import { useEffect, useState } from 'react'
-import { fetchLatestDaily, type DailyReport } from '../api/daily'
+import { fetchDailyList, fetchDailyByDate, type DailyReport } from '../api/daily'
 import { formatBeijingTime } from '../format'
 
 type State = 'loading' | 'ready' | 'empty' | 'error'
 
 export function DailyView() {
   const [state, setState] = useState<State>('loading')
+  const [dates, setDates] = useState<string[]>([]) // newest first
+  const [idx, setIdx] = useState(0)
   const [report, setReport] = useState<DailyReport | null>(null)
 
+  // Load the archive index once; empty index → empty state.
   useEffect(() => {
-    fetchLatestDaily()
+    fetchDailyList()
+      .then((list) => {
+        if (list.length === 0) setState('empty')
+        else setDates(list.map((d) => d.date))
+      })
+      .catch(() => setState('error'))
+  }, [])
+
+  // Load the selected day's full report whenever the index changes.
+  useEffect(() => {
+    if (dates.length === 0) return
+    setState('loading')
+    fetchDailyByDate(dates[idx])
       .then((rep) => {
         if (rep === null) {
           setState('empty')
@@ -19,15 +34,41 @@ export function DailyView() {
         }
       })
       .catch(() => setState('error'))
-  }, [])
+  }, [dates, idx])
 
-  if (state === 'loading') return <p className="daily-status">加载中…</p>
-  if (state === 'empty') return <p className="daily-status">暂无日报。</p>
   if (state === 'error') return <p className="daily-status feed-error">加载失败，请稍后重试。</p>
+  if (state === 'empty') return <p className="daily-status">暂无日报。</p>
+  if (dates.length === 0) return <p className="daily-status">加载中…</p>
 
-  const rep = report!
+  // dates known: the archive nav is always shown; the body swaps per selection.
+  const nav = (
+    <div className="daily-nav">
+      <button className="daily-nav-btn" disabled={idx >= dates.length - 1} onClick={() => setIdx((i) => i + 1)}>
+        ← 前一天
+      </button>
+      <span className="daily-nav-date">
+        {dates[idx]}
+        {dates.length > 1 ? ` · ${idx + 1}/${dates.length}` : ''}
+      </span>
+      <button className="daily-nav-btn" disabled={idx <= 0} onClick={() => setIdx((i) => i - 1)}>
+        后一天 →
+      </button>
+    </div>
+  )
+
+  if (state !== 'ready' || report === null) {
+    return (
+      <div className="daily">
+        {nav}
+        <p className="daily-status">加载中…</p>
+      </div>
+    )
+  }
+
+  const rep = report
   return (
     <div className="daily">
+      {nav}
       <div className="daily-date">{rep.date} · 生成于 {formatBeijingTime(rep.generatedAt)}</div>
       {rep.lead && (
         <section className="daily-lead">

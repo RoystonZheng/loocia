@@ -151,9 +151,16 @@ code {
 .daily-item { margin-bottom: 12px; }
 .daily-flash { margin-bottom: 6px; font-size: .9rem; }
 .daily-status { color: #888; }
+.daily-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.daily-nav-date { color: #444; font-size: .9rem; font-variant-numeric: tabular-nums; }
+.daily-nav-btn { background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: .85rem; }
+.daily-nav-btn:hover:not(:disabled) { border-color: #1a7f5a; color: #1a7f5a; }
+.daily-nav-btn:disabled { opacity: .4; cursor: default; }
 @media (prefers-color-scheme: dark) {
   .app-nav button { background: #1c1c1c; color: #ddd; border-color: #444; }
   .daily-lead p { color: #bbc; }
+  .daily-nav-date { color: #bbc; }
+  .daily-nav-btn { background: #1c1c1c; color: #ddd; border-color: #444; }
 }
 .hot-topics { border: 1px solid #f0d9a8; background: #fffaf0; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
 .hot-title { margin: 0 0 8px; font-size: 1rem; color: #9a6b00; }

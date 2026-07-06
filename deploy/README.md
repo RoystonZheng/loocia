@@ -45,14 +45,14 @@ Mac 只负责交叉编译 + scp。
 - supervisor 程序 `aihot-server`(`/etc/supervisor/conf.d/aihot-server.conf`,
   autorestart)→ `/root/aihot/bin/server` 连本机 `localhost:5432/aihot`,监听 `:8991`。
 - nginx server block(`:8899`,`/etc/nginx/conf.d/aihot.conf`):`/` 托管
-  `/root/aihot/web`(SPA),`/api/` `/items/` `/healthz` 反代 `127.0.0.1:8991`。
-  不动现有 `:80` default_server。
+  `/var/www/aihot`(SPA,放 /var/www 因 nginx www-data 读不了 /root),
+  `/api/` `/items/` `/healthz` 反代 `127.0.0.1:8991`。不动现有 `:80` default_server。
 
 发布 / 更新:
     ./deploy/build-linux.sh          # 交叉编译 server+3命令 + 构建 web/dist
     ./deploy/install-serve-melos.sh  # scp + supervisor restart + nginx -s reload
 
-仅更新前端:重跑 build-linux.sh 后 `scp -r deploy/out/web/. melos:/root/aihot/web/`。
+仅更新前端:重跑 build-linux.sh 后 `scp -r deploy/out/web/. melos:/var/www/aihot/`。
 仅更新后端:`scp deploy/out/server melos:/root/aihot/bin/server && ssh melos 'supervisorctl restart aihot-server'`。
 
 运维:

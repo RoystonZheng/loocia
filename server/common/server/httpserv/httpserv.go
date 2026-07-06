@@ -11,6 +11,7 @@ import (
 	"aihot-server/common/handlers/log"
 	"aihot-server/controller"
 	"aihot-server/idl/proto"
+	"aihot-server/internal/cluster"
 	"aihot-server/internal/daily"
 	"aihot-server/internal/db"
 	"aihot-server/internal/health"
@@ -112,6 +113,15 @@ func Run() error {
 	svr.AddHTTPHandle("/api/public/daily", publicapi.NewLatestDailyHandler(dailyStore))
 	svr.AddHTTPHandle("/api/public/daily/", publicapi.NewDailyByDateHandler(dailyStore))
 	svr.AddHTTPHandle("/api/public/dailies", publicapi.NewDailiesHandler(dailyStore))
+
+	// 热点路由：同一个 pool；EnsureSchema 同样尽力而为。
+	hotStore := cluster.NewStore(pool)
+	if pool != nil {
+		if err := hotStore.EnsureSchema(context.Background()); err != nil {
+			fmt.Printf("[aihot] cluster EnsureSchema failed: %v\n", err)
+		}
+	}
+	svr.AddHTTPHandle("/api/public/hot-topics", publicapi.NewHotTopicsHandler(hotStore))
 
 	/* 添加静态文件，配合 SSE 测试接口使用 */
 	svr.AddHTTPHandle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./public"))))

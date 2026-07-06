@@ -26,3 +26,7 @@
 
 生产数据库为 Melos 本机 PostgreSQL 的 `aihot` 库（勿与 `aihot_test` 混淆）。
 完整部署与排障手册见仓库根目录 [`deploy/README.md`](../../deploy/README.md)。
+
+## 生产访问入口
+
+全站 24/7 常驻 Melos:**http://10.190.12.242:8899/**(无需 Mac/隧道)。运维见 `deploy/README.md` 「24/7 托管」。

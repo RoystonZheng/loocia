@@ -3,6 +3,7 @@ package pulse
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"aihot-server/internal/ingest"
 	"aihot-server/internal/items"
@@ -23,6 +24,7 @@ type Summary struct {
 	Fetched      int
 	Inserted     int
 	Skipped      int
+	AgeSkipped   int
 	SourceErrors int
 	Processed    int
 	Failed       int
@@ -32,6 +34,10 @@ type Summary struct {
 const (
 	batchSize  = 20
 	maxBatches = 5 // hard cap: ≤100 enrichment calls per pulse
+
+	// maxItemAge guards against full-archive feeds (e.g. OpenAI's RSS ships
+	// its entire history): items older than this are skipped at ingest.
+	maxItemAge = 14 * 24 * time.Hour
 )
 
 // Run executes one pulse: ensure schemas → ingest all sources → drain the
@@ -49,11 +55,14 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 		return sum, fmt.Errorf("items schema: %w", err)
 	}
 
-	res, err := ingest.NewRunner(rawStore, d.Sources...).RunOnce(ctx)
+	runner := ingest.NewRunner(rawStore, d.Sources...)
+	runner.MaxAge = maxItemAge
+	res, err := runner.RunOnce(ctx)
 	if err != nil {
 		return sum, fmt.Errorf("ingest: %w", err)
 	}
 	sum.Fetched, sum.Inserted, sum.Skipped = res.Fetched, res.Inserted, res.Skipped
+	sum.AgeSkipped = res.AgeSkipped
 	sum.SourceErrors = len(res.Errors)
 
 	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricher(d.LLM))

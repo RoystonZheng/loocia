@@ -3,20 +3,25 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // Result summarizes one ingestion pass.
 type Result struct {
-	Fetched  int
-	Inserted int
-	Skipped  int
-	Errors   []error
+	Fetched    int
+	Inserted   int
+	Skipped    int
+	AgeSkipped int
+	Errors     []error
 }
 
 // Runner fetches from all sources and inserts into the raw store.
 type Runner struct {
 	store   *RawStore
 	sources []Source
+
+	// MaxAge, when >0, skips items published more than MaxAge before now (nil PublishedAt passes). Guards against full-archive feeds.
+	MaxAge time.Duration
 }
 
 func NewRunner(store *RawStore, sources ...Source) *Runner {
@@ -36,6 +41,10 @@ func (r *Runner) RunOnce(ctx context.Context) (Result, error) {
 		}
 		for _, it := range items {
 			res.Fetched++
+			if r.MaxAge > 0 && it.PublishedAt != nil && time.Since(*it.PublishedAt) > r.MaxAge {
+				res.AgeSkipped++
+				continue
+			}
 			inserted, err := r.store.InsertRaw(ctx, it)
 			if err != nil {
 				return res, err

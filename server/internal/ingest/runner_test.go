@@ -68,3 +68,27 @@ func TestRunOnceContinuesWhenOneSourceFails(t *testing.T) {
 		t.Fatalf("error should name the failing source, got %v", res.Errors[0])
 	}
 }
+
+func TestRunOnceMaxAgeSkipsOldItems(t *testing.T) {
+	s := newTestRawStore(t)
+	fresh := sampleRaw("https://ex.com/fresh", time.Now().UTC().Add(-time.Hour))
+	old := sampleRaw("https://ex.com/old", time.Now().UTC().Add(-30*24*time.Hour))
+	src := fakeSource{name: "s", items: []RawItem{fresh, old}}
+
+	r := NewRunner(s, src)
+	r.MaxAge = 14 * 24 * time.Hour
+	res, err := r.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if res.Inserted != 1 || res.AgeSkipped != 1 {
+		t.Fatalf("age filter: %+v", res)
+	}
+	un, err := s.ListUnprocessed(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(un) != 1 || un[0].ID != fresh.ID {
+		t.Fatalf("only fresh should be queued: %+v", un)
+	}
+}

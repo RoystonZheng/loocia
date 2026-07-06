@@ -49,6 +49,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "run:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("pulse: fetched=%d inserted=%d skipped=%d srcerrs=%d enriched=%d failed=%d batches=%d\n",
-		sum.Fetched, sum.Inserted, sum.Skipped, sum.SourceErrors, sum.Processed, sum.Failed, sum.Batches)
+	fmt.Printf("pulse: fetched=%d inserted=%d skipped=%d ageskip=%d srcerrs=%d enriched=%d failed=%d batches=%d\n",
+		sum.Fetched, sum.Inserted, sum.Skipped, sum.AgeSkipped, sum.SourceErrors, sum.Processed, sum.Failed, sum.Batches)
 }

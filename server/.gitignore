@@ -11,3 +11,9 @@ vendor/
 NUWA-GOLANG-PROJECT
 !idl/CLAUDE.md
 vendor/
+# compiled cmd binaries (built into deploy/out via -o)
+/pulse
+/gendaily
+/hotpass
+/backfillimages
+/server

@@ -5,6 +5,9 @@ import App from './App'
 function mockAll() {
   globalThis.fetch = vi.fn().mockImplementation((url: string) => {
     const u = String(url)
+    if (u.includes('/api/public/hot-topics')) {
+      return Promise.resolve({ ok: true, json: async () => ({ count: 1, items: [{ id: 'h1', title: '热点一', url: 'https://x/h1', permalink: '/items/h1', source: 'S', sourceCount: 3, sourceNames: ['S'], latestAt: '2026-05-07T10:00:00Z' }] }) })
+    }
     if (u.includes('/api/public/version')) {
       return Promise.resolve({ ok: true, json: async () => ({ apiVersion: '1.1.0', skillVersion: '0.1.0', updatedAt: '2026-07-03', changelogUrl: '/changelog', recentChanges: [] }) })
     }
@@ -19,6 +22,10 @@ it('renders the feed by default and switches to the daily view', async () => {
   mockAll()
   render(<App />)
   await waitFor(() => expect(screen.getByText('标题A')).toBeInTheDocument())
+
+  // hot-topics strip renders above the feed
+  await waitFor(() => expect(screen.getByText('当前热点')).toBeInTheDocument())
+  expect(screen.getByText('热点一')).toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: '日报' }))
   await waitFor(() => expect(screen.getByText('日报导语')).toBeInTheDocument())

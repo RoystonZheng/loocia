@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchVersion, type PublicVersion } from './api/version'
 import { Feed } from './components/Feed'
 import { DailyView } from './components/DailyView'
+import { HotTopics } from './components/HotTopics'
 
 type View = 'feed' | 'daily'
 
@@ -21,7 +22,7 @@ export default function App() {
           <button className={view === 'daily' ? 'active' : ''} onClick={() => setView('daily')}>日报</button>
         </nav>
       </header>
-      <main>{view === 'feed' ? <Feed /> : <DailyView />}</main>
+      <main>{view === 'feed' ? (<><HotTopics /><Feed /></>) : <DailyView />}</main>
       <footer className="app-footer">
         {v && <span>API v{v.apiVersion} · Skill v{v.skillVersion}</span>}
       </footer>

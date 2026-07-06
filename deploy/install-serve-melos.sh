@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install/refresh the 24/7 serving stack on Melos: server binary + conf + public
-# + web bundle + systemd unit + nginx server block. Idempotent.
+# + web bundle + supervisor program + nginx server block. Idempotent.
+# Melos uses supervisord (PID 1), not systemd; nginx is reloaded via `nginx -s reload`.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/deploy"
@@ -23,13 +24,14 @@ echo "== web bundle =="
 ssh "$HOST" 'rm -rf /root/aihot/web && mkdir -p /root/aihot/web'
 scp -r out/web/. "$HOST:/root/aihot/web/"
 
-echo "== systemd unit =="
-scp aihot-server.service "$HOST:/etc/systemd/system/aihot-server.service"
-ssh "$HOST" 'systemctl daemon-reload && systemctl enable --now aihot-server && sleep 2 && systemctl is-active aihot-server'
+echo "== supervisor program =="
+scp aihot-server.supervisor.conf "$HOST:/etc/supervisor/conf.d/aihot-server.conf"
+# reread+update registers/refreshes the program; restart picks up a new binary.
+ssh "$HOST" 'supervisorctl reread && supervisorctl update && supervisorctl restart aihot-server 2>/dev/null || supervisorctl start aihot-server; sleep 3; supervisorctl status aihot-server'
 
 echo "== nginx server block =="
 scp aihot.nginx.conf "$HOST:/etc/nginx/conf.d/aihot.conf"
-ssh "$HOST" 'nginx -t && systemctl reload nginx'
+ssh "$HOST" 'nginx -t && nginx -s reload'
 
 echo "== verify on host =="
 ssh "$HOST" '

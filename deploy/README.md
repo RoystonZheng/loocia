@@ -38,28 +38,29 @@ Mac 只负责交叉编译 + scp。
 
 ## 24/7 托管(nginx + systemd,无需 Mac)
 
-全站常驻在 Melos:Go 服务器(API + SSR 详情页)由 systemd 拉起,前端静态由 nginx
+全站常驻在 Melos:Go 服务器(API + SSR 详情页)由 supervisor 拉起,前端静态由 nginx
 托管,nginx 反代动态前缀到 Go。访问入口:**http://10.190.12.242:8899/**
 
-架构:
-- `aihot-server.service`(systemd,Restart=always)→ `/root/aihot/bin/server`
-  连本机 `localhost:5432/aihot`,监听 `:8991`。
+架构(注:Melos 的 PID 1 是 **supervisord**,不是 systemd):
+- supervisor 程序 `aihot-server`(`/etc/supervisor/conf.d/aihot-server.conf`,
+  autorestart)→ `/root/aihot/bin/server` 连本机 `localhost:5432/aihot`,监听 `:8991`。
 - nginx server block(`:8899`,`/etc/nginx/conf.d/aihot.conf`):`/` 托管
   `/root/aihot/web`(SPA),`/api/` `/items/` `/healthz` 反代 `127.0.0.1:8991`。
   不动现有 `:80` default_server。
 
 发布 / 更新:
     ./deploy/build-linux.sh          # 交叉编译 server+3命令 + 构建 web/dist
-    ./deploy/install-serve-melos.sh  # scp + systemd enable/restart + nginx reload
+    ./deploy/install-serve-melos.sh  # scp + supervisor restart + nginx -s reload
 
 仅更新前端:重跑 build-linux.sh 后 `scp -r deploy/out/web/. melos:/root/aihot/web/`。
-仅更新后端:`scp deploy/out/server melos:/root/aihot/bin/server && ssh melos systemctl restart aihot-server`。
+仅更新后端:`scp deploy/out/server melos:/root/aihot/bin/server && ssh melos 'supervisorctl restart aihot-server'`。
 
 运维:
-    ssh melos 'systemctl status aihot-server'      # 服务状态
+    ssh melos 'supervisorctl status aihot-server'  # 服务状态
     ssh melos 'tail -50 /root/aihot/log/server.log'# 应用日志
-    ssh melos 'journalctl -u aihot-server -n 50'   # systemd 日志
-    ssh melos 'systemctl restart aihot-server'     # 重启
+    ssh melos 'supervisorctl restart aihot-server' # 重启
+    ssh melos 'supervisorctl tail -f aihot-server' # 跟日志
 
 停用:
-    ssh melos 'systemctl disable --now aihot-server; rm /etc/nginx/conf.d/aihot.conf; systemctl reload nginx'
+    ssh melos 'supervisorctl stop aihot-server; rm /etc/supervisor/conf.d/aihot-server.conf; supervisorctl reread; supervisorctl update'
+    ssh melos 'rm /etc/nginx/conf.d/aihot.conf; nginx -s reload'

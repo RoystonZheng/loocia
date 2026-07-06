@@ -19,10 +19,13 @@ CREATE TABLE IF NOT EXISTS items (
     selected        BOOLEAN NOT NULL DEFAULT FALSE,
     cluster_id      TEXT,
     duplicate_of_id TEXT,
+    cluster_primary BOOLEAN,
     present         BOOLEAN NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE items ADD COLUMN IF NOT EXISTS cluster_primary BOOLEAN;
 
 CREATE INDEX IF NOT EXISTS items_sortkey_idx
     ON items (COALESCE(published_at, 'epoch'::timestamptz) DESC, id DESC);

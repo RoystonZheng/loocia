@@ -36,12 +36,12 @@ func intptr(i int) *int       { return &i }
 // sampleItem returns a minimal valid item with the given id and published time.
 func sampleItem(id string, published time.Time) Item {
 	return Item{
-		ID:        id,
-		Title:     "title-" + id,
-		URL:       "https://example.com/" + id,
-		Permalink: "/items/" + id,
-		Source:    "Example",
+		ID:          id,
+		Title:       "title-" + id,
+		URL:         "https://example.com/" + id,
+		Permalink:   "/items/" + id,
+		Source:      "Example",
 		PublishedAt: &published,
-		Present:   true,
+		Present:     true,
 	}
 }

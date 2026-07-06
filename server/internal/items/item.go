@@ -17,25 +17,26 @@ var epoch = time.Unix(0, 0).UTC()
 // Item is the full internal row model. The public API (P1.4) projects a subset.
 // Nullable columns are pointers.
 type Item struct {
-	ID            string
-	Title         string
-	TitleEN       *string
-	URL           string
-	Permalink     string
-	Source        string
-	SourceKind    string
-	PublishedAt   *time.Time
-	TimelineAt    *time.Time
-	Summary       *string
-	Body          *string
-	Category      *string
-	Score         *int
-	AIRelevance   *int
-	AISelected    *bool
-	Selected      bool
-	ClusterID     *string
-	DuplicateOfID *string
-	Present       bool
+	ID             string
+	Title          string
+	TitleEN        *string
+	URL            string
+	Permalink      string
+	Source         string
+	SourceKind     string
+	PublishedAt    *time.Time
+	TimelineAt     *time.Time
+	Summary        *string
+	Body           *string
+	Category       *string
+	Score          *int
+	AIRelevance    *int
+	AISelected     *bool
+	Selected       bool
+	ClusterID      *string
+	DuplicateOfID  *string
+	ClusterPrimary *bool
+	Present        bool
 }
 
 // SortKey is the ordering value: published_at, or epoch when null.

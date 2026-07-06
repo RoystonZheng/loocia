@@ -251,6 +251,78 @@ func equal(a, b []string) bool {
 	return true
 }
 
+func TestSelectedModeHidesClusterSecondaries(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	primary := sampleItem("prim", base.Add(2*time.Hour))
+	primary.Selected = true
+	secondary := sampleItem("sec", base.Add(time.Hour))
+	secondary.Selected = true
+	loner := sampleItem("loner", base)
+	loner.Selected = true
+	seed(t, s, primary, secondary, loner)
+
+	// Cluster prim+sec with prim as primary.
+	if err := s.AssignCluster(ctx, "prim", "prim", true); err != nil {
+		t.Fatalf("AssignCluster prim: %v", err)
+	}
+	if err := s.AssignCluster(ctx, "sec", "prim", false); err != nil {
+		t.Fatalf("AssignCluster sec: %v", err)
+	}
+
+	tru := true
+	got, err := s.List(ctx, ListParams{Selected: &tru, Limit: 10})
+	if err != nil {
+		t.Fatalf("List selected: %v", err)
+	}
+	if g := ids(got); !equal(g, []string{"prim", "loner"}) {
+		t.Fatalf("selected should hide secondary: got %v", g)
+	}
+
+	// mode=all (Selected nil) still shows the secondary.
+	all, err := s.List(ctx, ListParams{Limit: 10})
+	if err != nil {
+		t.Fatalf("List all: %v", err)
+	}
+	if g := ids(all); !equal(g, []string{"prim", "sec", "loner"}) {
+		t.Fatalf("all should include secondary: got %v", g)
+	}
+}
+
+func TestClearClustersResetsWindow(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	in := sampleItem("cin", base.Add(time.Hour))
+	out := sampleItem("cout", base.Add(48*time.Hour))
+	seed(t, s, in, out)
+	for _, id := range []string{"cin", "cout"} {
+		if err := s.AssignCluster(ctx, id, "cin", id == "cin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Clear only the first day's window.
+	if err := s.ClearClusters(ctx, base, base.Add(24*time.Hour)); err != nil {
+		t.Fatalf("ClearClusters: %v", err)
+	}
+	gin, err := s.GetByID(ctx, "cin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gin.ClusterID != nil || gin.ClusterPrimary != nil {
+		t.Fatalf("cin should be cleared: %+v", gin)
+	}
+	gout, err := s.GetByID(ctx, "cout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gout.ClusterID == nil {
+		t.Fatalf("cout (outside window) should keep its cluster: %+v", gout)
+	}
+}
+
 func TestListUntilExcludesLaterItems(t *testing.T) {
 	s := newTestStore(t)
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)

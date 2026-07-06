@@ -78,3 +78,24 @@ func TestGetByIDNotFound(t *testing.T) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
 }
+
+func TestUpsertRoundTripsClusterPrimary(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	pub := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	in := sampleItem("cp1", pub)
+	cp := true
+	cid := "cp1"
+	in.ClusterID = &cid
+	in.ClusterPrimary = &cp
+	if err := s.Upsert(ctx, in); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	got, err := s.GetByID(ctx, "cp1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ClusterPrimary == nil || !*got.ClusterPrimary || got.ClusterID == nil || *got.ClusterID != "cp1" {
+		t.Fatalf("cluster fields round-trip: %+v", got)
+	}
+}

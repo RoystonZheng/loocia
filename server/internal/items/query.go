@@ -44,6 +44,7 @@ func (s *Store) List(ctx context.Context, p ListParams) ([]Item, error) {
 		WHERE present = true
 		  AND duplicate_of_id IS NULL
 		  AND ($1::boolean IS NULL OR selected = $1)
+		  AND ($1::boolean IS NOT TRUE OR cluster_id IS NULL OR cluster_primary IS TRUE)
 		  AND ($2::text    IS NULL OR category = $2)
 		  AND ($3::timestamptz IS NULL OR published_at >= $3)
 		  AND ($8::timestamptz IS NULL OR published_at < $8)

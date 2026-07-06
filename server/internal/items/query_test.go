@@ -23,6 +23,39 @@ func ids(items []Item) []string {
 	return out
 }
 
+// List must not fetch the full body (perf: avoid detoasting large text for every
+// paged row; the public DTO omits it and no List caller reads it). GetByID still must.
+func TestListOmitsBodyButGetByIDKeepsIt(t *testing.T) {
+	s := newTestStore(t)
+	body := "full article body — should never be read by List"
+	it := sampleItem("withbody", time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC))
+	it.Body = &body
+	seed(t, s, it)
+
+	got, err := s.List(context.Background(), ListParams{Limit: 10})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 item, got %d", len(got))
+	}
+	if got[0].Body != nil {
+		t.Fatalf("List should not populate Body, got %q", *got[0].Body)
+	}
+	// Sanity: other fields still come through.
+	if got[0].Title != "title-withbody" {
+		t.Fatalf("List dropped a real field: title=%q", got[0].Title)
+	}
+
+	full, err := s.GetByID(context.Background(), "withbody")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if full.Body == nil || *full.Body != body {
+		t.Fatalf("GetByID must keep body; got %v", full.Body)
+	}
+}
+
 func TestListOrdersByPublishedDesc(t *testing.T) {
 	s := newTestStore(t)
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)

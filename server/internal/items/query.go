@@ -5,6 +5,17 @@ import (
 	"time"
 )
 
+// listColumns mirrors itemColumns but never reads the item's full body: the
+// listing never returns it (the public DTO omits body per the openapi contract —
+// full text is served only by the SSR permalink page — and no List caller reads
+// Item.Body). Selecting a constant in body's slot means Postgres never detoasts
+// the (potentially multi-KB) body for the ~N rows a page reads, while keeping the
+// column order/count identical so scanItem is unchanged (NULL scans into *string
+// Body as nil). Body is still fetched by GetByID, which uses itemColumns.
+const listColumns = `id, title, title_en, url, permalink, source, source_kind,
+	published_at, timeline_at, summary, NULL::text AS body, category,
+	score, ai_relevance, ai_selected, selected, cluster_id, duplicate_of_id, present, cluster_primary`
+
 // Cursor is a typed keyset position (the sort value + id of the last row seen).
 // The opaque wire encoding lives in the API layer (P1.4).
 type Cursor struct {
@@ -39,7 +50,7 @@ func (s *Store) List(ctx context.Context, p ListParams) ([]Item, error) {
 	}
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT `+itemColumns+`
+		SELECT `+listColumns+`
 		FROM items
 		WHERE present = true
 		  AND duplicate_of_id IS NULL

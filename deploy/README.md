@@ -35,3 +35,31 @@ Mac 只负责交叉编译 + scp。
 - 失败条目留在 raw_items 未处理态,下轮 pulse 自动重试;毒条目不会死循环
   (无进展即停批)。
 - LLM key 轮换后无需改动(每次执行时从 .env 现读)。
+
+## 24/7 托管(nginx + systemd,无需 Mac)
+
+全站常驻在 Melos:Go 服务器(API + SSR 详情页)由 systemd 拉起,前端静态由 nginx
+托管,nginx 反代动态前缀到 Go。访问入口:**http://10.190.12.242:8899/**
+
+架构:
+- `aihot-server.service`(systemd,Restart=always)→ `/root/aihot/bin/server`
+  连本机 `localhost:5432/aihot`,监听 `:8991`。
+- nginx server block(`:8899`,`/etc/nginx/conf.d/aihot.conf`):`/` 托管
+  `/root/aihot/web`(SPA),`/api/` `/items/` `/healthz` 反代 `127.0.0.1:8991`。
+  不动现有 `:80` default_server。
+
+发布 / 更新:
+    ./deploy/build-linux.sh          # 交叉编译 server+3命令 + 构建 web/dist
+    ./deploy/install-serve-melos.sh  # scp + systemd enable/restart + nginx reload
+
+仅更新前端:重跑 build-linux.sh 后 `scp -r deploy/out/web/. melos:/root/aihot/web/`。
+仅更新后端:`scp deploy/out/server melos:/root/aihot/bin/server && ssh melos systemctl restart aihot-server`。
+
+运维:
+    ssh melos 'systemctl status aihot-server'      # 服务状态
+    ssh melos 'tail -50 /root/aihot/log/server.log'# 应用日志
+    ssh melos 'journalctl -u aihot-server -n 50'   # systemd 日志
+    ssh melos 'systemctl restart aihot-server'     # 重启
+
+停用:
+    ssh melos 'systemctl disable --now aihot-server; rm /etc/nginx/conf.d/aihot.conf; systemctl reload nginx'

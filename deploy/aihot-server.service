@@ -1,0 +1,16 @@
+[Unit]
+Description=aihot API + SSR detail-page server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/aihot
+Environment=AIHOT_DATABASE_URL=postgres://aihot:aihot@localhost:5432/aihot
+ExecStart=/root/aihot/bin/server -c /root/aihot/conf/app.toml
+Restart=always
+RestartSec=3
+StandardOutput=append:/root/aihot/log/server.log
+StandardError=append:/root/aihot/log/server.log
+
+[Install]
+WantedBy=multi-user.target

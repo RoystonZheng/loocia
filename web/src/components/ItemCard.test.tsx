@@ -37,5 +37,14 @@ describe('ItemCard', () => {
     render(<ItemCard item={minimal} />)
     expect(screen.getByText('T')).toBeInTheDocument()
     expect(screen.queryByText(/undefined/)).toBeNull()
+    // no image when imageUrl absent
+    expect(document.querySelector('img.item-image')).toBeNull()
+  })
+
+  it('renders a thumbnail when imageUrl is present', () => {
+    render(<ItemCard item={{ ...base, imageUrl: 'https://cdn.ex.com/hero.jpg' }} />)
+    const img = document.querySelector('img.item-image') as HTMLImageElement | null
+    expect(img).not.toBeNull()
+    expect(img!.getAttribute('src')).toBe('https://cdn.ex.com/hero.jpg')
   })
 })

@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/mmcdole/gofeed"
 )
+
+// imgSrcRe pulls the src of the first <img> in a chunk of feed HTML.
+var imgSrcRe = regexp.MustCompile(`(?i)<img[^>]+src=["']([^"']+)["']`)
 
 // parseFeed turns raw RSS/Atom bytes into RawItems. Items without a link are
 // skipped (no stable id derivable).
@@ -33,9 +38,33 @@ func parseFeed(data []byte, sourceName, sourceKind string) ([]RawItem, error) {
 		if body := firstNonEmpty(it.Description, it.Content); body != "" {
 			r.RawContent = &body
 		}
+		if img := extractImage(it); img != "" {
+			r.ImageURL = &img
+		}
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// extractImage returns a representative http(s) image URL for the item, or "".
+// Order: a feed-provided <image>/media thumbnail, then the first image
+// enclosure, then the first <img> in the content/description HTML — where blog
+// feeds (our main image source; RSS media tags are rare here) put the hero image.
+func extractImage(it *gofeed.Item) string {
+	if it.Image != nil && strings.HasPrefix(it.Image.URL, "http") {
+		return it.Image.URL
+	}
+	for _, e := range it.Enclosures {
+		if e != nil && strings.HasPrefix(e.Type, "image/") && strings.HasPrefix(e.URL, "http") {
+			return e.URL
+		}
+	}
+	for _, html := range []string{it.Content, it.Description} {
+		if m := imgSrcRe.FindStringSubmatch(html); m != nil && strings.HasPrefix(m[1], "http") {
+			return m[1]
+		}
+	}
+	return ""
 }
 
 func firstNonEmpty(vals ...string) string {

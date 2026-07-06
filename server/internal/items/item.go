@@ -28,6 +28,7 @@ type Item struct {
 	TimelineAt     *time.Time
 	Summary        *string
 	Body           *string
+	ImageURL       *string
 	Category       *string
 	Score          *int
 	AIRelevance    *int

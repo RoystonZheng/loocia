@@ -14,7 +14,8 @@ import (
 // Body as nil). Body is still fetched by GetByID, which uses itemColumns.
 const listColumns = `id, title, title_en, url, permalink, source, source_kind,
 	published_at, timeline_at, summary, NULL::text AS body, category,
-	score, ai_relevance, ai_selected, selected, cluster_id, duplicate_of_id, present, cluster_primary`
+	score, ai_relevance, ai_selected, selected, cluster_id, duplicate_of_id, present, cluster_primary,
+	image_url`
 
 // Cursor is a typed keyset position (the sort value + id of the last row seen).
 // The opaque wire encoding lives in the API layer (P1.4).

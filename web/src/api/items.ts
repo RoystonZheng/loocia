@@ -7,6 +7,7 @@ export interface PublicItem {
   source: string
   publishedAt?: string
   summary?: string
+  imageUrl?: string
   category?: string
   score?: number
   selected: boolean

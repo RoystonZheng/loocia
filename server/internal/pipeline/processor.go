@@ -82,6 +82,7 @@ func toItem(r ingest.RawItem, e Enrichment) items.Item {
 		PublishedAt: r.PublishedAt,
 		Summary:     &summary,
 		Body:        r.RawContent,
+		ImageURL:    r.ImageURL,
 		Category:    &category,
 		Score:       &score,
 		AIRelevance: &relevance,

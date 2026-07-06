@@ -29,6 +29,37 @@ const sampleRSS = `<?xml version="1.0" encoding="UTF-8"?>
   </item>
 </channel></rss>`
 
+const imageRSS = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <title>Imaged Blog</title>
+  <item>
+    <title>With hero image</title>
+    <link>https://ex.com/withimg</link>
+    <description><![CDATA[<p>Lead.</p><img src="https://cdn.ex.com/hero.jpg?w=800" alt="x"/><p>Body.</p>]]></description>
+  </item>
+  <item>
+    <title>No image</title>
+    <link>https://ex.com/noimg</link>
+    <description>Just text, no img tag.</description>
+  </item>
+</channel></rss>`
+
+func TestParseFeedExtractsImage(t *testing.T) {
+	items, err := parseFeed([]byte(imageRSS), "Imaged Blog", "rss")
+	if err != nil {
+		t.Fatalf("parseFeed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("want 2 items, got %d", len(items))
+	}
+	if items[0].ImageURL == nil || *items[0].ImageURL != "https://cdn.ex.com/hero.jpg?w=800" {
+		t.Fatalf("item0 image: %v", items[0].ImageURL)
+	}
+	if items[1].ImageURL != nil {
+		t.Fatalf("item1 should have no image, got %v", *items[1].ImageURL)
+	}
+}
+
 func TestParseFeedMapsItems(t *testing.T) {
 	items, err := parseFeed([]byte(sampleRSS), "Example AI Blog", "rss")
 	if err != nil {

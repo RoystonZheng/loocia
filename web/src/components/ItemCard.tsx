@@ -14,6 +14,16 @@ export function ItemCard({ item }: { item: PublicItem }) {
         {item.publishedAt && <span className="item-time">{formatBeijingTime(item.publishedAt)}</span>}
       </div>
       {item.summary && <p className="item-summary">{item.summary}</p>}
+      {item.imageUrl && (
+        <img
+          className="item-image"
+          src={item.imageUrl}
+          alt=""
+          loading="lazy"
+          // External CDN images can 404/hotlink-block; hide rather than show a broken icon.
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+        />
+      )}
     </article>
   )
 }

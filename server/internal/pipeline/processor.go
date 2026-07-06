@@ -8,6 +8,11 @@ import (
 	"aihot-server/internal/items"
 )
 
+// selectionRelevanceFloor: items at or above this AI relevance enter the curated
+// (mode=selected) feed even if the LLM's own selected verdict was false — the LLM
+// verdict is conservative (fires ~≥82), leaving relevant news out of the default view.
+const selectionRelevanceFloor = 60
+
 // Result summarizes one processing batch.
 type Result struct {
 	Processed int
@@ -63,7 +68,8 @@ func toItem(r ingest.RawItem, e Enrichment) items.Item {
 	category := e.Category
 	relevance := e.Relevance
 	score := e.Score
-	selected := e.Selected
+	aiSelected := e.Selected // raw LLM verdict, preserved in ai_selected
+	selected := aiSelected || e.Relevance >= selectionRelevanceFloor
 	summary := e.SummaryCN
 
 	it := items.Item{
@@ -79,7 +85,7 @@ func toItem(r ingest.RawItem, e Enrichment) items.Item {
 		Category:    &category,
 		Score:       &score,
 		AIRelevance: &relevance,
-		AISelected:  &selected,
+		AISelected:  &aiSelected,
 		Selected:    selected,
 		Present:     true,
 	}

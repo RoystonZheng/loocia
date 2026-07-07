@@ -14,9 +14,9 @@ describe('HotTopics', () => {
       ] }),
     }) as unknown as typeof fetch
     render(<HotTopics />)
-    await waitFor(() => expect(screen.getByText('当前热点')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/当前热点/)).toBeInTheDocument())
     expect(screen.getByRole('link', { name: '大新闻' })).toHaveAttribute('href', '/items/h1')
-    expect(screen.getByText('4 个来源')).toBeInTheDocument()
+    expect(screen.getByText('4 个信源')).toBeInTheDocument()
     expect(screen.getByText('次热')).toBeInTheDocument()
   })
 

@@ -19,11 +19,6 @@ describe('ItemCard', () => {
     expect(screen.getByText('这是一段中文摘要。')).toBeInTheDocument()
   })
 
-  it('renders Beijing time', () => {
-    render(<ItemCard item={base} />)
-    expect(screen.getByText(/2026-05-07 12:00/)).toBeInTheDocument()
-  })
-
   it('links the title to the permalink', () => {
     render(<ItemCard item={base} />)
     const link = screen.getByRole('link', { name: /模型 X 发布/ })
@@ -38,12 +33,12 @@ describe('ItemCard', () => {
     expect(screen.getByText('T')).toBeInTheDocument()
     expect(screen.queryByText(/undefined/)).toBeNull()
     // no image when imageUrl absent
-    expect(document.querySelector('img.item-image')).toBeNull()
+    expect(document.querySelector('img.card-image')).toBeNull()
   })
 
   it('renders a thumbnail when imageUrl is present', () => {
     render(<ItemCard item={{ ...base, imageUrl: 'https://cdn.ex.com/hero.jpg' }} />)
-    const img = document.querySelector('img.item-image') as HTMLImageElement | null
+    const img = document.querySelector('img.card-image') as HTMLImageElement | null
     expect(img).not.toBeNull()
     expect(img!.getAttribute('src')).toBe('https://cdn.ex.com/hero.jpg')
   })

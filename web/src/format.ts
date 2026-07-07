@@ -21,6 +21,26 @@ export function formatBeijingTime(iso: string | undefined): string {
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
 }
 
+// beijingParts splits an ISO instant into Beijing date/time pieces for the
+// timeline layout. Empty/unparseable → all "".
+export function beijingParts(iso: string | undefined): { date: string; clock: string; monthDay: string } {
+  if (!iso) return { date: '', clock: '', monthDay: '' }
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return { date: iso, clock: '', monthDay: '' }
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d)
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  const mo = get('month'), day = get('day')
+  return {
+    date: `${get('year')}-${mo}-${day}`,
+    clock: `${get('hour')}:${get('minute')}`,
+    monthDay: `${Number(mo)}月${Number(day)}日`,
+  }
+}
+
 // categoryLabel maps a slug to its Chinese label; unknown → the slug, undefined → ''.
 export function categoryLabel(slug: string | undefined): string {
   if (!slug) return ''

@@ -20,7 +20,7 @@ describe('Feed', () => {
 
   it('loads and renders the first page', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => page(['a', 'b'], null) }) as unknown as typeof fetch
-    render(<Feed />)
+    render(<Feed mode="all" />)
     await waitFor(() => expect(screen.getByText('t-a')).toBeInTheDocument())
     expect(screen.getByText('t-b')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /加载更多|更多/ })).toBeNull()
@@ -32,7 +32,7 @@ describe('Feed', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => page(['b'], null) })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    render(<Feed />)
+    render(<Feed mode="all" />)
     await waitFor(() => expect(screen.getByText('t-a')).toBeInTheDocument())
 
     const more = screen.getByRole('button', { name: /加载更多|更多/ })
@@ -50,7 +50,7 @@ describe('Feed', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => page(['s1'], null) })
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
-    render(<Feed />)
+    render(<Feed mode="all" />)
     await waitFor(() => expect(screen.getByText('t-a')).toBeInTheDocument())
 
     fireEvent.change(screen.getByPlaceholderText(/搜索/), { target: { value: 'OpenAI' } })
@@ -64,7 +64,7 @@ describe('Feed', () => {
 
   it('shows an error message when the fetch fails', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 }) as unknown as typeof fetch
-    render(<Feed />)
+    render(<Feed mode="all" />)
     await waitFor(() => expect(screen.getByText(/加载失败|出错|错误/)).toBeInTheDocument())
   })
 })

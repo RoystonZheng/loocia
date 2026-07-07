@@ -1,108 +1,167 @@
 import { useEffect, useState } from 'react'
-import { fetchDailyList, fetchDailyByDate, type DailyReport } from '../api/daily'
-import { formatBeijingTime } from '../format'
+import { fetchDailyList, fetchDailyByDate, type DailyReport, type DailySummary } from '../api/daily'
 
 type State = 'loading' | 'ready' | 'empty' | 'error'
 
+function weekday(date: string): string {
+  const d = new Date(date)
+  if (isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat('zh-CN', { weekday: 'long', timeZone: 'Asia/Shanghai' }).format(d)
+}
+
+// groupByMonth splits summaries (already newest-first) into {label:'2026 年 7 月', items:[]}.
+function groupByMonth(list: DailySummary[]): { key: string; label: string; items: DailySummary[] }[] {
+  const groups: { key: string; label: string; items: DailySummary[] }[] = []
+  for (const s of list) {
+    const key = s.date.slice(0, 7)
+    let g = groups.find((x) => x.key === key)
+    if (!g) {
+      const [y, m] = key.split('-')
+      g = { key, label: `${y} 年 ${Number(m)} 月`, items: [] }
+      groups.push(g)
+    }
+    g.items.push(s)
+  }
+  return groups
+}
+
 export function DailyView() {
   const [state, setState] = useState<State>('loading')
-  const [dates, setDates] = useState<string[]>([]) // newest first
+  const [list, setList] = useState<DailySummary[]>([]) // newest first
   const [idx, setIdx] = useState(0)
   const [report, setReport] = useState<DailyReport | null>(null)
 
-  // Load the archive index once; empty index → empty state.
   useEffect(() => {
     fetchDailyList()
-      .then((list) => {
-        if (list.length === 0) setState('empty')
-        else setDates(list.map((d) => d.date))
+      .then((l) => {
+        if (l.length === 0) setState('empty')
+        else setList(l)
       })
       .catch(() => setState('error'))
   }, [])
 
-  // Load the selected day's full report whenever the index changes.
   useEffect(() => {
-    if (dates.length === 0) return
+    if (list.length === 0) return
     setState('loading')
-    fetchDailyByDate(dates[idx])
+    fetchDailyByDate(list[idx].date)
       .then((rep) => {
-        if (rep === null) {
-          setState('empty')
-        } else {
+        if (rep === null) setState('empty')
+        else {
           setReport(rep)
           setState('ready')
         }
       })
       .catch(() => setState('error'))
-  }, [dates, idx])
+  }, [list, idx])
 
   if (state === 'error') return <p className="daily-status feed-error">加载失败，请稍后重试。</p>
-  if (state === 'empty') return <p className="daily-status">暂无日报。</p>
-  if (dates.length === 0) return <p className="daily-status">加载中…</p>
+  if (state === 'empty' && list.length === 0) return <p className="daily-status">暂无日报。</p>
+  if (list.length === 0) return <p className="daily-status">加载中…</p>
 
-  // dates known: the archive nav is always shown; the body swaps per selection.
-  const nav = (
-    <div className="daily-nav">
-      <button className="daily-nav-btn" disabled={idx >= dates.length - 1} onClick={() => setIdx((i) => i + 1)}>
-        ← 前一天
-      </button>
-      <span className="daily-nav-date">
-        {dates[idx]}
-        {dates.length > 1 ? ` · ${idx + 1}/${dates.length}` : ''}
-      </span>
-      <button className="daily-nav-btn" disabled={idx <= 0} onClick={() => setIdx((i) => i - 1)}>
-        后一天 →
-      </button>
+  return (
+    <div className="daily-layout">
+      <aside className="daily-archive">
+        <div className="daily-subnav">
+          <button className="active">日报</button>
+          <button disabled title="暂未开放">周报</button>
+          <button disabled title="暂未开放">月报</button>
+        </div>
+        {groupByMonth(list).map((g) => (
+          <div key={g.key} className="darc-month">
+            <div className="darc-month-head">
+              <span>{g.label}</span>
+              <span className="darc-count">{g.items.length}</span>
+            </div>
+            {g.items.map((s) => {
+              const active = list[idx].date === s.date
+              return (
+                <button
+                  key={s.date}
+                  className={`darc-item${active ? ' active' : ''}`}
+                  onClick={() => setIdx(list.findIndex((x) => x.date === s.date))}
+                >
+                  <span className="darc-day">{Number(s.date.slice(8, 10))} 日</span>
+                  <span className="darc-snip">{s.leadTitle}</span>
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </aside>
+
+      <div className="daily-main">{report && <DailyPaper rep={report} />}</div>
     </div>
   )
+}
 
-  if (state !== 'ready' || report === null) {
-    return (
-      <div className="daily">
-        {nav}
-        <p className="daily-status">加载中…</p>
-      </div>
-    )
-  }
+function DailyPaper({ rep }: { rep: DailyReport }) {
+  const stories = rep.sections.reduce((n, s) => n + s.items.length, 0)
+  const minutes = Math.max(1, Math.round(stories * 0.7))
+  const dot = rep.date.replaceAll('-', '.')
 
-  const rep = report
   return (
-    <div className="daily">
-      {nav}
-      <div className="daily-date">{rep.date} · 生成于 {formatBeijingTime(rep.generatedAt)}</div>
-      {rep.lead && (
-        <section className="daily-lead">
-          <h2>{rep.lead.title}</h2>
-          <p>{rep.lead.leadParagraph}</p>
-        </section>
-      )}
+    <article className="paper">
+      <header className="paper-masthead">
+        <div className="paper-vol">
+          <span className="paper-vol-rule" /> VOL.{dot} · {stories} STORIES · AI HOT DAILY
+        </div>
+        <h1 className="paper-name">
+          AI <span className="paper-name-hot">HOT</span> 日报
+        </h1>
+        <div className="paper-dateline">
+          <span>{rep.date} · {weekday(rep.date)}</span>
+          <span className="paper-daily-tag">DAILY · 每早八时</span>
+        </div>
+      </header>
+
+      <section className="paper-highlights">
+        <div className="ph-head">
+          <span>今日看点</span>
+          <span className="ph-meta">{stories} 篇报道 · 约 {minutes} 分钟</span>
+        </div>
+        {rep.lead && <p className="ph-lead">{rep.lead.leadParagraph}</p>}
+        {rep.sections.map((sec, i) => (
+          <div key={sec.label} className="ph-row">
+            <span className="ph-no">{String(i + 1).padStart(2, '0')}</span>
+            <div className="ph-body">
+              <div className="ph-cat">{sec.label}</div>
+              {sec.items[0] && (
+                <a className="ph-item" href={sec.items[0].permalink ?? undefined}>{sec.items[0].title}</a>
+              )}
+            </div>
+            <span className="ph-count">{sec.items.length}</span>
+          </div>
+        ))}
+      </section>
+
       {rep.sections.map((sec) => (
-        <section key={sec.label} className="daily-section">
+        <section key={sec.label} className="paper-section">
           <h3>{sec.label}</h3>
           {sec.items.map((it, i) => (
-            <div key={i} className="daily-item">
+            <div key={i} className="paper-item">
               {it.permalink ? (
-                <a className="item-title" href={it.permalink}>{it.title}</a>
+                <a className="paper-item-title" href={it.permalink}>{it.title}</a>
               ) : (
-                <span className="item-title">{it.title}</span>
+                <span className="paper-item-title">{it.title}</span>
               )}
-              {it.summary && <p className="item-summary">{it.summary}</p>}
-              <span className="item-meta">{it.sourceName}</span>
+              {it.summary && <p className="paper-item-summary">{it.summary}</p>}
+              <span className="paper-item-src">{it.sourceName}</span>
             </div>
           ))}
         </section>
       ))}
+
       {rep.flashes.length > 0 && (
-        <section className="daily-section">
+        <section className="paper-section">
           <h3>快讯</h3>
           {rep.flashes.map((f, i) => (
-            <div key={i} className="daily-flash">
+            <div key={i} className="paper-flash">
               {f.permalink ? <a href={f.permalink}>{f.title}</a> : <span>{f.title}</span>}
-              <span className="item-meta"> {f.sourceName}{f.publishedAt ? ' · ' + formatBeijingTime(f.publishedAt) : ''}</span>
+              <span className="paper-item-src"> {f.sourceName}</span>
             </div>
           ))}
         </section>
       )}
-    </div>
+    </article>
   )
 }

@@ -2,30 +2,42 @@ import { useEffect, useState } from 'react'
 import { fetchVersion, type PublicVersion } from './api/version'
 import { Feed } from './components/Feed'
 import { DailyView } from './components/DailyView'
-import { HotTopics } from './components/HotTopics'
+import { Sidebar, type View } from './components/Sidebar'
+import { useTheme } from './theme'
 
-type View = 'feed' | 'daily'
+const HEADERS: Record<Exclude<View, 'daily'>, { title: string; sub: string }> = {
+  selected: { title: '精选', sub: 'AI 自动挑选的高价值内容' },
+  all: { title: '全部 AI 动态', sub: 'AI 相关资讯全量信息流' },
+}
 
 export default function App() {
   const [v, setV] = useState<PublicVersion | null>(null)
-  const [view, setView] = useState<View>('feed')
+  const [view, setView] = useState<View>('selected')
+  const [theme, setTheme] = useTheme()
+
   useEffect(() => {
     fetchVersion().then(setV).catch(() => {})
   }, [])
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>AI HOT（内网）</h1>
-        <p className="app-sub">AI 资讯精选</p>
-        <nav className="app-nav">
-          <button className={view === 'feed' ? 'active' : ''} onClick={() => setView('feed')}>资讯流</button>
-          <button className={view === 'daily' ? 'active' : ''} onClick={() => setView('daily')}>日报</button>
-        </nav>
-      </header>
-      <main>{view === 'feed' ? (<><HotTopics /><Feed /></>) : <DailyView />}</main>
-      <footer className="app-footer">
-        {v && <span>API v{v.apiVersion} · Skill v{v.skillVersion}</span>}
-      </footer>
+    <div className="shell">
+      <Sidebar view={view} onView={setView} theme={theme} onTheme={setTheme} />
+      <div className="main">
+        {view === 'daily' ? (
+          <DailyView />
+        ) : (
+          <>
+            <header className="page-head">
+              <h1>{HEADERS[view].title}</h1>
+              <p className="page-sub">{HEADERS[view].sub}</p>
+            </header>
+            <Feed mode={view} />
+          </>
+        )}
+        <footer className="app-footer">
+          {v && <span>API v{v.apiVersion} · Skill v{v.skillVersion}</span>}
+        </footer>
+      </div>
     </div>
   )
 }

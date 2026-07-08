@@ -87,7 +87,7 @@ var pageTemplate = template.Must(template.New("item").Parse(`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>{{.Title}} · AI HOT（内网）</title>
+<title>{{.Title}} · AI Cool（内网）</title>
 <style>
 :root { color-scheme: light dark; }
 body { max-width: 720px; margin: 0 auto; padding: 32px 18px; font: 16px/1.6 system-ui, sans-serif; color: #1a1a1a; background: #fff; }
@@ -109,7 +109,7 @@ h1 { font-size: 1.6rem; line-height: 1.3; margin: 0 0 6px; }
 </style>
 </head>
 <body>
-<a class="back" href="/">← 返回 AI HOT</a>
+<a class="back" href="/">← 返回 AI Cool</a>
 <h1>{{.Title}}</h1>
 {{if .TitleEN}}<p class="title-en">{{.TitleEN}}</p>{{end}}
 <div class="meta">
@@ -126,12 +126,12 @@ h1 { font-size: 1.6rem; line-height: 1.3; margin: 0 0 6px; }
 
 var notFoundTemplate = template.Must(template.New("404").Parse(`<!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>未找到 · AI HOT（内网）</title>
+<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>未找到 · AI Cool（内网）</title>
 <style>body{max-width:600px;margin:0 auto;padding:48px 18px;font:16px/1.6 system-ui,sans-serif;text-align:center;color-scheme:light dark;}a{color:#1a7f5a;}</style>
 </head>
 <body>
 <h1>未找到该资讯</h1>
 <p>这条内容可能已下线或不存在。</p>
-<a href="/">← 返回 AI HOT</a>
+<a href="/">← 返回 AI Cool</a>
 </body>
 </html>`))

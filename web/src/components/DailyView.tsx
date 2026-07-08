@@ -103,10 +103,10 @@ function DailyPaper({ rep }: { rep: DailyReport }) {
     <article className="paper">
       <header className="paper-masthead">
         <div className="paper-vol">
-          <span className="paper-vol-rule" /> VOL.{dot} · {stories} STORIES · AI HOT DAILY
+          <span className="paper-vol-rule" /> VOL.{dot} · {stories} STORIES · AI COOL DAILY
         </div>
         <h1 className="paper-name">
-          AI <span className="paper-name-hot">HOT</span> 日报
+          AI <span className="paper-name-hot">Cool</span> 日报
         </h1>
         <div className="paper-dateline">
           <span>{rep.date} · {weekday(rep.date)}</span>

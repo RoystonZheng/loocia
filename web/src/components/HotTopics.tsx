@@ -16,7 +16,7 @@ export function HotTopics() {
 
   return (
     <section className="hot-topics">
-      <h2 className="hot-title">🔥 当前热点</h2>
+      <h2 className="hot-title">⚡ 当前热点</h2>
       {topics.map((t, i) => (
         <div key={t.id} className="hot-row">
           <span className="hot-rank">{i + 1}</span>

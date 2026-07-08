@@ -27,7 +27,7 @@ export function Sidebar({
       <div className="sb-logo">
         <span className="sb-logo-ai">AI</span>
         <span className="sb-logo-dot">◉</span>
-        <span className="sb-logo-hot">HOT</span>
+        <span className="sb-logo-hot">Cool</span>
       </div>
 
       <nav className="sb-nav">

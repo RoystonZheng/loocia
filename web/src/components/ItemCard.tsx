@@ -11,7 +11,10 @@ export function ItemCard({ item }: { item: PublicItem }) {
         </span>
         <div className="card-badges">
           {item.selected && <span className="badge-sel">✦ 精选</span>}
-          {item.score != null && <span className="badge-score">{item.score}</span>}
+          {/* The score is a "why this is 精选" quality signal — only meaningful on
+              curated items. Showing it on every 全部 item just advertises low
+              numbers (e.g. an 18 on a barely-AI story), so gate it on selected. */}
+          {item.selected && item.score != null && <span className="badge-score">{item.score}</span>}
         </div>
       </div>
 

@@ -19,6 +19,19 @@ describe('ItemCard', () => {
     expect(screen.getByText('这是一段中文摘要。')).toBeInTheDocument()
   })
 
+  it('hides the score badge on non-selected items', () => {
+    // The score is a 精选 quality signal; a low score on a 全部 item is noise.
+    render(<ItemCard item={{ ...base, selected: false, score: 18 }} />)
+    expect(document.querySelector('.badge-score')).toBeNull()
+    expect(screen.queryByText('18')).toBeNull()
+  })
+
+  it('shows the score badge on selected items', () => {
+    render(<ItemCard item={{ ...base, selected: true, score: 88 }} />)
+    expect(document.querySelector('.badge-score')).not.toBeNull()
+    expect(screen.getByText('88')).toBeInTheDocument()
+  })
+
   it('links the title to the permalink', () => {
     render(<ItemCard item={base} />)
     const link = screen.getByRole('link', { name: /模型 X 发布/ })

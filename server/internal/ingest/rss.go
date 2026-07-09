@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"regexp"
@@ -65,9 +66,11 @@ func extractImage(it *gofeed.Item) string {
 			return e.URL
 		}
 	}
-	for _, html := range []string{it.Content, it.Description} {
-		if m := imgSrcRe.FindStringSubmatch(html); m != nil && strings.HasPrefix(m[1], "http") {
-			return m[1]
+	for _, h := range []string{it.Content, it.Description} {
+		if m := imgSrcRe.FindStringSubmatch(h); m != nil && strings.HasPrefix(m[1], "http") {
+			// The src comes from raw HTML source, so it is entity-encoded
+			// (e.g. query separators as &amp;); decode before storing.
+			return html.UnescapeString(m[1])
 		}
 	}
 	return ""
@@ -82,9 +85,9 @@ func extractVideo(it *gofeed.Item) string {
 			return e.URL
 		}
 	}
-	for _, html := range []string{it.Content, it.Description} {
-		if m := videoSrcRe.FindStringSubmatch(html); m != nil && strings.HasPrefix(m[1], "http") {
-			return m[1]
+	for _, h := range []string{it.Content, it.Description} {
+		if m := videoSrcRe.FindStringSubmatch(h); m != nil && strings.HasPrefix(m[1], "http") {
+			return html.UnescapeString(m[1])
 		}
 	}
 	return ""

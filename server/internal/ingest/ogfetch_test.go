@@ -45,6 +45,22 @@ func TestFetchOGMediaReversedAttrOrder(t *testing.T) {
 	}
 }
 
+func TestFetchOGMediaDecodesEntities(t *testing.T) {
+	// og content is raw HTML source: query separators arrive as &amp;.
+	const page = `<html><head>
+<meta property="og:video" content="https://player.ex.com/v/1?a=1&amp;b=2">
+</head></html>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(page))
+	}))
+	defer srv.Close()
+
+	_, vid := FetchOGMedia(context.Background(), srv.Client(), srv.URL)
+	if vid != "https://player.ex.com/v/1?a=1&b=2" {
+		t.Fatalf("entities not decoded: %q", vid)
+	}
+}
+
 func TestFetchOGMediaNoTags(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`<html><head><title>plain</title></head></html>`))

@@ -72,7 +72,7 @@ const videoRSS = `<?xml version="1.0" encoding="UTF-8"?>
   <item>
     <title>Embedded iframe</title>
     <link>https://ex.com/iframe</link>
-    <description><![CDATA[<p>Watch:</p><iframe src="https://player.ex.com/embed/42"></iframe>]]></description>
+    <description><![CDATA[<p>Watch:</p><iframe src="https://player.ex.com/embed/42?a=1&amp;b=2"></iframe>]]></description>
   </item>
   <item>
     <title>No video</title>
@@ -92,7 +92,8 @@ func TestParseFeedExtractsVideo(t *testing.T) {
 	if items[0].VideoURL == nil || *items[0].VideoURL != "https://cdn.ex.com/clip.mp4" {
 		t.Fatalf("item0 video: %v", items[0].VideoURL)
 	}
-	if items[1].VideoURL == nil || *items[1].VideoURL != "https://player.ex.com/embed/42" {
+	// Entity-encoded src from raw HTML must be decoded (&amp; → &).
+	if items[1].VideoURL == nil || *items[1].VideoURL != "https://player.ex.com/embed/42?a=1&b=2" {
 		t.Fatalf("item1 video: %v", items[1].VideoURL)
 	}
 	if items[2].VideoURL != nil {

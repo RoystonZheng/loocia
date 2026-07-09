@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	htmlpkg "html"
 	"io"
 	"net/http"
 	"regexp"
@@ -31,7 +32,9 @@ func ogContent(html, prop string) string {
 	}
 	for _, re := range res {
 		if m := re.FindStringSubmatch(html); m != nil {
-			return m[1]
+			// content="" is raw HTML source: entity-decode (e.g. &amp; → &)
+			// so URL query separators survive round-tripping through templates.
+			return htmlpkg.UnescapeString(m[1])
 		}
 	}
 	return ""

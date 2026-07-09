@@ -60,6 +60,46 @@ func TestParseFeedExtractsImage(t *testing.T) {
 	}
 }
 
+const videoRSS = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <title>Video Blog</title>
+  <item>
+    <title>Enclosure video</title>
+    <link>https://ex.com/enc</link>
+    <description>See the clip.</description>
+    <enclosure url="https://cdn.ex.com/clip.mp4" type="video/mp4" length="123"/>
+  </item>
+  <item>
+    <title>Embedded iframe</title>
+    <link>https://ex.com/iframe</link>
+    <description><![CDATA[<p>Watch:</p><iframe src="https://player.ex.com/embed/42"></iframe>]]></description>
+  </item>
+  <item>
+    <title>No video</title>
+    <link>https://ex.com/novid</link>
+    <description>Just text.</description>
+  </item>
+</channel></rss>`
+
+func TestParseFeedExtractsVideo(t *testing.T) {
+	items, err := parseFeed([]byte(videoRSS), "Video Blog", "rss")
+	if err != nil {
+		t.Fatalf("parseFeed: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("want 3 items, got %d", len(items))
+	}
+	if items[0].VideoURL == nil || *items[0].VideoURL != "https://cdn.ex.com/clip.mp4" {
+		t.Fatalf("item0 video: %v", items[0].VideoURL)
+	}
+	if items[1].VideoURL == nil || *items[1].VideoURL != "https://player.ex.com/embed/42" {
+		t.Fatalf("item1 video: %v", items[1].VideoURL)
+	}
+	if items[2].VideoURL != nil {
+		t.Fatalf("item2 should have no video, got %v", *items[2].VideoURL)
+	}
+}
+
 func TestParseFeedMapsItems(t *testing.T) {
 	items, err := parseFeed([]byte(sampleRSS), "Example AI Blog", "rss")
 	if err != nil {

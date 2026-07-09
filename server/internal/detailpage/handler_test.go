@@ -114,6 +114,59 @@ func TestHTMLIsEscaped(t *testing.T) {
 	}
 }
 
+func TestRendersImage(t *testing.T) {
+	it := mkItem("img")
+	img := "https://cdn.ex.com/hero.jpg"
+	it.ImageURL = &img
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"img": it}})
+	body := get(t, h, "/items/img").Body.String()
+	if !strings.Contains(body, `<img src="https://cdn.ex.com/hero.jpg"`) {
+		t.Fatalf("expected image tag, got:\n%s", body)
+	}
+}
+
+func TestRendersVideoFile(t *testing.T) {
+	it := mkItem("vid")
+	vid := "https://cdn.ex.com/clip.mp4"
+	poster := "https://cdn.ex.com/hero.jpg"
+	it.VideoURL = &vid
+	it.ImageURL = &poster
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"vid": it}})
+	body := get(t, h, "/items/vid").Body.String()
+	if !strings.Contains(body, `<video controls`) || !strings.Contains(body, `src="https://cdn.ex.com/clip.mp4"`) {
+		t.Fatalf("expected video tag, got:\n%s", body)
+	}
+	if !strings.Contains(body, `poster="https://cdn.ex.com/hero.jpg"`) {
+		t.Fatalf("expected poster from image, got:\n%s", body)
+	}
+	// A direct file must NOT become an iframe.
+	if strings.Contains(body, "<iframe") {
+		t.Fatalf("direct video file should not render as iframe:\n%s", body)
+	}
+}
+
+func TestRendersVideoEmbed(t *testing.T) {
+	it := mkItem("emb")
+	vid := "https://player.ex.com/embed/42"
+	it.VideoURL = &vid
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"emb": it}})
+	body := get(t, h, "/items/emb").Body.String()
+	if !strings.Contains(body, `<iframe src="https://player.ex.com/embed/42"`) {
+		t.Fatalf("expected iframe embed, got:\n%s", body)
+	}
+}
+
+func TestUsesCoolBlueAccent(t *testing.T) {
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"abc": mkItem("abc")}})
+	body := get(t, h, "/items/abc").Body.String()
+	if !strings.Contains(body, "#2f6bff") {
+		t.Fatalf("expected cool-blue accent, got:\n%s", body)
+	}
+	if strings.Contains(body, "#1a7f5a") {
+		t.Fatalf("stale green accent still present:\n%s", body)
+	}
+}
+
 func TestNullableFieldsOmitted(t *testing.T) {
 	minimal := &items.Item{
 		ID: "m", Title: "仅标题", URL: "https://s/x", Permalink: "/items/m",

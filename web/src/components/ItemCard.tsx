@@ -19,15 +19,28 @@ export function ItemCard({ item }: { item: PublicItem }) {
 
       {item.summary && <p className="card-summary">{item.summary}</p>}
 
-      {item.imageUrl && (
-        <img
-          className="card-image"
-          src={item.imageUrl}
-          alt=""
-          loading="lazy"
-          // External CDN images can 404/hotlink-block; hide rather than show a broken icon.
-          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-        />
+      {item.imageUrl ? (
+        <a className="card-media" href={item.permalink} aria-label={item.videoUrl ? '播放视频' : undefined}>
+          <img
+            className="card-image"
+            src={item.imageUrl}
+            alt=""
+            loading="lazy"
+            // External CDN images can 404/hotlink-block; hide rather than show a broken icon.
+            onError={(e) => {
+              const wrap = (e.currentTarget as HTMLImageElement).closest('.card-media') as HTMLElement | null
+              if (wrap) wrap.style.display = 'none'
+            }}
+          />
+          {item.videoUrl && <span className="card-play" aria-hidden>▶</span>}
+        </a>
+      ) : (
+        item.videoUrl && (
+          <a className="card-media card-media-bare" href={item.permalink} aria-label="播放视频">
+            <span className="card-play" aria-hidden>▶</span>
+            <span className="card-video-tag">视频</span>
+          </a>
+        )
       )}
 
       {item.category && (

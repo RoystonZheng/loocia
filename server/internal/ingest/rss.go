@@ -15,6 +15,9 @@ import (
 // imgSrcRe pulls the src of the first <img> in a chunk of feed HTML.
 var imgSrcRe = regexp.MustCompile(`(?i)<img[^>]+src=["']([^"']+)["']`)
 
+// videoSrcRe matches a <video src=…> or an embed <iframe src=…> (youtube/vimeo/etc).
+var videoSrcRe = regexp.MustCompile(`(?i)<(?:video|iframe|source)[^>]+src=["']([^"']+)["']`)
+
 // parseFeed turns raw RSS/Atom bytes into RawItems. Items without a link are
 // skipped (no stable id derivable).
 func parseFeed(data []byte, sourceName, sourceKind string) ([]RawItem, error) {
@@ -41,6 +44,9 @@ func parseFeed(data []byte, sourceName, sourceKind string) ([]RawItem, error) {
 		if img := extractImage(it); img != "" {
 			r.ImageURL = &img
 		}
+		if vid := extractVideo(it); vid != "" {
+			r.VideoURL = &vid
+		}
 		out = append(out, r)
 	}
 	return out, nil
@@ -61,6 +67,23 @@ func extractImage(it *gofeed.Item) string {
 	}
 	for _, html := range []string{it.Content, it.Description} {
 		if m := imgSrcRe.FindStringSubmatch(html); m != nil && strings.HasPrefix(m[1], "http") {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+// extractVideo returns a video/embed URL for the item, or "". Order: an image
+// enclosure's video sibling (media/enclosure of a video type), then a <video>/
+// <iframe> src in the content. og:video fallback (network) is handled separately.
+func extractVideo(it *gofeed.Item) string {
+	for _, e := range it.Enclosures {
+		if e != nil && strings.HasPrefix(e.Type, "video/") && strings.HasPrefix(e.URL, "http") {
+			return e.URL
+		}
+	}
+	for _, html := range []string{it.Content, it.Description} {
+		if m := videoSrcRe.FindStringSubmatch(html); m != nil && strings.HasPrefix(m[1], "http") {
 			return m[1]
 		}
 	}

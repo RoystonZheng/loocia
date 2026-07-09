@@ -20,15 +20,29 @@ type Result struct {
 	Errors    []error
 }
 
+// MediaResolver fills missing media (image/video) for an item by inspecting its
+// article page — e.g. Open Graph tags. Best-effort: returns nil pointers when it
+// finds nothing. Implemented by ingest.OGResolver.
+type MediaResolver interface {
+	Resolve(ctx context.Context, pageURL string) (image, video *string)
+}
+
 // Processor enriches unprocessed raw items into the items table.
 type Processor struct {
 	raw   *ingest.RawStore
 	items *items.Store
 	enr   Enricher
+	media MediaResolver // optional; nil disables OG media backfill
 }
 
 func NewProcessor(raw *ingest.RawStore, itemsStore *items.Store, enr Enricher) *Processor {
 	return &Processor{raw: raw, items: itemsStore, enr: enr}
+}
+
+// WithMediaResolver enables OG media backfill for items lacking a feed image.
+func (p *Processor) WithMediaResolver(m MediaResolver) *Processor {
+	p.media = m
+	return p
 }
 
 // ProcessBatch enriches up to limit unprocessed raw items. A single item's
@@ -57,7 +71,21 @@ func (p *Processor) processOne(ctx context.Context, r ingest.RawItem) error {
 	if err != nil {
 		return err
 	}
-	if err := p.items.Upsert(ctx, toItem(r, e)); err != nil {
+	it := toItem(r, e)
+	// Backfill media from the article's Open Graph tags when the feed gave us
+	// no image (many sources ship image-less RSS). Best-effort — a resolver
+	// miss or network error just leaves the item as-is.
+	if p.media != nil && it.ImageURL == nil {
+		if img, vid := p.media.Resolve(ctx, r.URL); img != nil || vid != nil {
+			if it.ImageURL == nil {
+				it.ImageURL = img
+			}
+			if it.VideoURL == nil {
+				it.VideoURL = vid
+			}
+		}
+	}
+	if err := p.items.Upsert(ctx, it); err != nil {
 		return err
 	}
 	return p.raw.MarkProcessed(ctx, r.ID)
@@ -83,6 +111,7 @@ func toItem(r ingest.RawItem, e Enrichment) items.Item {
 		Summary:     &summary,
 		Body:        r.RawContent,
 		ImageURL:    r.ImageURL,
+		VideoURL:    r.VideoURL,
 		Category:    &category,
 		Score:       &score,
 		AIRelevance: &relevance,

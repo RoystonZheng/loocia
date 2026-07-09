@@ -19,6 +19,7 @@ type PublicItem struct {
 	PublishedAt *time.Time `json:"publishedAt,omitempty"`
 	Summary     *string    `json:"summary,omitempty"`
 	ImageURL    *string    `json:"imageUrl,omitempty"`
+	VideoURL    *string    `json:"videoUrl,omitempty"`
 	Category    *string    `json:"category,omitempty"`
 	Score       *int       `json:"score,omitempty"`
 	Selected    bool       `json:"selected"`
@@ -43,6 +44,7 @@ func toPublic(it items.Item) PublicItem {
 		PublishedAt: it.PublishedAt,
 		Summary:     it.Summary,
 		ImageURL:    it.ImageURL,
+		VideoURL:    it.VideoURL,
 		Category:    it.Category,
 		Score:       it.Score,
 		Selected:    it.Selected,

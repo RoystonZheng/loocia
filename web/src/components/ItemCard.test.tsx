@@ -42,4 +42,26 @@ describe('ItemCard', () => {
     expect(img).not.toBeNull()
     expect(img!.getAttribute('src')).toBe('https://cdn.ex.com/hero.jpg')
   })
+
+  it('shows a play overlay over the thumbnail when videoUrl is present', () => {
+    render(<ItemCard item={{ ...base, imageUrl: 'https://cdn.ex.com/hero.jpg', videoUrl: 'https://cdn.ex.com/clip.mp4' }} />)
+    expect(document.querySelector('img.card-image')).not.toBeNull()
+    expect(document.querySelector('.card-play')).not.toBeNull()
+    // The media wrapper links to the detail page where the video plays.
+    const media = document.querySelector('.card-media') as HTMLAnchorElement | null
+    expect(media).not.toBeNull()
+    expect(media!.getAttribute('href')).toBe('/items/a')
+  })
+
+  it('shows a bare video affordance when video has no thumbnail', () => {
+    render(<ItemCard item={{ ...base, videoUrl: 'https://cdn.ex.com/clip.mp4' }} />)
+    expect(document.querySelector('img.card-image')).toBeNull()
+    expect(document.querySelector('.card-media-bare')).not.toBeNull()
+    expect(document.querySelector('.card-play')).not.toBeNull()
+  })
+
+  it('shows no play overlay when there is no video', () => {
+    render(<ItemCard item={{ ...base, imageUrl: 'https://cdn.ex.com/hero.jpg' }} />)
+    expect(document.querySelector('.card-play')).toBeNull()
+  })
 })

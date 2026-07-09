@@ -29,6 +29,7 @@ type Item struct {
 	Summary        *string
 	Body           *string
 	ImageURL       *string
+	VideoURL       *string
 	Category       *string
 	Score          *int
 	AIRelevance    *int

@@ -65,7 +65,8 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 	sum.AgeSkipped = res.AgeSkipped
 	sum.SourceErrors = len(res.Errors)
 
-	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricher(d.LLM))
+	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricher(d.LLM)).
+		WithMediaResolver(ingest.NewOGResolver())
 	for sum.Batches < maxBatches {
 		batch, err := proc.ProcessBatch(ctx, batchSize)
 		if err != nil {

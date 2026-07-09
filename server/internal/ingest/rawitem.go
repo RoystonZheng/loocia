@@ -17,6 +17,7 @@ type RawItem struct {
 	PublishedAt *time.Time
 	RawContent  *string // raw description/body from the feed, if any
 	ImageURL    *string // representative image URL from the feed, if any
+	VideoURL    *string // representative video URL from the feed, if any
 }
 
 // RawID derives a stable id from the canonical URL.

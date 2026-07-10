@@ -35,15 +35,32 @@ const enrichSystemPrompt = `你是 AI 资讯编辑。给定一条资讯的原始
 - "score": 整数 0-100，值得阅读的程度
 - "selected": 布尔，是否值得进入每日精选`
 
+// maxPromptBodyRunes caps how much article body we feed the enricher. Full-text
+// sources (公众号 articles run past 100k chars) would otherwise blow up the LLM
+// request; the title plus the lede/intro is enough to produce a headline,
+// summary, category, and relevance score. RSS snippets are far shorter and pass
+// through untouched.
+const maxPromptBodyRunes = 4000
+
 func buildPrompt(r ingest.RawItem) (system, user string) {
 	var b strings.Builder
 	b.WriteString("原始标题：")
 	b.WriteString(r.Title)
 	if r.RawContent != nil && *r.RawContent != "" {
 		b.WriteString("\n\n正文：\n")
-		b.WriteString(*r.RawContent)
+		b.WriteString(truncateRunes(*r.RawContent, maxPromptBodyRunes))
 	}
 	return enrichSystemPrompt, b.String()
+}
+
+// truncateRunes returns s capped at n runes (with an ellipsis when cut), safe
+// for multi-byte (Chinese) text.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // parseEnrichment extracts and validates the JSON object from the model output.

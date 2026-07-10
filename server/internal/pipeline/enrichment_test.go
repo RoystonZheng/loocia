@@ -59,3 +59,22 @@ func TestBuildPromptIncludesTitleAndBody(t *testing.T) {
 		t.Fatalf("user prompt missing title/body: %q", user)
 	}
 }
+
+func TestBuildPromptCapsLongBody(t *testing.T) {
+	// A full-text 公众号 body (100k+ chars) must not blow up the prompt.
+	body := strings.Repeat("正", 50000)
+	r := ingest.RawItem{Title: "T", RawContent: &body}
+	_, user := buildPrompt(r)
+	if n := len([]rune(user)); n > maxPromptBodyRunes+50 {
+		t.Fatalf("user prompt not capped: %d runes", n)
+	}
+	if !strings.HasSuffix(user, "…") {
+		t.Fatal("truncated body should end with an ellipsis")
+	}
+}
+
+func TestTruncateRunesShortNoop(t *testing.T) {
+	if got := truncateRunes("短文本", 100); got != "短文本" {
+		t.Fatalf("short text should be unchanged: %q", got)
+	}
+}

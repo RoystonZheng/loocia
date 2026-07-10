@@ -45,6 +45,37 @@ func TestLoadSourcesFromJSON(t *testing.T) {
 	}
 }
 
+func TestLoadSourcesAppendsMPCorpus(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AIHOT_MP_CORPUS_DIR", dir)
+	srcs, err := LoadSources("")
+	if err != nil {
+		t.Fatalf("LoadSources: %v", err)
+	}
+	found := false
+	for _, s := range srcs {
+		if s.Name() == "WeChat MP" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected a WeChat MP source when AIHOT_MP_CORPUS_DIR is set")
+	}
+}
+
+func TestLoadSourcesNoMPWhenUnset(t *testing.T) {
+	t.Setenv("AIHOT_MP_CORPUS_DIR", "") // explicitly empty
+	srcs, err := LoadSources("")
+	if err != nil {
+		t.Fatalf("LoadSources: %v", err)
+	}
+	for _, s := range srcs {
+		if s.Name() == "WeChat MP" {
+			t.Fatal("no MP source expected when env unset")
+		}
+	}
+}
+
 func TestLoadSourcesRejectsBadFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.json")
 	_ = os.WriteFile(path, []byte(`{not json`), 0o644)

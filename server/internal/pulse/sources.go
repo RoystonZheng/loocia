@@ -50,5 +50,12 @@ func LoadSources(path string) ([]ingest.Source, error) {
 		}
 		out = append(out, ingest.NewRSSSource(c.Name, c.URL))
 	}
+	// Append the WeChat 公众号 corpus source when configured and the dir exists.
+	// Absent/missing dir → RSS-only (unchanged behavior).
+	if dir := os.Getenv("AIHOT_MP_CORPUS_DIR"); dir != "" {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			out = append(out, ingest.NewMPCorpusSource(dir, "WeChat MP"))
+		}
+	}
 	return out, nil
 }

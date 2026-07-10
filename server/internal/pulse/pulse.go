@@ -3,6 +3,7 @@ package pulse
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"aihot-server/internal/ingest"
@@ -78,6 +79,9 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 		sum.Batches++
 		sum.Processed += batch.Processed
 		sum.Failed += batch.Failed
+		for _, e := range batch.Errors {
+			fmt.Fprintln(os.Stderr, "enrich error:", e)
+		}
 		if batch.Processed == 0 {
 			break // no progress: only failures — stop, retry next pulse
 		}

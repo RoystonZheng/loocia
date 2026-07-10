@@ -73,6 +73,14 @@ func TestBuildPromptCapsLongBody(t *testing.T) {
 	}
 }
 
+func TestSystemPromptForbidsAsciiQuotes(t *testing.T) {
+	// The model emitting unescaped ASCII double-quotes inside Chinese summaries
+	// broke json.Unmarshal; the prompt must steer it to 「」 instead. Lock it in.
+	if !strings.Contains(enrichSystemPrompt, "「」") {
+		t.Fatal("system prompt should instruct the model to use 「」 for inner quotes")
+	}
+}
+
 func TestTruncateRunesShortNoop(t *testing.T) {
 	if got := truncateRunes("短文本", 100); got != "短文本" {
 		t.Fatalf("short text should be unchanged: %q", got)

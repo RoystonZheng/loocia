@@ -61,6 +61,17 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		p.Limit = n
 	}
 
+	// A text search queries the whole archive (公众号 backfill runs to years of
+	// history); the default 7-day freshness floor applies only when browsing.
+	qs := q.Get("q")
+	isSearch := len([]rune(qs)) >= 2
+	if isSearch {
+		if len([]rune(qs)) > maxQ {
+			qs = string([]rune(qs)[:maxQ])
+		}
+		p.Q = &qs
+	}
+
 	lower := now.Add(-sinceWindow)
 	if s := q.Get("since"); s != "" {
 		ts, err := time.Parse(time.RFC3339, s)
@@ -70,20 +81,13 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		if ts.After(now.Add(futureSkew)) {
 			return p, errBadRequest
 		}
-		if ts.Before(lower) {
-			ts = lower
+		if !isSearch && ts.Before(lower) {
+			ts = lower // clamp to the window only when browsing
 		}
 		tt := ts.UTC()
 		p.Since = &tt
-	} else {
-		p.Since = &lower
-	}
-
-	if qs := q.Get("q"); len([]rune(qs)) >= 2 {
-		if len([]rune(qs)) > maxQ {
-			qs = string([]rune(qs)[:maxQ])
-		}
-		p.Q = &qs
+	} else if !isSearch {
+		p.Since = &lower // default window; a search omits it → all-time
 	}
 
 	if cur := q.Get("cursor"); cur != "" {

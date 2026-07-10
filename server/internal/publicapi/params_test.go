@@ -103,6 +103,29 @@ func TestParseQLenRules(t *testing.T) {
 	}
 }
 
+func TestParseSearchIsAllTime(t *testing.T) {
+	// A text search drops the default 7-day floor so the whole archive is
+	// searchable; browsing (no q) keeps the window.
+	p, _ := parseListParams(vals("q=Harness"), refNow)
+	if p.Q == nil || *p.Q != "Harness" {
+		t.Fatalf("q: %v", p.Q)
+	}
+	if p.Since != nil {
+		t.Fatalf("search should have no since floor, got %v", p.Since)
+	}
+	// An explicit older since with a search is honored, not clamped to now-7d.
+	old := refNow.Add(-90 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	p, _ = parseListParams(vals("q=Harness&since="+old), refNow)
+	if p.Since == nil || !p.Since.Equal(refNow.Add(-90*24*time.Hour)) {
+		t.Fatalf("search since should not clamp: %v", p.Since)
+	}
+	// Browsing (no q) still defaults to the 7-day window.
+	p, _ = parseListParams(vals(""), refNow)
+	if p.Since == nil || !p.Since.Equal(refNow.Add(-7*24*time.Hour)) {
+		t.Fatalf("browse should keep 7d window: %v", p.Since)
+	}
+}
+
 func lenPtr(s *string) int {
 	if s == nil {
 		return -1

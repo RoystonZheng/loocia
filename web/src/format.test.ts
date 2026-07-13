@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBeijingTime, categoryLabel } from './format'
+import { formatBeijingTime, categoryLabel, scoreLabel, scoreTier } from './format'
 
 describe('formatBeijingTime', () => {
   it('renders a UTC instant in Beijing time (UTC+8)', () => {
@@ -35,5 +35,28 @@ describe('categoryLabel', () => {
   it('passes through unknown/undefined', () => {
     expect(categoryLabel('weird')).toBe('weird')
     expect(categoryLabel(undefined)).toBe('')
+  })
+})
+
+describe('scoreLabel', () => {
+  it('maps 1-5 to D..S', () => {
+    expect(scoreLabel(5)).toBe('S')
+    expect(scoreLabel(4)).toBe('A')
+    expect(scoreLabel(3)).toBe('B')
+    expect(scoreLabel(2)).toBe('C')
+    expect(scoreLabel(1)).toBe('D')
+  })
+  it('clamps out-of-range and handles null', () => {
+    expect(scoreLabel(9)).toBe('S')
+    expect(scoreLabel(0)).toBe('D')
+    expect(scoreLabel(null)).toBe('')
+    expect(scoreLabel(undefined)).toBe('')
+  })
+})
+
+describe('scoreTier', () => {
+  it('returns the same letter as scoreLabel for valid input', () => {
+    expect(scoreTier(5)).toBe('S')
+    expect(scoreTier(1)).toBe('D')
   })
 })

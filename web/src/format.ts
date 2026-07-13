@@ -46,3 +46,19 @@ export function categoryLabel(slug: string | undefined): string {
   if (!slug) return ''
   return CATEGORY_LABELS[slug] ?? slug
 }
+
+const SCORE_LETTERS = ['D', 'C', 'B', 'A', 'S'] as const // index = score-1
+
+// scoreLabel maps a 1-5 tier to its display letter (5→S … 1→D). Out-of-range is
+// clamped; null/undefined → '' (no badge).
+export function scoreLabel(score: number | null | undefined): string {
+  if (score == null) return ''
+  const n = Math.max(1, Math.min(5, Math.round(score)))
+  return SCORE_LETTERS[n - 1]
+}
+
+// scoreTier is the letter used for the `data-tier` styling hook; identical to
+// scoreLabel for valid input.
+export function scoreTier(score: number | null | undefined): string {
+  return scoreLabel(score)
+}

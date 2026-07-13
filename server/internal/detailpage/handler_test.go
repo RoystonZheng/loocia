@@ -26,7 +26,7 @@ func mkItem(id string) *items.Item {
 	en := "Original English Title"
 	summary := "这是中文摘要。"
 	cat := items.CategoryAIModels
-	score := 88
+	score := 4
 	return &items.Item{
 		ID: id, Title: "中文标题", TitleEN: &en, URL: "https://source.example/post",
 		Permalink: "/items/" + id, Source: "OpenAI Blog", PublishedAt: &pub,

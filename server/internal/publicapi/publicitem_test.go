@@ -13,8 +13,8 @@ func TestToPublicExposesOnlyPublicFields(t *testing.T) {
 	en := "English"
 	summary := "摘要"
 	cat := items.CategoryAIModels
-	score := 88
-	rel := 91
+	score := 4
+	rel := 5
 	sel := true
 	it := items.Item{
 		ID: "id1", Title: "标题", TitleEN: &en, URL: "https://x/y", Permalink: "/items/id1",
@@ -29,7 +29,7 @@ func TestToPublicExposesOnlyPublicFields(t *testing.T) {
 	if p.TitleEN == nil || *p.TitleEN != "English" || p.Summary == nil || *p.Summary != "摘要" {
 		t.Fatalf("nullable fields: %+v", p)
 	}
-	if p.Category == nil || *p.Category != "ai-models" || p.Score == nil || *p.Score != 88 || !p.Selected {
+	if p.Category == nil || *p.Category != "ai-models" || p.Score == nil || *p.Score != 4 || !p.Selected {
 		t.Fatalf("category/score/selected: %+v", p)
 	}
 	if p.PublishedAt == nil || !p.PublishedAt.Equal(pub) {

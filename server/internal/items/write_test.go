@@ -16,7 +16,7 @@ func TestUpsertThenGetByIDRoundTrips(t *testing.T) {
 	in.TitleEN = strptr("English Title")
 	in.Summary = strptr("摘要")
 	in.Category = strptr(CategoryAIModels)
-	in.Score = intptr(88)
+	in.Score = intptr(4)
 	in.Selected = true
 
 	if err := s.Upsert(ctx, in); err != nil {
@@ -29,7 +29,7 @@ func TestUpsertThenGetByIDRoundTrips(t *testing.T) {
 	if got.Title != in.Title || got.TitleEN == nil || *got.TitleEN != "English Title" {
 		t.Fatalf("title round-trip mismatch: %+v", got)
 	}
-	if got.Category == nil || *got.Category != CategoryAIModels || got.Score == nil || *got.Score != 88 {
+	if got.Category == nil || *got.Category != CategoryAIModels || got.Score == nil || *got.Score != 4 {
 		t.Fatalf("category/score round-trip mismatch: %+v", got)
 	}
 	if !got.Selected || !got.Present {

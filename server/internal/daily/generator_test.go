@@ -38,12 +38,12 @@ func TestGenerateBuildsAndStoresReport(t *testing.T) {
 	day := time.Date(2026, 5, 7, 0, 0, 0, 0, beijing)
 
 	seedItems(t, itemsStore,
-		mkSelItem("in1", "ai-models", 90, day.Add(2*time.Hour)),
-		mkSelItem("in2", "industry", 75, day.Add(20*time.Hour)),
-		mkSelItem("out-after", "ai-models", 99, day.Add(25*time.Hour)), // outside window
+		mkSelItem("in1", "ai-models", 5, day.Add(2*time.Hour)),
+		mkSelItem("in2", "industry", 4, day.Add(20*time.Hour)),
+		mkSelItem("out-after", "ai-models", 5, day.Add(25*time.Hour)), // outside window
 	)
 	// Unselected item in window must be excluded.
-	unsel := mkSelItem("unsel", "ai-models", 88, day.Add(3*time.Hour))
+	unsel := mkSelItem("unsel", "ai-models", 4, day.Add(3*time.Hour))
 	unsel.Selected = false
 	seedItems(t, itemsStore, unsel)
 
@@ -84,7 +84,7 @@ func TestGenerateBuildsAndStoresReport(t *testing.T) {
 func TestGenerateLLMFailureYieldsNilLead(t *testing.T) {
 	s, itemsStore := newLiveStores(t)
 	day := time.Date(2026, 5, 7, 0, 0, 0, 0, beijing)
-	seedItems(t, itemsStore, mkSelItem("in1", "ai-models", 90, day.Add(2*time.Hour)))
+	seedItems(t, itemsStore, mkSelItem("in1", "ai-models", 5, day.Add(2*time.Hour)))
 
 	g := NewGenerator(itemsStore, s, fakeLLM{err: errors.New("llm down")})
 	rep, err := g.Generate(context.Background(), "2026-05-07", day.Add(25*time.Hour))

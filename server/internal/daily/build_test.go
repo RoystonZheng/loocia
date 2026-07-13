@@ -27,16 +27,16 @@ func mkSelItem(id, cat string, score int, pub time.Time) items.Item {
 func TestBuildSectionsGroupsAndOrders(t *testing.T) {
 	base := time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC)
 	its := []items.Item{
-		mkSelItem("p1", "paper", 70, base),
-		mkSelItem("m1", "ai-models", 80, base),
-		mkSelItem("m2", "ai-models", 95, base.Add(time.Hour)),
+		mkSelItem("p1", "paper", 3, base),
+		mkSelItem("m1", "ai-models", 4, base),
+		mkSelItem("m2", "ai-models", 5, base.Add(time.Hour)),
 	}
 	secs := buildSections(its)
 	// Fixed order: ai-models before paper; empty categories skipped.
 	if len(secs) != 2 || secs[0].Label != "模型发布/更新" || secs[1].Label != "论文研究" {
 		t.Fatalf("section order: %+v", secs)
 	}
-	// Within section: score desc → m2 (95) before m1 (80).
+	// Within section: score desc → m2 (5) before m1 (4).
 	if secs[0].Items[0].Title != "标题-m2" || secs[0].Items[1].Title != "标题-m1" {
 		t.Fatalf("in-section order: %+v", secs[0].Items)
 	}
@@ -52,7 +52,7 @@ func TestBuildSectionsGroupsAndOrders(t *testing.T) {
 
 func TestBuildSectionsSkipsUncategorized(t *testing.T) {
 	base := time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC)
-	noCat := mkSelItem("x", "ai-models", 50, base)
+	noCat := mkSelItem("x", "ai-models", 3, base)
 	noCat.Category = nil
 	secs := buildSections([]items.Item{noCat})
 	if len(secs) != 0 {
@@ -64,7 +64,7 @@ func TestBuildFlashesTakesMostRecent(t *testing.T) {
 	base := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
 	var its []items.Item
 	for i := 0; i < 7; i++ {
-		its = append(its, mkSelItem(string(rune('a'+i)), "industry", 60, base.Add(time.Duration(i)*time.Hour)))
+		its = append(its, mkSelItem(string(rune('a'+i)), "industry", 3, base.Add(time.Duration(i)*time.Hour)))
 	}
 	fl := buildFlashes(its, 5)
 	if len(fl) != 5 {

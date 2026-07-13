@@ -26,7 +26,7 @@ func (f *fakeLister) List(ctx context.Context, p items.ListParams) ([]items.Item
 func mkItem(id string, pub time.Time) items.Item {
 	summary := "s-" + id
 	cat := items.CategoryAIModels
-	score := 70
+	score := 3
 	return items.Item{
 		ID: id, Title: "t-" + id, URL: "https://x/" + id, Permalink: "/items/" + id,
 		Source: "S", PublishedAt: &pub, Summary: &summary, Category: &cat, Score: &score,

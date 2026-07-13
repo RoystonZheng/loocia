@@ -29,7 +29,7 @@ func mkIt(id, source string, score int, pub time.Time) items.Item {
 
 func TestLLMGroupParsesClusters(t *testing.T) {
 	base := time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC)
-	its := []items.Item{mkIt("a", "S1", 90, base), mkIt("b", "S2", 80, base.Add(time.Hour)), mkIt("c", "S3", 70, base)}
+	its := []items.Item{mkIt("a", "S1", 5, base), mkIt("b", "S2", 4, base.Add(time.Hour)), mkIt("c", "S3", 3, base)}
 	f := &fakeLLM{reply: `{"clusters":[{"item_ids":["a","b"]}]}`}
 	groups, err := llmGroup(context.Background(), f, its)
 	if err != nil {
@@ -48,7 +48,7 @@ func TestLLMGroupParsesClusters(t *testing.T) {
 
 func TestLLMGroupStrictValidation(t *testing.T) {
 	base := time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC)
-	its := []items.Item{mkIt("a", "S1", 90, base), mkIt("b", "S2", 80, base)}
+	its := []items.Item{mkIt("a", "S1", 5, base), mkIt("b", "S2", 4, base)}
 
 	// Unknown id → error.
 	f := &fakeLLM{reply: `{"clusters":[{"item_ids":["a","zzz"]}]}`}
@@ -86,12 +86,12 @@ func TestLLMGroupStrictValidation(t *testing.T) {
 func TestChoosePrimaryScoreThenEarliest(t *testing.T) {
 	base := time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC)
 	// b has highest score → primary.
-	p := choosePrimary([]items.Item{mkIt("a", "S1", 70, base), mkIt("b", "S2", 90, base.Add(time.Hour))})
+	p := choosePrimary([]items.Item{mkIt("a", "S1", 3, base), mkIt("b", "S2", 5, base.Add(time.Hour))})
 	if p.ID != "b" {
 		t.Fatalf("primary by score: %s", p.ID)
 	}
 	// Tie on score → earliest report (首报) wins.
-	p = choosePrimary([]items.Item{mkIt("late", "S1", 80, base.Add(2*time.Hour)), mkIt("early", "S2", 80, base)})
+	p = choosePrimary([]items.Item{mkIt("late", "S1", 4, base.Add(2*time.Hour)), mkIt("early", "S2", 4, base)})
 	if p.ID != "early" {
 		t.Fatalf("primary by 首报: %s", p.ID)
 	}
@@ -100,9 +100,9 @@ func TestChoosePrimaryScoreThenEarliest(t *testing.T) {
 func TestBuildClusterAggregates(t *testing.T) {
 	base := time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC)
 	members := []items.Item{
-		mkIt("m2", "量子位", 80, base.Add(2*time.Hour)),
-		mkIt("m1", "机器之心", 90, base),
-		mkIt("m3", "机器之心", 60, base.Add(3*time.Hour)), // duplicate source
+		mkIt("m2", "量子位", 4, base.Add(2*time.Hour)),
+		mkIt("m1", "机器之心", 5, base),
+		mkIt("m3", "机器之心", 2, base.Add(3*time.Hour)), // duplicate source
 	}
 	now := base.Add(3 * time.Hour)
 	c := buildCluster(members, now)

@@ -44,12 +44,12 @@ func TestItemsEndpointLivePaginatesAndProjects(t *testing.T) {
 		en := "EN"
 		summary := "中文摘要"
 		cat := items.CategoryAIModels
-		score := 80 + i
+		score := 5 - i
 		if err := store.Upsert(ctx, items.Item{
 			ID: string(rune('a' + i)), Title: "标题", TitleEN: &en,
 			URL: "https://x/" + string(rune('a'+i)), Permalink: "/items/" + string(rune('a'+i)),
 			Source: "Src", PublishedAt: &pub, Summary: &summary, Category: &cat, Score: &score,
-			AIRelevance: intp(95), AISelected: boolp(true), Selected: true, Present: true,
+			AIRelevance: intp(5), AISelected: boolp(true), Selected: true, Present: true,
 		}); err != nil {
 			t.Fatalf("seed: %v", err)
 		}

@@ -11,8 +11,8 @@ func TestReplaceAllAndListHotTopics(t *testing.T) {
 	ctx := context.Background()
 	base := time.Date(2026, 5, 7, 8, 0, 0, 0, time.UTC)
 
-	seedItem(t, is, "hot1", "OpenAI Blog", 90, base, true)
-	seedItem(t, is, "warm1", "机器之心", 70, base.Add(time.Hour), true)
+	seedItem(t, is, "hot1", "OpenAI Blog", 5, base, true)
+	seedItem(t, is, "warm1", "机器之心", 3, base.Add(time.Hour), true)
 
 	err := cs.ReplaceAll(ctx, []Cluster{
 		{ID: "warm1", PrimaryItemID: "warm1", SourceCount: 2, SourceNames: []string{"机器之心", "量子位"},

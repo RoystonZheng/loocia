@@ -16,9 +16,9 @@ func TestRunClustersAndComputesHeat(t *testing.T) {
 	base := now.Add(-4 * time.Hour)
 
 	// Same event from two sources + one unrelated.
-	seedItem(t, is, "ev1a", "OpenAI Blog", 90, base, true)
-	seedItem(t, is, "ev1b", "机器之心", 75, base.Add(time.Hour), true)
-	seedItem(t, is, "solo", "量子位", 60, base.Add(2*time.Hour), true)
+	seedItem(t, is, "ev1a", "OpenAI Blog", 5, base, true)
+	seedItem(t, is, "ev1b", "机器之心", 4, base.Add(time.Hour), true)
+	seedItem(t, is, "solo", "量子位", 3, base.Add(2*time.Hour), true)
 
 	p := NewPass(is, cs, &fakeLLM{reply: `{"clusters":[{"item_ids":["ev1a","ev1b"]}]}`})
 	res, err := p.Run(ctx, 72*time.Hour, now)
@@ -69,8 +69,8 @@ func TestRunLLMFailureWritesNothing(t *testing.T) {
 	cs, is, _ := newLiveStores(t)
 	ctx := context.Background()
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	seedItem(t, is, "x1", "S1", 80, now.Add(-time.Hour), true)
-	seedItem(t, is, "x2", "S2", 70, now.Add(-2*time.Hour), true)
+	seedItem(t, is, "x1", "S1", 4, now.Add(-time.Hour), true)
+	seedItem(t, is, "x2", "S2", 3, now.Add(-2*time.Hour), true)
 
 	p := NewPass(is, cs, &fakeLLM{err: errors.New("llm down")})
 	if _, err := p.Run(ctx, 72*time.Hour, now); err == nil {
@@ -92,7 +92,7 @@ func TestRunFewItemsClearsClusters(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	// Stale cluster row from a previous pass.
-	seedItem(t, is, "old1", "S1", 80, now.Add(-time.Hour), true)
+	seedItem(t, is, "old1", "S1", 4, now.Add(-time.Hour), true)
 	if err := cs.ReplaceAll(ctx, []Cluster{{ID: "old1", PrimaryItemID: "old1", SourceCount: 3,
 		SourceNames: []string{"S1"}, FirstAt: now, LatestAt: now, Heat: 3}}); err != nil {
 		t.Fatal(err)

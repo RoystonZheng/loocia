@@ -17,6 +17,7 @@ type Enrichment struct {
 	Relevance int    `json:"relevance"`
 	Score     int    `json:"score"`
 	Selected  bool   `json:"selected"`
+	ReasonCN  string `json:"reason_cn"`
 }
 
 var validCategories = map[string]bool{
@@ -34,8 +35,9 @@ const enrichSystemPrompt = `你是 AI 资讯编辑。给定一条资讯的原始
 - "relevance": 整数 0-100，该资讯与「AI/大模型」主题的相关度
 - "score": 整数 0-100，值得阅读的程度
 - "selected": 布尔，是否值得进入每日精选
+- "reason_cn": 一句话（不超过40字）说明这条为什么值得精选/关注（点出关键看点，不要复述标题）
 
-重要：title_cn 和 summary_cn 的文本内容里绝对不要出现英文双引号 " ；需要引用词语或名称时，一律改用中文引号「」或书名号《》。字符串值内出现未转义的英文双引号会破坏 JSON。`
+重要：title_cn、summary_cn、reason_cn 的文本内容里绝对不要出现英文双引号 " ；需要引用词语或名称时，一律改用中文引号「」或书名号《》。字符串值内出现未转义的英文双引号会破坏 JSON。`
 
 // maxPromptBodyRunes caps how much article body we feed the enricher. Full-text
 // sources (公众号 articles run past 100k chars) would otherwise blow up the LLM

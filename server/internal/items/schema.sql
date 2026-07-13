@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS items (
     timeline_at     TIMESTAMPTZ,
     summary         TEXT,
     body            TEXT,
+    reason          TEXT,
     image_url       TEXT,
     video_url       TEXT,
     category        TEXT CHECK (category IN ('ai-models','ai-products','industry','paper','tip')),
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS items (
 ALTER TABLE items ADD COLUMN IF NOT EXISTS cluster_primary BOOLEAN;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS video_url TEXT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS reason TEXT;
 
 CREATE INDEX IF NOT EXISTS items_sortkey_idx
     ON items (COALESCE(published_at, 'epoch'::timestamptz) DESC, id DESC);

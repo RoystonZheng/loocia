@@ -45,12 +45,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Query().Get("format") == "md" {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("X-Robots-Tag", "noindex")
+		w.Header().Set("Content-Disposition", `attachment; filename="aicool-`+shortID(id)+`.md"`)
+		_, _ = w.Write([]byte(buildMarkdown(it)))
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Robots-Tag", "noindex")
 	if err := pageTemplate.Execute(w, toViewModel(it)); err != nil {
 		// header already sent on partial write; best-effort log-free fallback
 		return
 	}
+}
+
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func (h *Handler) renderNotFound(w http.ResponseWriter) {

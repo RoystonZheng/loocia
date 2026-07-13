@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"aihot-server/internal/ingest"
 	"aihot-server/internal/items"
@@ -122,6 +123,9 @@ func toItem(r ingest.RawItem, e Enrichment) items.Item {
 	if r.Title != "" && r.Title != e.TitleCN {
 		orig := r.Title
 		it.TitleEN = &orig
+	}
+	if reason := strings.TrimSpace(e.ReasonCN); reason != "" {
+		it.Reason = &reason
 	}
 	return it
 }

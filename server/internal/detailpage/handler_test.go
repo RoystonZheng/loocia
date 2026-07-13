@@ -56,16 +56,15 @@ func TestRendersItemPage(t *testing.T) {
 		"中文标题", "这是中文摘要。", "OpenAI Blog", "模型发布/更新",
 		"2026-05-07 12:00", "Original English Title",
 		`href="https://source.example/post"`, "阅读原文", // outbound
-		`href="/"`, "返回", // back to feed
+		`href="/"`, "全部 AI 动态", // sidebar shell nav back to the SPA
+		"AI 摘要",         // summary box label
+		"导出 Markdown",   // export affordance
 		"<title>中文标题", // page title
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in page:\n%s", want, body)
 		}
 	}
-	// The third-party original body must NOT be dumped (anti-scrape) — we only
-	// have summary; assert no raw-body field leaks (there is none to leak, but
-	// guard the intent): the source url appears only as an href, not inlined text.
 }
 
 func TestMissingItemIs404(t *testing.T) {
@@ -164,6 +163,59 @@ func TestUsesCoolBlueAccent(t *testing.T) {
 	}
 	if strings.Contains(body, "#1a7f5a") {
 		t.Fatalf("stale green accent still present:\n%s", body)
+	}
+}
+
+func TestRendersReasonAndBody(t *testing.T) {
+	it := mkItem("rb")
+	reason := "首个把 Harness 工程化落地的实战复盘"
+	body := "# 段落标题\n\n这是**正文**内容。"
+	it.Reason = &reason
+	it.Body = &body
+	it.SourceKind = "mp"
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"rb": it}})
+	out := get(t, h, "/items/rb").Body.String()
+	if !strings.Contains(out, "精选理由") || !strings.Contains(out, reason) {
+		t.Fatalf("reason box missing:\n%s", out)
+	}
+	if !strings.Contains(out, "原文") || !strings.Contains(out, "<strong>正文</strong>") {
+		t.Fatalf("rendered body missing:\n%s", out)
+	}
+}
+
+func TestReasonBoxAbsentWhenNil(t *testing.T) {
+	it := mkItem("nr") // mkItem sets no Reason
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"nr": it}})
+	if strings.Contains(get(t, h, "/items/nr").Body.String(), "精选理由") {
+		t.Fatal("reason box should be absent when Reason is nil")
+	}
+}
+
+func TestExportMarkdown(t *testing.T) {
+	it := mkItem("md")
+	body := "# 原始\n\n正文段落。"
+	it.Body = &body
+	it.SourceKind = "mp"
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"md": it}})
+	rr := get(t, h, "/items/md?format=md")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code: %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
+		t.Fatalf("content-type: %q", ct)
+	}
+	if cd := rr.Header().Get("Content-Disposition"); !strings.Contains(cd, "attachment") {
+		t.Fatalf("expected download disposition: %q", cd)
+	}
+	out := rr.Body.String()
+	for _, want := range []string{"# 中文标题", "## 摘要", "## 原文", "正文段落。", "https://source.example/post"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("markdown missing %q:\n%s", want, out)
+		}
+	}
+	// Markdown export must not be HTML.
+	if strings.Contains(out, "<!doctype html>") {
+		t.Fatalf("export should be markdown, not HTML:\n%s", out)
 	}
 }
 

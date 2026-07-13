@@ -28,6 +28,7 @@ type Item struct {
 	TimelineAt     *time.Time
 	Summary        *string
 	Body           *string
+	Reason         *string
 	ImageURL       *string
 	VideoURL       *string
 	Category       *string

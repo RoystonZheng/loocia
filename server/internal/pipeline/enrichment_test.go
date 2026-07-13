@@ -73,6 +73,23 @@ func TestBuildPromptCapsLongBody(t *testing.T) {
 	}
 }
 
+func TestParseEnrichmentReadsReason(t *testing.T) {
+	in := `{"title_cn":"标题","summary_cn":"摘要","category":"tip","relevance":80,"score":75,"selected":true,"reason_cn":"首个可复用的实战范式"}`
+	e, err := parseEnrichment(in)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if e.ReasonCN != "首个可复用的实战范式" {
+		t.Fatalf("reason: %q", e.ReasonCN)
+	}
+}
+
+func TestSystemPromptListsReason(t *testing.T) {
+	if !strings.Contains(enrichSystemPrompt, "reason_cn") {
+		t.Fatal("system prompt should ask for reason_cn")
+	}
+}
+
 func TestSystemPromptForbidsAsciiQuotes(t *testing.T) {
 	// The model emitting unescaped ASCII double-quotes inside Chinese summaries
 	// broke json.Unmarshal; the prompt must steer it to 「」 instead. Lock it in.

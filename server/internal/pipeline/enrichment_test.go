@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -43,13 +44,24 @@ func TestParseEnrichmentRejectsBadCategory(t *testing.T) {
 func TestParseEnrichmentClampsScoreAndRelevance(t *testing.T) {
 	// The model occasionally emits an old-scale or out-of-band number; clamp
 	// into [1,5] instead of dropping the item.
-	raw := `{"title_cn":"t","summary_cn":"s","category":"tip","relevance":90,"score":0}`
-	e, err := parseEnrichment(raw)
-	if err != nil {
-		t.Fatalf("parseEnrichment should not fail on out-of-range: %v", err)
+	cases := []struct {
+		relevance, score         int
+		wantRelevance, wantScore int
+	}{
+		{90, 0, 5, 1}, // old-scale relevance + below-floor score
+		{5, 6, 5, 5},  // just over the top boundary clamps to 5
+		{1, 3, 1, 3},  // valid endpoints/mid pass through unchanged
 	}
-	if e.Score != 1 || e.Relevance != 5 {
-		t.Fatalf("clamp: score=%d relevance=%d, want score=1 relevance=5", e.Score, e.Relevance)
+	for _, c := range cases {
+		raw := fmt.Sprintf(`{"title_cn":"t","summary_cn":"s","category":"tip","relevance":%d,"score":%d}`, c.relevance, c.score)
+		e, err := parseEnrichment(raw)
+		if err != nil {
+			t.Fatalf("parseEnrichment should not fail on out-of-range: %v", err)
+		}
+		if e.Score != c.wantScore || e.Relevance != c.wantRelevance {
+			t.Fatalf("clamp(rel=%d score=%d): got rel=%d score=%d, want rel=%d score=%d",
+				c.relevance, c.score, e.Relevance, e.Score, c.wantRelevance, c.wantScore)
+		}
 	}
 }
 
@@ -96,10 +108,18 @@ func TestSystemPromptListsReason(t *testing.T) {
 }
 
 func TestSystemPromptHasScoreTiers(t *testing.T) {
-	// Five ordinal tiers, not the old 0-100 bands.
-	for _, tier := range []string{"5", "4", "3", "2", "1"} {
+	// Assert on distinctive tier phrases, not bare digits — digits like "5"/"1"
+	// appear all over the prompt, so a digit check can't detect a regression to
+	// the old 90-100/75-89 bands. Lock the 五档 rubric by its actual wording.
+	for _, tier := range []string{"5 = 重大突破", "4 = 高价值", "3 = 值得一看", "2 = 一般", "1 = 低"} {
 		if !strings.Contains(enrichSystemPrompt, tier) {
 			t.Fatalf("score rubric missing tier %q", tier)
+		}
+	}
+	// The old 0-100 bands must be gone.
+	for _, oldBand := range []string{"90-100", "75-89", "60-74"} {
+		if strings.Contains(enrichSystemPrompt, oldBand) {
+			t.Fatalf("prompt still contains old 0-100 band %q", oldBand)
 		}
 	}
 	for _, kw := range []string{"工程", "行业", "深度", "营销"} {

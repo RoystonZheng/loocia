@@ -90,6 +90,14 @@ func TestSystemPromptListsReason(t *testing.T) {
 	}
 }
 
+func TestSystemPromptHasScoreBands(t *testing.T) {
+	for _, band := range []string{"90-100", "75-89", "60-74", "40-59", "0-39"} {
+		if !strings.Contains(enrichSystemPrompt, band) {
+			t.Fatalf("score rubric missing band %q", band)
+		}
+	}
+}
+
 func TestSystemPromptForbidsAsciiQuotes(t *testing.T) {
 	// The model emitting unescaped ASCII double-quotes inside Chinese summaries
 	// broke json.Unmarshal; the prompt must steer it to 「」 instead. Lock it in.

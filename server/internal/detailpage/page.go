@@ -31,7 +31,8 @@ type viewModel struct {
 	Selected    bool
 	Category    string // localized label, "" when absent
 	PublishedAt string // "YYYY-MM-DD HH:MM" Beijing, "" when absent
-	Score       string // "" when absent
+	Score       string // "" when absent (tier letter S/A/B/C/D)
+	Tier        string // same letter, for the data-tier styling hook
 	HasScore    bool
 	ImageURL    string // "" when absent
 	VideoURL    string // "" when absent
@@ -70,7 +71,8 @@ func toViewModel(it *items.Item) viewModel {
 		vm.PublishedAt = it.PublishedAt.In(beijing).Format("2006-01-02 15:04")
 	}
 	if it.Score != nil {
-		vm.Score = itoa(*it.Score)
+		vm.Score = scoreLetter(*it.Score)
+		vm.Tier = vm.Score
 		vm.HasScore = true
 	}
 	if it.ImageURL != nil {
@@ -111,27 +113,16 @@ func isVideoFile(u string) bool {
 	return false
 }
 
-func itoa(i int) string {
-	// small helper to avoid importing strconv just for one call site
-	if i == 0 {
-		return "0"
+// scoreLetter maps a 1-5 tier to its display letter (5→S … 1→D), clamped.
+func scoreLetter(n int) string {
+	letters := []string{"D", "C", "B", "A", "S"}
+	if n < 1 {
+		n = 1
 	}
-	neg := i < 0
-	if neg {
-		i = -i
+	if n > 5 {
+		n = 5
 	}
-	var b [20]byte
-	pos := len(b)
-	for i > 0 {
-		pos--
-		b[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		pos--
-		b[pos] = '-'
-	}
-	return string(b[pos:])
+	return letters[n-1]
 }
 
 // pageTemplate is self-contained (inline CSS+JS, no external assets), noindex,
@@ -173,7 +164,16 @@ a{color:var(--accent);}
 .topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
 .src{font-weight:700;font-size:14px;color:var(--text-2);}
 .badge-sel{font-size:12px;font-weight:700;color:var(--gold);background:var(--gold-soft);border-radius:999px;padding:2px 10px;}
-.badge-score{font-size:12px;font-weight:700;color:var(--accent-2);background:var(--accent-soft);border-radius:999px;padding:2px 10px;font-variant-numeric:tabular-nums;}
+.badge-score{font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px;letter-spacing:.3px;}
+.badge-score[data-tier="S"]{color:#b7791f;background:#fff4d6;}
+.badge-score[data-tier="A"]{color:var(--accent-2);background:var(--accent-soft);}
+.badge-score[data-tier="B"]{color:#0f8a4f;background:#e6f7ee;}
+.badge-score[data-tier="C"]{color:#6b7078;background:#eef0f2;}
+.badge-score[data-tier="D"]{color:#8b9098;background:#f2f3f5;}
+:root[data-theme="dark"] .badge-score[data-tier="S"]{color:#e5b95b;background:#2a2312;}
+:root[data-theme="dark"] .badge-score[data-tier="B"]{color:#4fcf8e;background:#10261b;}
+:root[data-theme="dark"] .badge-score[data-tier="C"]{color:#9096a0;background:#1c1f25;}
+:root[data-theme="dark"] .badge-score[data-tier="D"]{color:#7c828b;background:#191c22;}
 .export{margin-left:auto;font-size:13px;font-weight:600;color:var(--text-2);border:1px solid var(--border);background:var(--card);border-radius:8px;padding:6px 12px;text-decoration:none;}
 .export:hover{border-color:var(--accent);color:var(--accent);}
 h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
@@ -225,7 +225,7 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
       <div class="topbar">
         <span class="src">{{.Source}}</span>
         {{if .Selected}}<span class="badge-sel">✦ 精选</span>{{end}}
-        {{if .HasScore}}<span class="badge-score">{{.Score}}</span>{{end}}
+        {{if .HasScore}}<span class="badge-score" data-tier="{{.Tier}}">{{.Score}}</span>{{end}}
         <a class="export" href="{{.ExportURL}}">导出 Markdown ↓</a>
       </div>
       <h1>{{.Title}}</h1>

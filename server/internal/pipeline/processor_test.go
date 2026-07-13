@@ -11,33 +11,32 @@ import (
 	"aihot-server/internal/llm"
 )
 
-func TestToItemSelectionFloor(t *testing.T) {
+func TestToItemSelectionByScore(t *testing.T) {
 	raw := ingest.RawItem{ID: "r1", URL: "https://x/1", Source: "S", Title: "Orig"}
 	cases := []struct {
-		name        string
-		llmSelected bool
-		relevance   int
-		wantSel     bool
+		name      string
+		score     int
+		wantSel   bool
+		wantAISel bool
 	}{
-		{"llm selected always wins", true, 10, true},
-		{"floor at 60 inclusive", false, 60, true},
-		{"above floor", false, 85, true},
-		{"below floor stays out", false, 59, false},
-		{"low relevance unselected", false, 20, false},
+		{"S is selected + strong", 5, true, true},
+		{"A is selected + strong", 4, true, true},
+		{"B is selected, not strong", 3, true, false},
+		{"C is not selected", 2, false, false},
+		{"D is not selected", 1, false, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			e := Enrichment{TitleCN: "标题", SummaryCN: "摘要", Category: items.CategoryAIModels, Relevance: c.relevance, Score: 50, Selected: c.llmSelected}
+			e := Enrichment{TitleCN: "标题", SummaryCN: "摘要", Category: items.CategoryAIModels, Relevance: 4, Score: c.score}
 			it := toItem(raw, e)
 			if it.Selected != c.wantSel {
-				t.Fatalf("Selected: got %v want %v (llm=%v rel=%d)", it.Selected, c.wantSel, c.llmSelected, c.relevance)
+				t.Fatalf("Selected: got %v want %v (score=%d)", it.Selected, c.wantSel, c.score)
 			}
-			// ai_selected must preserve the RAW llm verdict regardless of the floor.
-			if it.AISelected == nil || *it.AISelected != c.llmSelected {
-				t.Fatalf("AISelected should preserve raw verdict %v, got %v", c.llmSelected, it.AISelected)
+			// ai_selected now records the "strong pick" signal (score>=4).
+			if it.AISelected == nil || *it.AISelected != c.wantAISel {
+				t.Fatalf("AISelected: got %v want %v (score=%d)", it.AISelected, c.wantAISel, c.score)
 			}
-			// ai_relevance preserved.
-			if it.AIRelevance == nil || *it.AIRelevance != c.relevance {
+			if it.AIRelevance == nil || *it.AIRelevance != 4 {
 				t.Fatalf("AIRelevance: %v", it.AIRelevance)
 			}
 		})
@@ -60,7 +59,7 @@ func TestProcessBatchEnrichesAndMarksProcessed(t *testing.T) {
 
 	enr := fakeEnricher{out: Enrichment{
 		TitleCN: "中文标题", SummaryCN: "中文摘要", Category: "ai-models",
-		Relevance: 92, Score: 88, Selected: true,
+		Relevance: 5, Score: 4,
 	}}
 	p := NewProcessor(raw, itemsStore, enr)
 
@@ -82,7 +81,7 @@ func TestProcessBatchEnrichesAndMarksProcessed(t *testing.T) {
 	if got.TitleEN == nil || *got.TitleEN != "Original English Title" {
 		t.Fatalf("title_en should hold the original: %+v", got)
 	}
-	if got.Category == nil || *got.Category != "ai-models" || got.Score == nil || *got.Score != 88 {
+	if got.Category == nil || *got.Category != "ai-models" || got.Score == nil || *got.Score != 4 {
 		t.Fatalf("category/score: %+v", got)
 	}
 	if got.AISelected == nil || !*got.AISelected || !got.Selected {

@@ -36,6 +36,10 @@ func TestRenderBodyImagesLazyAndSelfHiding(t *testing.T) {
 	if !strings.Contains(out, `loading="lazy"`) || !strings.Contains(out, "onerror=") {
 		t.Fatalf("image should be lazy + self-hiding: %q", out)
 	}
+	// no-referrer bypasses WeChat's anti-hotlink placeholder.
+	if !strings.Contains(out, `referrerpolicy="no-referrer"`) {
+		t.Fatalf("image should send no referrer: %q", out)
+	}
 }
 
 func TestRenderBodyEmpty(t *testing.T) {

@@ -29,6 +29,9 @@ export function ItemCard({ item }: { item: PublicItem }) {
             src={item.imageUrl}
             alt=""
             loading="lazy"
+            // WeChat (mmbiz.qpic.cn) serves an anti-hotlink placeholder unless the
+            // request carries no Referer; no-referrer gets the real cover image.
+            referrerPolicy="no-referrer"
             // External CDN images can 404/hotlink-block; hide rather than show a broken icon.
             onError={(e) => {
               const wrap = (e.currentTarget as HTMLImageElement).closest('.card-media') as HTMLElement | null

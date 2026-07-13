@@ -242,7 +242,7 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
         {{else}}<video controls preload="metadata"{{if .ImageURL}} poster="{{.ImageURL}}"{{end}} src="{{.VideoURL}}"></video>{{end}}
       </div>
       {{else if .ImageURL}}
-      <div class="media"><img src="{{.ImageURL}}" alt="" loading="lazy" onerror="this.parentNode.style.display='none'"></div>
+      <div class="media"><img src="{{.ImageURL}}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.style.display='none'"></div>
       {{end}}
       {{if .Body}}<div class="orig-h">原文</div><div class="orig">{{.Body}}</div>{{end}}
       <div class="tags">

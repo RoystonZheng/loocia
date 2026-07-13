@@ -37,7 +37,9 @@ func renderBody(sourceKind, body string) template.HTML {
 		raw = body
 	}
 	clean := sanitizer.Sanitize(raw)
-	// Post-sanitize (so this fixed handler survives): lazy-load + hide broken imgs.
-	clean = imgTagRe.ReplaceAllString(clean, `<img loading="lazy" onerror="this.style.display='none'" `)
+	// Post-sanitize (so these fixed handlers survive): lazy-load, hide broken, and
+	// send no Referer — WeChat's mmbiz.qpic.cn serves an anti-hotlink placeholder
+	// when the Referer isn't a weixin domain; no-referrer gets the real image.
+	clean = imgTagRe.ReplaceAllString(clean, `<img loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'" `)
 	return template.HTML(clean)
 }

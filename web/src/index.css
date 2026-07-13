@@ -127,7 +127,17 @@ button { font-family: inherit; }
 .card-avatar { width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--dot)); flex-shrink: 0; opacity: .85; }
 .card-badges { display: flex; align-items: center; gap: 8px; }
 .badge-sel { font-size: 11px; color: var(--gold); background: var(--gold-soft); border: 1px solid #f0d9a8; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
-.badge-score { font-size: 12px; color: var(--accent-2); background: var(--accent-soft); border-radius: 999px; padding: 2px 9px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.badge-score { font-size: 12px; border-radius: 999px; padding: 2px 9px; font-weight: 700; letter-spacing: .3px; }
+.badge-score[data-tier="S"] { color: #b7791f; background: #fff4d6; }
+.badge-score[data-tier="A"] { color: var(--accent-2); background: var(--accent-soft); }
+.badge-score[data-tier="B"] { color: #0f8a4f; background: #e6f7ee; }
+.badge-score[data-tier="C"] { color: #6b7078; background: #eef0f2; }
+.badge-score[data-tier="D"] { color: #8b9098; background: #f2f3f5; }
+:root[data-theme="dark"] .badge-score[data-tier="S"] { color: #e5b95b; background: #2a2312; }
+:root[data-theme="dark"] .badge-score[data-tier="A"] { color: var(--accent-2); background: var(--accent-soft); }
+:root[data-theme="dark"] .badge-score[data-tier="B"] { color: #4fcf8e; background: #10261b; }
+:root[data-theme="dark"] .badge-score[data-tier="C"] { color: #9096a0; background: #1c1f25; }
+:root[data-theme="dark"] .badge-score[data-tier="D"] { color: #7c828b; background: #191c22; }
 .card-title { display: block; font-size: 16px; font-weight: 700; line-height: 1.45; color: var(--text); margin-bottom: 6px; }
 .card-title:hover { color: var(--accent-2); }
 .card-summary { color: var(--text-2); font-size: 14px; line-height: 1.65; }

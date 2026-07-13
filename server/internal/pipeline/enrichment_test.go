@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseEnrichmentPlainJSON(t *testing.T) {
-	raw := `{"title_cn":"模型X发布","summary_cn":"简短摘要。","category":"ai-models","relevance":90,"score":85,"selected":true}`
+	raw := `{"title_cn":"模型X发布","summary_cn":"简短摘要。","category":"ai-models","relevance":5,"score":4,"reason_cn":"看点"}`
 	e, err := parseEnrichment(raw)
 	if err != nil {
 		t.Fatalf("parseEnrichment: %v", err)
@@ -16,35 +16,40 @@ func TestParseEnrichmentPlainJSON(t *testing.T) {
 	if e.TitleCN != "模型X发布" || e.SummaryCN != "简短摘要。" {
 		t.Fatalf("title/summary: %+v", e)
 	}
-	if e.Category != "ai-models" || e.Relevance != 90 || e.Score != 85 || !e.Selected {
+	if e.Category != "ai-models" || e.Relevance != 5 || e.Score != 4 {
 		t.Fatalf("fields: %+v", e)
 	}
 }
 
 func TestParseEnrichmentStripsCodeFence(t *testing.T) {
-	raw := "```json\n{\"title_cn\":\"标题\",\"summary_cn\":\"摘要\",\"category\":\"paper\",\"relevance\":70,\"score\":60,\"selected\":false}\n```"
+	raw := "```json\n{\"title_cn\":\"标题\",\"summary_cn\":\"摘要\",\"category\":\"paper\",\"relevance\":3,\"score\":3}\n```"
 	e, err := parseEnrichment(raw)
 	if err != nil {
 		t.Fatalf("parseEnrichment: %v", err)
 	}
-	if e.Category != "paper" || e.Selected {
+	if e.Category != "paper" {
 		t.Fatalf("fields: %+v", e)
 	}
 }
 
 func TestParseEnrichmentRejectsBadCategory(t *testing.T) {
-	raw := `{"title_cn":"t","summary_cn":"s","category":"nonsense","relevance":50,"score":50,"selected":false}`
+	raw := `{"title_cn":"t","summary_cn":"s","category":"nonsense","relevance":3,"score":3}`
 	_, err := parseEnrichment(raw)
 	if err == nil {
 		t.Fatal("expected error for invalid category")
 	}
 }
 
-func TestParseEnrichmentRejectsOutOfRangeScore(t *testing.T) {
-	raw := `{"title_cn":"t","summary_cn":"s","category":"tip","relevance":50,"score":150,"selected":false}`
-	_, err := parseEnrichment(raw)
-	if err == nil {
-		t.Fatal("expected error for score>100")
+func TestParseEnrichmentClampsScoreAndRelevance(t *testing.T) {
+	// The model occasionally emits an old-scale or out-of-band number; clamp
+	// into [1,5] instead of dropping the item.
+	raw := `{"title_cn":"t","summary_cn":"s","category":"tip","relevance":90,"score":0}`
+	e, err := parseEnrichment(raw)
+	if err != nil {
+		t.Fatalf("parseEnrichment should not fail on out-of-range: %v", err)
+	}
+	if e.Score != 1 || e.Relevance != 5 {
+		t.Fatalf("clamp: score=%d relevance=%d, want score=1 relevance=5", e.Score, e.Relevance)
 	}
 }
 
@@ -74,7 +79,7 @@ func TestBuildPromptCapsLongBody(t *testing.T) {
 }
 
 func TestParseEnrichmentReadsReason(t *testing.T) {
-	in := `{"title_cn":"标题","summary_cn":"摘要","category":"tip","relevance":80,"score":75,"selected":true,"reason_cn":"首个可复用的实战范式"}`
+	in := `{"title_cn":"标题","summary_cn":"摘要","category":"tip","relevance":5,"score":4,"reason_cn":"首个可复用的实战范式"}`
 	e, err := parseEnrichment(in)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -90,11 +95,20 @@ func TestSystemPromptListsReason(t *testing.T) {
 	}
 }
 
-func TestSystemPromptHasScoreBands(t *testing.T) {
-	for _, band := range []string{"90-100", "75-89", "60-74", "40-59", "0-39"} {
-		if !strings.Contains(enrichSystemPrompt, band) {
-			t.Fatalf("score rubric missing band %q", band)
+func TestSystemPromptHasScoreTiers(t *testing.T) {
+	// Five ordinal tiers, not the old 0-100 bands.
+	for _, tier := range []string{"5", "4", "3", "2", "1"} {
+		if !strings.Contains(enrichSystemPrompt, tier) {
+			t.Fatalf("score rubric missing tier %q", tier)
 		}
+	}
+	for _, kw := range []string{"工程", "行业", "深度", "营销"} {
+		if !strings.Contains(enrichSystemPrompt, kw) {
+			t.Fatalf("value model missing keyword %q", kw)
+		}
+	}
+	if strings.Contains(enrichSystemPrompt, "selected") {
+		t.Fatal("prompt should no longer ask for a selected field")
 	}
 }
 

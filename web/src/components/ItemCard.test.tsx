@@ -6,7 +6,7 @@ import type { PublicItem } from '../api/items'
 const base: PublicItem = {
   id: 'a', title: '模型 X 发布', url: 'https://ex.com/a', permalink: '/items/a',
   source: 'OpenAI Blog', publishedAt: '2026-05-07T04:00:00Z',
-  summary: '这是一段中文摘要。', category: 'ai-models', score: 88, selected: true,
+  summary: '这是一段中文摘要。', category: 'ai-models', score: 4, selected: true,
 }
 
 describe('ItemCard', () => {
@@ -15,21 +15,22 @@ describe('ItemCard', () => {
     expect(screen.getByText('模型 X 发布')).toBeInTheDocument()
     expect(screen.getByText('OpenAI Blog')).toBeInTheDocument()
     expect(screen.getByText('模型发布/更新')).toBeInTheDocument()
-    expect(screen.getByText(/88/)).toBeInTheDocument()
+    expect(screen.getByText('A')).toBeInTheDocument()
     expect(screen.getByText('这是一段中文摘要。')).toBeInTheDocument()
   })
 
   it('hides the score badge on non-selected items', () => {
     // The score is a 精选 quality signal; a low score on a 全部 item is noise.
-    render(<ItemCard item={{ ...base, selected: false, score: 18 }} />)
+    render(<ItemCard item={{ ...base, selected: false, score: 1 }} />)
     expect(document.querySelector('.badge-score')).toBeNull()
-    expect(screen.queryByText('18')).toBeNull()
+    expect(screen.queryByText('D')).toBeNull()
   })
 
   it('shows the score badge on selected items', () => {
-    render(<ItemCard item={{ ...base, selected: true, score: 88 }} />)
+    render(<ItemCard item={{ ...base, selected: true, score: 5 }} />)
     expect(document.querySelector('.badge-score')).not.toBeNull()
-    expect(screen.getByText('88')).toBeInTheDocument()
+    expect(screen.getByText('S')).toBeInTheDocument()
+    expect(document.querySelector('.badge-score')!.getAttribute('data-tier')).toBe('S')
   })
 
   it('links the title to the permalink', () => {

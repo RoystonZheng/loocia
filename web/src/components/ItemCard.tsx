@@ -1,5 +1,5 @@
 import type { PublicItem } from '../api/items'
-import { categoryLabel } from '../format'
+import { categoryLabel, scoreLabel, scoreTier } from '../format'
 
 export function ItemCard({ item }: { item: PublicItem }) {
   return (
@@ -14,7 +14,9 @@ export function ItemCard({ item }: { item: PublicItem }) {
           {/* The score is a "why this is 精选" quality signal — only meaningful on
               curated items. Showing it on every 全部 item just advertises low
               numbers (e.g. an 18 on a barely-AI story), so gate it on selected. */}
-          {item.selected && item.score != null && <span className="badge-score">{item.score}</span>}
+          {item.selected && item.score != null && (
+            <span className="badge-score" data-tier={scoreTier(item.score)}>{scoreLabel(item.score)}</span>
+          )}
         </div>
       </div>
 

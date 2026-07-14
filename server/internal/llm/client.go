@@ -54,6 +54,29 @@ func NewClientFromEnv() (*Client, error) {
 	return NewClient(base, key, model), nil
 }
 
+// defaultTranslateModel is a cheaper tier than auto-max; translation of short
+// RSS bodies doesn't need the flagship and shouldn't compete for its RPM.
+const defaultTranslateModel = "deepseek-v4-flash"
+
+// NewTranslateClientFromEnv builds a client on the same proxy/key as
+// NewClientFromEnv but with the lower-tier translation model (AIHOT_TRANSLATE_MODEL
+// override, default deepseek-v4-flash).
+func NewTranslateClientFromEnv() (*Client, error) {
+	key := os.Getenv("AIHOT_LLM_API_KEY")
+	if key == "" {
+		return nil, fmt.Errorf("AIHOT_LLM_API_KEY not set")
+	}
+	base := os.Getenv("AIHOT_LLM_BASE_URL")
+	if base == "" {
+		base = defaultBaseURL
+	}
+	model := os.Getenv("AIHOT_TRANSLATE_MODEL")
+	if model == "" {
+		model = defaultTranslateModel
+	}
+	return NewClient(base, key, model), nil
+}
+
 type msgRequest struct {
 	Model     string       `json:"model"`
 	MaxTokens int          `json:"max_tokens"`

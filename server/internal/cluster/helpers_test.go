@@ -33,8 +33,9 @@ func newLiveStores(t *testing.T) (*Store, *items.Store, *pgxpool.Pool) {
 	if err := is.EnsureSchema(context.Background()); err != nil {
 		t.Fatalf("items EnsureSchema: %v", err)
 	}
+	// CASCADE: items is referenced by item_terms (terms package FK).
 	for _, tbl := range []string{"clusters", "items"} {
-		if _, err := pool.Exec(context.Background(), "TRUNCATE "+tbl); err != nil {
+		if _, err := pool.Exec(context.Background(), "TRUNCATE "+tbl+" CASCADE"); err != nil {
 			t.Fatalf("truncate %s: %v", tbl, err)
 		}
 	}

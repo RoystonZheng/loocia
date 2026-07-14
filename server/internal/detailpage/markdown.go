@@ -33,7 +33,11 @@ func buildMarkdown(it *items.Item) string {
 		b.WriteString(*it.Summary)
 		b.WriteString("\n")
 	}
-	if it.Body != nil && strings.TrimSpace(*it.Body) != "" {
+	if it.SourceKind == "rss" && it.BodyCN != nil && strings.TrimSpace(*it.BodyCN) != "" {
+		b.WriteString("\n## 原文（AI 翻译）\n\n")
+		b.WriteString(*it.BodyCN)
+		b.WriteString("\n")
+	} else if it.Body != nil && strings.TrimSpace(*it.Body) != "" {
 		b.WriteString("\n## 原文\n\n")
 		b.WriteString(*it.Body)
 		b.WriteString("\n")

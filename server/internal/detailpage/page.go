@@ -24,6 +24,8 @@ type viewModel struct {
 	Summary     string        // "" when absent
 	Reason      string        // 精选理由, "" when absent
 	Body        template.HTML // rendered 原文, "" when absent
+	BodyOriginal   template.HTML // 英文原文, 仅 rss+已翻译时非空
+	HasTranslation bool          // true → 展示中文 body + 可切回英文原文
 	Source      string
 	URL         string
 	Domain      string // host of URL, for the 阅读原文·domain label
@@ -57,7 +59,13 @@ func toViewModel(it *items.Item) viewModel {
 	if it.Reason != nil {
 		vm.Reason = *it.Reason
 	}
-	if it.Body != nil {
+	if it.SourceKind == "rss" && it.BodyCN != nil && strings.TrimSpace(*it.BodyCN) != "" && it.Body != nil {
+		// English source with a translation: show Chinese by default, keep the
+		// English original one toggle away.
+		vm.Body = renderBody("rss", *it.BodyCN)
+		vm.BodyOriginal = renderBody("rss", *it.Body)
+		vm.HasTranslation = true
+	} else if it.Body != nil {
 		vm.Body = renderBody(it.SourceKind, *it.Body)
 	}
 	if it.Category != nil {
@@ -140,6 +148,7 @@ function rd(){try{return localStorage.getItem(K)||'system';}catch(e){return 'sys
 function ap(t){var e=t==='system'?(sd()?'dark':'light'):t;document.documentElement.dataset.theme=e;}
 function mk(t){['light','dark','system'].forEach(function(k){var el=document.getElementById('th-'+k);if(el)el.setAttribute('aria-pressed',String(k===t));});}
 window.__setTheme=function(t){try{localStorage.setItem(K,t);}catch(e){}ap(t);mk(t);};
+window.__toggleOrig=function(){var cn=document.getElementById('orig-cn'),en=document.getElementById('orig-en'),b=document.getElementById('tr-toggle');if(!cn||!en||!b)return;var showEn=en.style.display==='none';en.style.display=showEn?'':'none';cn.style.display=showEn?'none':'';b.textContent=showEn?'看中文翻译':'看英文原文';};
 ap(rd());document.addEventListener('DOMContentLoaded',function(){mk(rd());});})();
 </script>
 <style>
@@ -190,6 +199,7 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
 .media .embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
 .orig-h{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:1px;margin:28px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border);}
 .orig{font-size:1.02rem;line-height:1.85;color:var(--text);}
+.tr-toggle{margin-left:8px;font-size:12px;padding:2px 8px;border:1px solid var(--border-2);border-radius:999px;background:var(--card);color:var(--accent-2);cursor:pointer;}
 .orig p{margin:0 0 1.1em;}
 .orig h1,.orig h2,.orig h3{font-size:1.15rem;margin:1.4em 0 .6em;line-height:1.4;}
 .orig img{max-width:100%;height:auto;border-radius:8px;margin:.6em 0;}
@@ -244,7 +254,11 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
       {{else if .ImageURL}}
       <div class="media"><img src="{{.ImageURL}}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.style.display='none'"></div>
       {{end}}
-      {{if .Body}}<div class="orig-h">原文</div><div class="orig">{{.Body}}</div>{{end}}
+      {{if .Body}}
+      <div class="orig-h">原文{{if .HasTranslation}} <button type="button" class="tr-toggle" id="tr-toggle" onclick="__toggleOrig()">看英文原文</button>{{end}}</div>
+      <div class="orig" id="orig-cn">{{.Body}}</div>
+      {{if .HasTranslation}}<div class="orig" id="orig-en" style="display:none">{{.BodyOriginal}}</div>{{end}}
+      {{end}}
       <div class="tags">
         {{if .Category}}<span class="tag">#{{.Category}}</span>{{end}}
       </div>

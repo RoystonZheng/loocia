@@ -1,7 +1,8 @@
 // Package terms stores per-item extracted terms (entities + topics) and serves
 // the aggregations behind the graph view: word-cloud counts, co-occurrence
 // neighbors, and per-term item lists. All queries are real-time SQL — at the
-// current scale (~1k items) precomputation would be waste.
+// current scale (~1k items) precomputation would be waste. Reads exclude
+// duplicate reports (duplicate_of_id IS NULL), matching the feed's semantics.
 package terms
 
 import (
@@ -92,7 +93,7 @@ func (s *Store) Cloud(ctx context.Context, since *time.Time, limit int) ([]Cloud
 		SELECT t.term, MIN(t.kind), COUNT(*)::int AS cnt
 		FROM item_terms t
 		JOIN items i ON i.id = t.item_id
-		WHERE i.present
+		WHERE i.present AND i.duplicate_of_id IS NULL
 		  AND ($1::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $1)
 		GROUP BY t.term
 		ORDER BY cnt DESC, t.term
@@ -121,7 +122,7 @@ func (s *Store) Neighbors(ctx context.Context, term string, since *time.Time, li
 		FROM item_terms a
 		JOIN item_terms b ON b.item_id = a.item_id AND b.term <> a.term
 		JOIN items i ON i.id = a.item_id
-		WHERE a.term = $1 AND i.present
+		WHERE a.term = $1 AND i.present AND i.duplicate_of_id IS NULL
 		  AND ($2::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $2)
 		GROUP BY b.term
 		ORDER BY weight DESC, b.term
@@ -148,7 +149,7 @@ func (s *Store) ItemsForTerm(ctx context.Context, term string, since *time.Time,
 		       i.summary, i.image_url, i.category, i.score, i.selected
 		FROM item_terms t
 		JOIN items i ON i.id = t.item_id
-		WHERE t.term = $1 AND i.present
+		WHERE t.term = $1 AND i.present AND i.duplicate_of_id IS NULL
 		  AND ($2::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $2)
 		ORDER BY COALESCE(i.published_at,'epoch'::timestamptz) DESC, i.id DESC
 		LIMIT $3`, term, since, limit)
@@ -175,7 +176,7 @@ func (s *Store) TermInfo(ctx context.Context, term string, since *time.Time) (ki
 		SELECT COALESCE(MIN(t.kind), ''), COUNT(*)::int
 		FROM item_terms t
 		JOIN items i ON i.id = t.item_id
-		WHERE t.term = $1 AND i.present
+		WHERE t.term = $1 AND i.present AND i.duplicate_of_id IS NULL
 		  AND ($2::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $2)`,
 		term, since).Scan(&kind, &count)
 	return kind, count, err

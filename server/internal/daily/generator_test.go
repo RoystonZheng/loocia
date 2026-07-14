@@ -26,7 +26,7 @@ func newLiveStores(t *testing.T) (*Store, *items.Store) {
 	if err := itemsStore.EnsureSchema(context.Background()); err != nil {
 		t.Fatalf("items EnsureSchema: %v", err)
 	}
-	if _, err := s.pool.Exec(context.Background(), "TRUNCATE items"); err != nil {
+	if _, err := s.pool.Exec(context.Background(), "TRUNCATE items CASCADE"); err != nil {
 		t.Fatalf("truncate items: %v", err)
 	}
 	return s, itemsStore

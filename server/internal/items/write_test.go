@@ -12,12 +12,14 @@ func TestUpsertThenGetByIDRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	pub := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 
+	cn := "中文正文"
 	in := sampleItem("a1", pub)
 	in.TitleEN = strptr("English Title")
 	in.Summary = strptr("摘要")
 	in.Category = strptr(CategoryAIModels)
 	in.Score = intptr(4)
 	in.Selected = true
+	in.BodyCN = &cn
 
 	if err := s.Upsert(ctx, in); err != nil {
 		t.Fatalf("Upsert: %v", err)
@@ -37,6 +39,9 @@ func TestUpsertThenGetByIDRoundTrips(t *testing.T) {
 	}
 	if got.PublishedAt == nil || !got.PublishedAt.Equal(pub) {
 		t.Fatalf("published_at round-trip mismatch: %v", got.PublishedAt)
+	}
+	if got.BodyCN == nil || *got.BodyCN != "中文正文" {
+		t.Fatalf("body_cn round-trip: %v", got.BodyCN)
 	}
 }
 

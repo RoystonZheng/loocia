@@ -14,13 +14,13 @@ var ErrNotFound = errors.New("items: not found")
 const itemColumns = `id, title, title_en, url, permalink, source, source_kind,
 	published_at, timeline_at, summary, body, category,
 	score, ai_relevance, ai_selected, selected, cluster_id, duplicate_of_id, present, cluster_primary,
-	image_url, video_url, reason`
+	image_url, video_url, reason, body_cn`
 
 // Upsert inserts the item or updates every mutable column on id conflict.
 func (s *Store) Upsert(ctx context.Context, it Item) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO items (`+itemColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
 		ON CONFLICT (id) DO UPDATE SET
 			title=EXCLUDED.title, title_en=EXCLUDED.title_en, url=EXCLUDED.url,
 			permalink=EXCLUDED.permalink, source=EXCLUDED.source, source_kind=EXCLUDED.source_kind,
@@ -30,11 +30,11 @@ func (s *Store) Upsert(ctx context.Context, it Item) error {
 			selected=EXCLUDED.selected, cluster_id=EXCLUDED.cluster_id,
 			duplicate_of_id=EXCLUDED.duplicate_of_id, present=EXCLUDED.present,
 			cluster_primary=EXCLUDED.cluster_primary, image_url=EXCLUDED.image_url,
-			video_url=EXCLUDED.video_url, reason=EXCLUDED.reason, updated_at=now()`,
+			video_url=EXCLUDED.video_url, reason=EXCLUDED.reason, body_cn=EXCLUDED.body_cn, updated_at=now()`,
 		it.ID, it.Title, it.TitleEN, it.URL, it.Permalink, it.Source, it.SourceKind,
 		it.PublishedAt, it.TimelineAt, it.Summary, it.Body, it.Category,
 		it.Score, it.AIRelevance, it.AISelected, it.Selected, it.ClusterID, it.DuplicateOfID, it.Present,
-		it.ClusterPrimary, it.ImageURL, it.VideoURL, it.Reason)
+		it.ClusterPrimary, it.ImageURL, it.VideoURL, it.Reason, it.BodyCN)
 	return err
 }
 
@@ -77,6 +77,6 @@ func scanItem(r rowScanner) (Item, error) {
 		&it.ID, &it.Title, &it.TitleEN, &it.URL, &it.Permalink, &it.Source, &it.SourceKind,
 		&it.PublishedAt, &it.TimelineAt, &it.Summary, &it.Body, &it.Category,
 		&it.Score, &it.AIRelevance, &it.AISelected, &it.Selected, &it.ClusterID, &it.DuplicateOfID, &it.Present,
-		&it.ClusterPrimary, &it.ImageURL, &it.VideoURL, &it.Reason)
+		&it.ClusterPrimary, &it.ImageURL, &it.VideoURL, &it.Reason, &it.BodyCN)
 	return it, err
 }

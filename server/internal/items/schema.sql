@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS items (
     timeline_at     TIMESTAMPTZ,
     summary         TEXT,
     body            TEXT,
+    body_cn         TEXT,
     reason          TEXT,
     image_url       TEXT,
     video_url       TEXT,
@@ -32,6 +33,7 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS cluster_primary BOOLEAN;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS video_url TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS body_cn TEXT;
 
 CREATE INDEX IF NOT EXISTS items_sortkey_idx
     ON items (COALESCE(published_at, 'epoch'::timestamptz) DESC, id DESC);

@@ -22,6 +22,8 @@ func (f fakeTranslator) Translate(ctx context.Context, body string) (string, err
 	return f.out, f.err
 }
 
+func (f fakeTranslator) Model() string { return "fake-model" }
+
 type fakePage struct{ img, vid, article *string }
 
 func (f fakePage) Resolve(ctx context.Context, u string) (image, video, article *string) {

@@ -27,6 +27,9 @@ type Client struct {
 	httpc   *http.Client
 }
 
+// Model returns the model name this client sends to the proxy.
+func (c *Client) Model() string { return c.model }
+
 func NewClient(baseURL, apiKey, model string) *Client {
 	return &Client{
 		baseURL: baseURL,

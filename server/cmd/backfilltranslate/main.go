@@ -30,7 +30,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "llm:", err)
 		os.Exit(1)
 	}
-	tr := pipeline.NewTranslator(client)
+	tr := pipeline.NewTranslator(client, client.Model())
 
 	ctx := context.Background()
 	pool, err := db.NewPool(ctx, dsn)

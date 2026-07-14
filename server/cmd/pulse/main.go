@@ -58,7 +58,7 @@ func main() {
 	sum, err := pulse.Run(ctx, pulse.Deps{
 		Pool:       pool,
 		LLM:        client,
-		Translator: pipeline.NewTranslator(translateClient),
+		Translator: pipeline.NewTranslator(translateClient, translateClient.Model()),
 		Terms:      pipeline.NewTermExtractor(termsClient),
 		Sources:    sources,
 	})

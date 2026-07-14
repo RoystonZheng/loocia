@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -12,6 +13,12 @@ type fakeTermsLLM struct{ out string }
 
 func (f fakeTermsLLM) Complete(ctx context.Context, system, user string) (string, error) {
 	return f.out, nil
+}
+
+type errTermsLLM struct{ err error }
+
+func (f errTermsLLM) Complete(ctx context.Context, system, user string) (string, error) {
+	return "", f.err
 }
 
 func TestExtractParsesPlainJSON(t *testing.T) {
@@ -52,6 +59,18 @@ func TestParseTermsSanitizes(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.Topics, []string{"x", "y", "z"}) {
 		t.Fatalf("topics: %+v", got.Topics)
+	}
+}
+
+func TestExtractPropagatesLLMError(t *testing.T) {
+	boom := errors.New("llm down")
+	x := NewTermExtractor(errTermsLLM{err: boom})
+	got, err := x.Extract(context.Background(), "t", "s")
+	if !errors.Is(err, boom) {
+		t.Fatalf("err: %v, want %v", err, boom)
+	}
+	if !reflect.DeepEqual(got, Terms{}) {
+		t.Fatalf("got %+v, want zero Terms", got)
 	}
 }
 

@@ -39,8 +39,9 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	for _, tbl := range []string{"raw_items", "items"} {
-		// Tables may not exist on a fresh DB; Run ensures schemas, so ignore errors here.
-		_, _ = pool.Exec(context.Background(), "TRUNCATE "+tbl)
+		// Tables may not exist on a fresh DB; Run ensures schemas, so ignore errors
+		// here. CASCADE: items is referenced by item_terms (terms package FK).
+		_, _ = pool.Exec(context.Background(), "TRUNCATE "+tbl+" CASCADE")
 	}
 	return pool
 }

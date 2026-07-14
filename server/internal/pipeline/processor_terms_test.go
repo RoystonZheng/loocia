@@ -19,6 +19,12 @@ func (f fakeExtractor) Extract(ctx context.Context, title, summary string) (Term
 	return f.out, f.err
 }
 
+type failingSink struct{}
+
+func (failingSink) ReplaceForItem(ctx context.Context, itemID string, ts []terms.Term) error {
+	return errors.New("sink down")
+}
+
 func seedRaw(t *testing.T, raw *ingest.RawStore, id string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -80,6 +86,27 @@ func TestProcessorTermsFailureIsBestEffort(t *testing.T) {
 		t.Fatalf("batch: %+v", res)
 	}
 	it, err := its.GetByID(context.Background(), "x2")
+	if err != nil || it == nil {
+		t.Fatalf("item not upserted: %v", err)
+	}
+}
+
+func TestProcessorSinkFailureIsBestEffort(t *testing.T) {
+	pool := testPool(t)
+	raw, its := testStores(t, pool)
+	seedRaw(t, raw, "x3")
+
+	// 抽取成功但落库挂了：item 主流程照常成功
+	proc := NewProcessor(raw, its, fakeEnricher{out: validEnrichment()}).
+		WithTermExtractor(fakeExtractor{out: Terms{Entities: []string{"OpenAI"}}}, failingSink{})
+	res, err := proc.ProcessBatch(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("batch err: %v", err)
+	}
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("batch: %+v", res)
+	}
+	it, err := its.GetByID(context.Background(), "x3")
 	if err != nil || it == nil {
 		t.Fatalf("item not upserted: %v", err)
 	}

@@ -1,6 +1,6 @@
 // backfilltranslate is a one-off: it fills items.body_cn for English (rss)
 // items that have a body but no translation yet, using the low-tier translate
-// model. Idempotent, safe to re-run; only touches body_cn.
+// model. Idempotent, safe to re-run; only touches body_cn / body_cn_model.
 //
 //	AIHOT_DATABASE_URL=postgres://... AIHOT_LLM_API_KEY=... [AIHOT_TRANSLATE_MODEL=...] ./backfilltranslate [-limit N]
 package main
@@ -70,7 +70,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "translate %s: %v\n", t.id, err)
 			continue
 		}
-		if _, err := pool.Exec(ctx, `UPDATE items SET body_cn=$1, updated_at=now() WHERE id=$2`, cn, t.id); err != nil {
+		if _, err := pool.Exec(ctx, `UPDATE items SET body_cn=$1, body_cn_model=$2, updated_at=now() WHERE id=$3`, cn, tr.Model(), t.id); err != nil {
 			failed++
 			fmt.Fprintf(os.Stderr, "update %s: %v\n", t.id, err)
 			continue

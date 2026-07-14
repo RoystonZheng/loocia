@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"aihot-server/internal/ingest"
@@ -27,8 +28,9 @@ type MediaResolver interface {
 type Processor struct {
 	raw   *ingest.RawStore
 	items *items.Store
-	enr   Enricher
-	media MediaResolver // optional; nil disables OG media backfill
+	enr        Enricher
+	media      MediaResolver // optional; nil disables OG media backfill
+	translator Translator    // optional; nil disables translation
 }
 
 func NewProcessor(raw *ingest.RawStore, itemsStore *items.Store, enr Enricher) *Processor {
@@ -39,6 +41,18 @@ func NewProcessor(raw *ingest.RawStore, itemsStore *items.Store, enr Enricher) *
 func (p *Processor) WithMediaResolver(m MediaResolver) *Processor {
 	p.media = m
 	return p
+}
+
+// WithTranslator enables Chinese translation of English (rss) bodies.
+func (p *Processor) WithTranslator(t Translator) *Processor {
+	p.translator = t
+	return p
+}
+
+// shouldTranslate reports whether an item's body should be machine-translated:
+// English (rss) sources with a non-empty body. MP bodies are already Chinese.
+func shouldTranslate(sourceKind, body string) bool {
+	return sourceKind == "rss" && strings.TrimSpace(body) != ""
 }
 
 // ProcessBatch enriches up to limit unprocessed raw items. A single item's
@@ -79,6 +93,15 @@ func (p *Processor) processOne(ctx context.Context, r ingest.RawItem) error {
 			if it.VideoURL == nil {
 				it.VideoURL = vid
 			}
+		}
+	}
+	// Translate English (rss) bodies to Chinese, best-effort: a failure just
+	// leaves body_cn nil and the detail page falls back to the original.
+	if p.translator != nil && it.Body != nil && shouldTranslate(r.SourceKind, *it.Body) {
+		if cn, err := p.translator.Translate(ctx, *it.Body); err == nil && strings.TrimSpace(cn) != "" {
+			it.BodyCN = &cn
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "translate %s: %v\n", r.ID, err)
 		}
 	}
 	if err := p.items.Upsert(ctx, it); err != nil {

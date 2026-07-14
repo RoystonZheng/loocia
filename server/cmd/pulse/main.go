@@ -13,6 +13,7 @@ import (
 
 	"aihot-server/internal/db"
 	"aihot-server/internal/llm"
+	"aihot-server/internal/pipeline"
 	"aihot-server/internal/pulse"
 )
 
@@ -30,6 +31,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "llm:", err)
 		os.Exit(1)
 	}
+	translateClient, err := llm.NewTranslateClientFromEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "translate llm:", err)
+		os.Exit(1)
+	}
 	sources, err := pulse.LoadSources(*sourcesPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "sources:", err)
@@ -44,7 +50,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	sum, err := pulse.Run(ctx, pulse.Deps{Pool: pool, LLM: client, Sources: sources})
+	sum, err := pulse.Run(ctx, pulse.Deps{Pool: pool, LLM: client, Translator: pipeline.NewTranslator(translateClient), Sources: sources})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "run:", err)
 		os.Exit(1)

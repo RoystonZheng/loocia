@@ -15,9 +15,10 @@ import (
 
 // Deps are the pulse unit's dependencies.
 type Deps struct {
-	Pool    *pgxpool.Pool
-	LLM     pipeline.LLM
-	Sources []ingest.Source
+	Pool       *pgxpool.Pool
+	LLM        pipeline.LLM
+	Translator pipeline.Translator // optional
+	Sources    []ingest.Source
 }
 
 // Summary reports one pulse run.
@@ -67,7 +68,8 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 	sum.SourceErrors = len(res.Errors)
 
 	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricher(d.LLM)).
-		WithMediaResolver(ingest.NewOGResolver())
+		WithMediaResolver(ingest.NewOGResolver()).
+		WithTranslator(d.Translator)
 	for sum.Batches < maxBatches {
 		batch, err := proc.ProcessBatch(ctx, batchSize)
 		if err != nil {

@@ -11,6 +11,30 @@ import (
 	"aihot-server/internal/llm"
 )
 
+type fakeTranslator struct {
+	out string
+	err error
+}
+
+func (f fakeTranslator) Translate(ctx context.Context, body string) (string, error) {
+	return f.out, f.err
+}
+
+func TestShouldTranslate(t *testing.T) {
+	if !shouldTranslate("rss", "hi") {
+		t.Fatal("rss with body should translate")
+	}
+	if shouldTranslate("mp", "hi") {
+		t.Fatal("mp should not translate")
+	}
+	if shouldTranslate("rss", "") {
+		t.Fatal("empty body should not translate")
+	}
+	if shouldTranslate("rss", "   ") {
+		t.Fatal("whitespace-only body should not translate")
+	}
+}
+
 func TestToItemSelectionByScore(t *testing.T) {
 	raw := ingest.RawItem{ID: "r1", URL: "https://x/1", Source: "S", Title: "Orig"}
 	cases := []struct {

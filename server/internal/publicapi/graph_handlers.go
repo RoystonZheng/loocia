@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -86,9 +85,10 @@ type termResponse struct {
 // missing path segment is a 404.
 func NewGraphTermHandler(s GraphStore, now func() time.Time) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw := strings.TrimPrefix(r.URL.Path, "/api/public/graph/term/")
-		term, err := url.PathUnescape(raw)
-		if err != nil || term == "" {
+		// r.URL.Path is already percent-decoded by net/http — no extra
+		// unescape, or terms containing '%' would double-decode/404.
+		term := strings.TrimPrefix(r.URL.Path, "/api/public/graph/term/")
+		if term == "" {
 			writeError(w, http.StatusNotFound, "term not found")
 			return
 		}
@@ -128,6 +128,8 @@ func NewGraphTermHandler(s GraphStore, now func() time.Time) http.Handler {
 }
 
 // writeJSON marshals and writes a 200 JSON body (500 on marshal failure).
+// Deliberately no ETag (unlike hot_handlers): responses vary per window/term
+// query and the 5-min CDN cache covers it.
 func writeJSON(w http.ResponseWriter, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {

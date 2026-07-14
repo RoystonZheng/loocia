@@ -140,6 +140,26 @@ func TestGraphTermShapeAndEscaping(t *testing.T) {
 	}
 }
 
+func TestGraphTermPercentIsNotDoubleDecoded(t *testing.T) {
+	// httptest.NewRequest parses the target with url.Parse, so r.URL.Path
+	// arrives already percent-decoded ("100%") — same as a production request
+	// for /term/100%25. The handler must not unescape a second time.
+	f := &fakeGraphStore{}
+	h := NewGraphTermHandler(f, fixedNow)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/public/graph/term/100%25", nil)
+	if req.URL.Path != "/api/public/graph/term/100%" {
+		t.Fatalf("test setup: path not pre-decoded: %q", req.URL.Path)
+	}
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code: %d body: %s", rr.Code, rr.Body.String())
+	}
+	if f.gotTerm != "100%" {
+		t.Fatalf("term: %q", f.gotTerm)
+	}
+}
+
 func TestGraphTermMissingIs404(t *testing.T) {
 	h := NewGraphTermHandler(&fakeGraphStore{}, fixedNow)
 	rr := httptest.NewRecorder()

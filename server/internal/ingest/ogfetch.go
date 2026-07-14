@@ -40,28 +40,33 @@ func ogContent(html, prop string) string {
 	return ""
 }
 
-// FetchOGMedia fetches the article page and reads its Open Graph image/video
-// tags. Best-effort: any error (network, non-200, no tags) yields empty strings.
-// Only the head is scanned (og tags live there) to bound cost.
-func FetchOGMedia(ctx context.Context, client *http.Client, pageURL string) (image, video string) {
+const maxPageBytes = 3 << 20
+
+// fetchPage GETs a page and returns its body bytes (capped). ok=false on any
+// error / non-200. Best-effort.
+func fetchPage(ctx context.Context, client *http.Client, pageURL string) ([]byte, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
-		return "", ""
+		return nil, false
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; aihot-ingest/0.1)")
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", ""
+		return nil, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", ""
+		return nil, false
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxPageBytes))
 	if err != nil {
-		return "", ""
+		return nil, false
 	}
-	html := string(body)
+	return b, true
+}
+
+// ogMediaFrom extracts og image/video URLs from page HTML (empty when absent/non-http).
+func ogMediaFrom(html string) (image, video string) {
 	image = firstNonEmpty(ogContent(html, "og:image"), ogContent(html, "twitter:image"))
 	video = firstNonEmpty(ogContent(html, "og:video:secure_url"), ogContent(html, "og:video:url"), ogContent(html, "og:video"), ogContent(html, "twitter:player"))
 	if !strings.HasPrefix(image, "http") {
@@ -73,22 +78,32 @@ func FetchOGMedia(ctx context.Context, client *http.Client, pageURL string) (ima
 	return image, video
 }
 
-// OGResolver fills missing media from a page's Open Graph tags. It satisfies the
-// pipeline's media-resolver hook.
-type OGResolver struct{ client *http.Client }
+// PageResolver fetches an article page once and returns its OG media plus the
+// readability-extracted main article HTML. All returns are best-effort (nil on
+// miss). Satisfies the pipeline's page-resolver hook.
+type PageResolver struct{ client *http.Client }
 
-func NewOGResolver() *OGResolver {
-	return &OGResolver{client: &http.Client{Timeout: 10 * time.Second}}
+func NewPageResolver() *PageResolver {
+	return &PageResolver{client: &http.Client{Timeout: 15 * time.Second}}
 }
 
-// Resolve returns (image, video) pointers, nil when absent.
-func (o *OGResolver) Resolve(ctx context.Context, pageURL string) (image, video *string) {
-	i, v := FetchOGMedia(ctx, o.client, pageURL)
-	if i != "" {
-		image = &i
+// Resolve returns (image, video, article) pointers, nil when absent.
+func (p *PageResolver) Resolve(ctx context.Context, pageURL string) (image, video, article *string) {
+	b, ok := fetchPage(ctx, p.client, pageURL)
+	if !ok {
+		return nil, nil, nil
 	}
-	if v != "" {
-		video = &v
+	html := string(b)
+	if i, v := ogMediaFrom(html); i != "" || v != "" {
+		if i != "" {
+			image = &i
+		}
+		if v != "" {
+			video = &v
+		}
 	}
-	return image, video
+	if art, ok := extractArticle(b, pageURL); ok {
+		article = &art
+	}
+	return image, video, article
 }

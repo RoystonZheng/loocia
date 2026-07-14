@@ -215,3 +215,21 @@ button { font-family: inherit; }
 .feed-error, .feed-empty, .daily-status { color: var(--muted); padding: 20px 4px; }
 .feed-error { color: #d14; }
 .app-footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; text-align: center; }
+
+@media (max-width: 600px) {
+  .shell { flex-direction: column; }
+  .sidebar {
+    width: auto; height: auto; position: sticky; top: 0; z-index: 20;
+    flex-direction: row; align-items: center; gap: 6px;
+    border-right: none; border-bottom: 1px solid var(--border);
+    padding: 8px 12px; overflow-x: auto;
+  }
+  .sb-logo { margin: 0 8px 0 0; padding: 6px 8px; font-size: 16px; border: none; }
+  .sb-nav { flex-direction: row; flex: 1; gap: 2px; }
+  .sb-group { display: none; }
+  .sb-item { padding: 7px 10px; white-space: nowrap; }
+  .sb-theme { border-top: none; padding: 0; margin-left: auto; }
+  .main { padding: 16px 14px 40px; }
+  .feed-search input { flex: 1; width: auto; min-width: 0; }
+  .tl-row { grid-template-columns: 40px 16px 1fr; }
+}

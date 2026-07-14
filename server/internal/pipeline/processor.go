@@ -141,6 +141,8 @@ func (p *Processor) processOne(ctx context.Context, r ingest.RawItem) error {
 	if p.translator != nil && it.Body != nil && shouldTranslate(r.SourceKind, *it.Body) {
 		if cn, err := p.translator.Translate(ctx, *it.Body); err == nil && strings.TrimSpace(cn) != "" {
 			it.BodyCN = &cn
+			m := p.translator.Model()
+			it.BodyCNModel = &m
 		} else if err != nil {
 			fmt.Fprintf(os.Stderr, "translate %s: %v\n", r.ID, err)
 		}

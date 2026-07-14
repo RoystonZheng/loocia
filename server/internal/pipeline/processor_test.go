@@ -121,6 +121,9 @@ func TestProcessBatchTranslatesRSSBody(t *testing.T) {
 	if got.BodyCN == nil || *got.BodyCN != "<p>中文正文。</p>" {
 		t.Fatalf("BodyCN should be set on rss translation: %v", got.BodyCN)
 	}
+	if got.BodyCNModel == nil || *got.BodyCNModel != "fake-model" {
+		t.Fatalf("BodyCNModel should record the translator model: %v", got.BodyCNModel)
+	}
 }
 
 func TestProcessBatchUsesFullArticleForRSS(t *testing.T) {
@@ -201,6 +204,9 @@ func TestProcessBatchTranslationFailureStillSaves(t *testing.T) {
 	}
 	if got.BodyCN != nil {
 		t.Fatalf("BodyCN should be nil on translation failure: %v", got.BodyCN)
+	}
+	if got.BodyCNModel != nil {
+		t.Fatalf("BodyCNModel should be nil on translation failure: %v", got.BodyCNModel)
 	}
 }
 

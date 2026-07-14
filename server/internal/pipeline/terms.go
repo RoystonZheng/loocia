@@ -98,3 +98,6 @@ func termRows(ts Terms) []terms.Term {
 	}
 	return out
 }
+
+// TermRowsForBackfill exposes the Terms→rows flattening for the backfill cmd.
+func TermRowsForBackfill(ts Terms) []terms.Term { return termRows(ts) }

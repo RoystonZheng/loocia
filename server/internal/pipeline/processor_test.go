@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -64,6 +65,67 @@ func TestToItemSelectionByScore(t *testing.T) {
 				t.Fatalf("AIRelevance: %v", it.AIRelevance)
 			}
 		})
+	}
+}
+
+func TestProcessBatchTranslatesRSSBody(t *testing.T) {
+	pool := testPool(t)
+	raw, itemsStore := testStores(t, pool)
+	ctx := context.Background()
+
+	body := "<p>English body.</p>"
+	r := ingest.RawItem{
+		ID: ingest.RawID("https://ex.com/tr"), Source: "Src", SourceKind: "rss",
+		URL: "https://ex.com/tr", Title: "T", RawContent: &body,
+	}
+	if _, err := raw.InsertRaw(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	enr := fakeEnricher{out: Enrichment{TitleCN: "标题", SummaryCN: "摘要", Category: "ai-models", Relevance: 5, Score: 4}}
+
+	p := NewProcessor(raw, itemsStore, enr).WithTranslator(fakeTranslator{out: "<p>中文正文。</p>"})
+	if _, err := p.ProcessBatch(ctx, 10); err != nil {
+		t.Fatalf("ProcessBatch: %v", err)
+	}
+	got, err := itemsStore.GetByID(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.BodyCN == nil || *got.BodyCN != "<p>中文正文。</p>" {
+		t.Fatalf("BodyCN should be set on rss translation: %v", got.BodyCN)
+	}
+}
+
+func TestProcessBatchTranslationFailureStillSaves(t *testing.T) {
+	pool := testPool(t)
+	raw, itemsStore := testStores(t, pool)
+	ctx := context.Background()
+
+	body := "<p>English body.</p>"
+	r := ingest.RawItem{
+		ID: ingest.RawID("https://ex.com/trfail"), Source: "Src", SourceKind: "rss",
+		URL: "https://ex.com/trfail", Title: "T", RawContent: &body,
+	}
+	if _, err := raw.InsertRaw(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	enr := fakeEnricher{out: Enrichment{TitleCN: "标题", SummaryCN: "摘要", Category: "ai-models", Relevance: 5, Score: 4}}
+
+	// Translation error is best-effort: the item is still saved with body_cn nil.
+	p := NewProcessor(raw, itemsStore, enr).WithTranslator(fakeTranslator{err: errors.New("boom")})
+	res, err := p.ProcessBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("ProcessBatch: %v", err)
+	}
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("translation failure must not fail the item: %+v", res)
+	}
+	got, err := itemsStore.GetByID(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.BodyCN != nil {
+		t.Fatalf("BodyCN should be nil on translation failure: %v", got.BodyCN)
 	}
 }
 

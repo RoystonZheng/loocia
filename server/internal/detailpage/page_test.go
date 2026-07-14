@@ -75,6 +75,74 @@ func TestToViewModelTranslation(t *testing.T) {
 	}
 }
 
+// renderDetail builds the view model and renders the full HTML page for an item.
+func renderDetail(t *testing.T, it *items.Item) string {
+	t.Helper()
+	var b strings.Builder
+	if err := pageTemplate.Execute(&b, toViewModel(it)); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	return b.String()
+}
+
+func TestDetailBackLinkAlwaysPresent(t *testing.T) {
+	body := "# t\n正文"
+	out := renderDetail(t, &items.Item{ID: "x", Title: "t", URL: "https://e.com/x", Permalink: "/items/x",
+		Source: "S", SourceKind: "mp", Body: &body})
+	for _, want := range []string{`class="back"`, "← 返回", `href="/"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("back link missing %q", want)
+		}
+	}
+}
+
+func TestDetailShowsModelNoteWhenTranslated(t *testing.T) {
+	en := "<p>English.</p>"
+	cn := "<p>中文。</p>"
+	model := "deepseek-v4-flash"
+	out := renderDetail(t, &items.Item{ID: "x", Title: "t", URL: "https://e.com/x", Permalink: "/items/x",
+		Source: "S", SourceKind: "rss", Body: &en, BodyCN: &cn, BodyCNModel: &model})
+	if !strings.Contains(out, "本文由 AI") {
+		t.Fatalf("model note missing")
+	}
+	if !strings.Contains(out, "deepseek-v4-flash") {
+		t.Fatalf("model name missing")
+	}
+	if strings.Contains(out, `id="tr-retry"`) {
+		t.Fatalf("retry button should be absent when translated")
+	}
+}
+
+func TestDetailShowsRetryWhenTranslationMissing(t *testing.T) {
+	en := "<p>English.</p>"
+	out := renderDetail(t, &items.Item{ID: "abc123", Title: "t", URL: "https://e.com/x", Permalink: "/items/abc123",
+		Source: "S", SourceKind: "rss", Body: &en})
+	if !strings.Contains(out, `id="tr-retry"`) {
+		t.Fatalf("retry button missing")
+	}
+	if !strings.Contains(out, "__retranslate('abc123')") {
+		t.Fatalf("retry button should call __retranslate with item id")
+	}
+	if strings.Contains(out, "本文由 AI") {
+		t.Fatalf("model note should be absent when translation missing")
+	}
+}
+
+func TestDetailNoRetryForMP(t *testing.T) {
+	body := "# t\n正文"
+	out := renderDetail(t, &items.Item{ID: "x", Title: "t", URL: "https://e.com/x", Permalink: "/items/x",
+		Source: "S", SourceKind: "mp", Body: &body})
+	if strings.Contains(out, `id="tr-retry"`) {
+		t.Fatalf("mp item should not have retry button")
+	}
+	if strings.Contains(out, "本文由 AI") {
+		t.Fatalf("mp item should not have model note")
+	}
+	if !strings.Contains(out, `class="back"`) {
+		t.Fatalf("mp item should still have back link")
+	}
+}
+
 func TestPageTemplateHasToggle(t *testing.T) {
 	en := "<p>English.</p>"
 	cn := "<p>中文。</p>"

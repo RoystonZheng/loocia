@@ -34,7 +34,13 @@ func buildMarkdown(it *items.Item) string {
 		b.WriteString("\n")
 	}
 	if it.SourceKind == "rss" && it.BodyCN != nil && strings.TrimSpace(*it.BodyCN) != "" {
-		b.WriteString("\n## 原文（AI 翻译）\n\n")
+		model := "AI"
+		if it.BodyCNModel != nil && strings.TrimSpace(*it.BodyCNModel) != "" {
+			model = *it.BodyCNModel
+		}
+		b.WriteString("\n## 原文（AI 翻译 · ")
+		b.WriteString(model)
+		b.WriteString("）\n\n")
 		b.WriteString(*it.BodyCN)
 		b.WriteString("\n")
 	} else if it.Body != nil && strings.TrimSpace(*it.Body) != "" {

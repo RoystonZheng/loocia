@@ -39,10 +39,14 @@ type viewModel struct {
 	ImageURL       string // "" when absent
 	VideoURL       string // "" when absent
 	VideoEmbed     bool   // true → render as <iframe> (player/embed), else <video>
+	ID             string // item id, for the retranslate JS call
+	BodyCNModel    string // translation model name (HasTranslation only), "" → shown as "AI"
+	CanRetranslate bool   // rss + has body + translation missing → show retry button
 }
 
 func toViewModel(it *items.Item) viewModel {
 	vm := viewModel{
+		ID:        it.ID,
 		Title:     it.Title,
 		Source:    it.Source,
 		URL:       it.URL,
@@ -65,9 +69,16 @@ func toViewModel(it *items.Item) viewModel {
 		vm.Body = renderBody("rss", *it.BodyCN)
 		vm.BodyOriginal = renderBody("rss", *it.Body)
 		vm.HasTranslation = true
+		if it.BodyCNModel != nil && strings.TrimSpace(*it.BodyCNModel) != "" {
+			vm.BodyCNModel = *it.BodyCNModel
+		} else {
+			vm.BodyCNModel = "AI"
+		}
 	} else if it.Body != nil {
 		vm.Body = renderBody(it.SourceKind, *it.Body)
 	}
+	vm.CanRetranslate = it.SourceKind == "rss" && it.Body != nil &&
+		(it.BodyCN == nil || strings.TrimSpace(*it.BodyCN) == "")
 	if it.Category != nil {
 		if lbl, ok := categoryLabels[*it.Category]; ok {
 			vm.Category = lbl
@@ -149,6 +160,7 @@ function ap(t){var e=t==='system'?(sd()?'dark':'light'):t;document.documentEleme
 function mk(t){['light','dark','system'].forEach(function(k){var el=document.getElementById('th-'+k);if(el)el.setAttribute('aria-pressed',String(k===t));});}
 window.__setTheme=function(t){try{localStorage.setItem(K,t);}catch(e){}ap(t);mk(t);};
 window.__toggleOrig=function(){var cn=document.getElementById('orig-cn'),en=document.getElementById('orig-en'),b=document.getElementById('tr-toggle');if(!cn||!en||!b)return;var showEn=en.style.display==='none';en.style.display=showEn?'':'none';cn.style.display=showEn?'none':'';b.textContent=showEn?'看中文翻译':'看英文原文';};
+window.__retranslate=function(id){var b=document.getElementById('tr-retry');if(b){b.disabled=true;b.textContent='翻译中…';}fetch('/items/'+id+'/retranslate',{method:'POST'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok){location.reload();}else{if(b){b.disabled=false;b.textContent='重试仍失败，可稍后再试';}}}).catch(function(){if(b){b.disabled=false;b.textContent='重试失败，可稍后再试';}});};
 ap(rd());document.addEventListener('DOMContentLoaded',function(){mk(rd());});})();
 </script>
 <style>
@@ -200,6 +212,11 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
 .orig-h{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:1px;margin:28px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border);}
 .orig{font-size:1.02rem;line-height:1.85;color:var(--text);}
 .tr-toggle{margin-left:8px;font-size:12px;padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--accent-2);cursor:pointer;}
+.back{font-size:13px;color:var(--text-2);text-decoration:none;font-weight:600;}
+.back:hover{color:var(--text);}
+.tr-note{font-size:12px;color:var(--muted);margin-top:8px;}
+#tr-retry{margin-top:8px;font-size:13px;padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--accent-2);cursor:pointer;}
+#tr-retry:disabled{opacity:.6;cursor:default;}
 .orig p{margin:0 0 1.1em;}
 .orig h1,.orig h2,.orig h3{font-size:1.15rem;margin:1.4em 0 .6em;line-height:1.4;}
 .orig img{max-width:100%;height:auto;border-radius:8px;margin:.6em 0;}
@@ -243,6 +260,7 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
   <main class="main">
     <article class="article">
       <div class="topbar">
+        <a class="back" href="/">← 返回</a>
         <span class="src">{{.Source}}</span>
         {{if .Selected}}<span class="badge-sel">✦ 精选</span>{{end}}
         {{if .HasScore}}<span class="badge-score" data-tier="{{.Tier}}">{{.Score}}</span>{{end}}
@@ -267,7 +285,9 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
       {{if .Body}}
       <div class="orig-h">原文{{if .HasTranslation}} <button type="button" class="tr-toggle" id="tr-toggle" onclick="__toggleOrig()">看英文原文</button>{{end}}</div>
       <div class="orig" id="orig-cn">{{.Body}}</div>
-      {{if .HasTranslation}}<div class="orig" id="orig-en" style="display:none">{{.BodyOriginal}}</div>{{end}}
+      {{if .HasTranslation}}<div class="orig" id="orig-en" style="display:none">{{.BodyOriginal}}</div>
+      <p class="tr-note">本文由 AI（{{.BodyCNModel}}）翻译</p>{{end}}
+      {{if .CanRetranslate}}<button type="button" id="tr-retry" onclick="__retranslate('{{.ID}}')">翻译失败 · 点此重试翻译</button>{{end}}
       {{end}}
       <div class="tags">
         {{if .Category}}<span class="tag">#{{.Category}}</span>{{end}}

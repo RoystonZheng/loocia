@@ -9,6 +9,7 @@ import (
 	"aihot-server/internal/ingest"
 	"aihot-server/internal/items"
 	"aihot-server/internal/pipeline"
+	"aihot-server/internal/terms"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,7 +18,8 @@ import (
 type Deps struct {
 	Pool       *pgxpool.Pool
 	LLM        pipeline.LLM
-	Translator pipeline.Translator // optional
+	Translator pipeline.Translator    // optional
+	Terms      pipeline.TermExtractor // optional; enables entity/topic extraction
 	Sources    []ingest.Source
 }
 
@@ -56,6 +58,10 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 	if err := itemsStore.EnsureSchema(ctx); err != nil {
 		return sum, fmt.Errorf("items schema: %w", err)
 	}
+	termsStore := terms.NewStore(d.Pool)
+	if err := termsStore.EnsureSchema(ctx); err != nil {
+		return sum, fmt.Errorf("terms schema: %w", err)
+	}
 
 	runner := ingest.NewRunner(rawStore, d.Sources...)
 	runner.MaxAge = maxItemAge
@@ -70,6 +76,9 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricher(d.LLM)).
 		WithMediaResolver(ingest.NewOGResolver()).
 		WithTranslator(d.Translator)
+	if d.Terms != nil {
+		proc = proc.WithTermExtractor(d.Terms, termsStore)
+	}
 	for sum.Batches < maxBatches {
 		batch, err := proc.ProcessBatch(ctx, batchSize)
 		if err != nil {

@@ -8,6 +8,7 @@ import (
 
 	"aihot-server/internal/ingest"
 	"aihot-server/internal/items"
+	"aihot-server/internal/terms"
 )
 
 // Result summarizes one processing batch.
@@ -31,6 +32,8 @@ type Processor struct {
 	enr        Enricher
 	media      MediaResolver // optional; nil disables OG media backfill
 	translator Translator    // optional; nil disables translation
+	termsX     TermExtractor // optional; nil disables term extraction
+	termsSink  TermsSink     // where extracted terms go (item_terms)
 }
 
 func NewProcessor(raw *ingest.RawStore, itemsStore *items.Store, enr Enricher) *Processor {
@@ -46,6 +49,18 @@ func (p *Processor) WithMediaResolver(m MediaResolver) *Processor {
 // WithTranslator enables Chinese translation of English (rss) bodies.
 func (p *Processor) WithTranslator(t Translator) *Processor {
 	p.translator = t
+	return p
+}
+
+// TermsSink is the write surface term extraction needs (satisfied by *terms.Store).
+type TermsSink interface {
+	ReplaceForItem(ctx context.Context, itemID string, ts []terms.Term) error
+}
+
+// WithTermExtractor enables entity/topic extraction into the terms sink.
+func (p *Processor) WithTermExtractor(x TermExtractor, sink TermsSink) *Processor {
+	p.termsX = x
+	p.termsSink = sink
 	return p
 }
 
@@ -106,6 +121,23 @@ func (p *Processor) processOne(ctx context.Context, r ingest.RawItem) error {
 	}
 	if err := p.items.Upsert(ctx, it); err != nil {
 		return err
+	}
+	// Extract entities/topics into item_terms, best-effort: extraction or the
+	// sink failing must never fail the item (backfillterms can repair later).
+	// Runs after Upsert because item_terms has an FK on items(id). An empty
+	// extraction writes nothing — never wipe previously-good terms.
+	if p.termsX != nil && p.termsSink != nil {
+		summary := ""
+		if it.Summary != nil {
+			summary = *it.Summary
+		}
+		if ts, err := p.termsX.Extract(ctx, it.Title, summary); err != nil {
+			fmt.Fprintf(os.Stderr, "terms %s: %v\n", r.ID, err)
+		} else if rows := termRows(ts); len(rows) > 0 {
+			if err := p.termsSink.ReplaceForItem(ctx, it.ID, rows); err != nil {
+				fmt.Fprintf(os.Stderr, "terms store %s: %v\n", r.ID, err)
+			}
+		}
 	}
 	return p.raw.MarkProcessed(ctx, r.ID)
 }

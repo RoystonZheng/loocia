@@ -36,6 +36,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "translate llm:", err)
 		os.Exit(1)
 	}
+	termsClient, err := llm.NewTermsClientFromEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "terms llm:", err)
+		os.Exit(1)
+	}
 	sources, err := pulse.LoadSources(*sourcesPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "sources:", err)
@@ -50,7 +55,13 @@ func main() {
 	}
 	defer pool.Close()
 
-	sum, err := pulse.Run(ctx, pulse.Deps{Pool: pool, LLM: client, Translator: pipeline.NewTranslator(translateClient), Sources: sources})
+	sum, err := pulse.Run(ctx, pulse.Deps{
+		Pool:       pool,
+		LLM:        client,
+		Translator: pipeline.NewTranslator(translateClient),
+		Terms:      pipeline.NewTermExtractor(termsClient),
+		Sources:    sources,
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "run:", err)
 		os.Exit(1)

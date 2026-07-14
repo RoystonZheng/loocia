@@ -18,6 +18,7 @@ import (
 	"aihot-server/internal/health"
 	"aihot-server/internal/items"
 	"aihot-server/internal/publicapi"
+	"aihot-server/internal/terms"
 	"aihot-server/internal/version"
 
 	httpTrace "aihot-server/middleware/http-trace"
@@ -125,6 +126,17 @@ func Run() error {
 		}
 	}
 	svr.AddHTTPHandle("/api/public/hot-topics", publicapi.NewHotTopicsHandler(hotStore))
+
+	// 图谱路由：同一个 pool；EnsureSchema 同样尽力而为（item_terms 依赖 items 表，
+	// 生产库由 pulse 保证 items 已建）。
+	termsStore := terms.NewStore(pool)
+	if pool != nil {
+		if err := termsStore.EnsureSchema(context.Background()); err != nil {
+			fmt.Printf("[aihot] terms EnsureSchema failed: %v\n", err)
+		}
+	}
+	svr.AddHTTPHandle("/api/public/graph/cloud", publicapi.NewGraphCloudHandler(termsStore, time.Now))
+	svr.AddHTTPHandle("/api/public/graph/term/", publicapi.NewGraphTermHandler(termsStore, time.Now))
 
 	/* 添加静态文件，配合 SSE 测试接口使用 */
 	svr.AddHTTPHandle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./public"))))

@@ -15,7 +15,7 @@ import (
 const listColumns = `id, title, title_en, url, permalink, source, source_kind,
 	published_at, timeline_at, summary, NULL::text AS body, category,
 	score, ai_relevance, ai_selected, selected, cluster_id, duplicate_of_id, present, cluster_primary,
-	image_url, video_url, NULL::text AS reason, NULL::text AS body_cn`
+	image_url, video_url, NULL::text AS reason, NULL::text AS body_cn, NULL::text AS body_cn_model`
 
 // Cursor is a typed keyset position (the sort value + id of the last row seen).
 // The opaque wire encoding lives in the API layer (P1.4).

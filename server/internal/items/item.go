@@ -29,6 +29,7 @@ type Item struct {
 	Summary        *string
 	Body           *string
 	BodyCN         *string
+	BodyCNModel    *string
 	Reason         *string
 	ImageURL       *string
 	VideoURL       *string

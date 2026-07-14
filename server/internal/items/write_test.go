@@ -20,6 +20,7 @@ func TestUpsertThenGetByIDRoundTrips(t *testing.T) {
 	in.Score = intptr(4)
 	in.Selected = true
 	in.BodyCN = &cn
+	in.BodyCNModel = strptr("auto-std")
 
 	if err := s.Upsert(ctx, in); err != nil {
 		t.Fatalf("Upsert: %v", err)
@@ -42,6 +43,9 @@ func TestUpsertThenGetByIDRoundTrips(t *testing.T) {
 	}
 	if got.BodyCN == nil || *got.BodyCN != "中文正文" {
 		t.Fatalf("body_cn round-trip: %v", got.BodyCN)
+	}
+	if got.BodyCNModel == nil || *got.BodyCNModel != "auto-std" {
+		t.Fatalf("body_cn_model round-trip: %v", got.BodyCNModel)
 	}
 }
 

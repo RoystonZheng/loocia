@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS items (
     summary         TEXT,
     body            TEXT,
     body_cn         TEXT,
+    body_cn_model   TEXT,
     reason          TEXT,
     image_url       TEXT,
     video_url       TEXT,
@@ -34,6 +35,7 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS video_url TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS reason TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS body_cn TEXT;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS body_cn_model TEXT;
 
 CREATE INDEX IF NOT EXISTS items_sortkey_idx
     ON items (COALESCE(published_at, 'epoch'::timestamptz) DESC, id DESC);

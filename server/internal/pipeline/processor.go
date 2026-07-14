@@ -26,8 +26,8 @@ type MediaResolver interface {
 
 // Processor enriches unprocessed raw items into the items table.
 type Processor struct {
-	raw   *ingest.RawStore
-	items *items.Store
+	raw        *ingest.RawStore
+	items      *items.Store
 	enr        Enricher
 	media      MediaResolver // optional; nil disables OG media backfill
 	translator Translator    // optional; nil disables translation

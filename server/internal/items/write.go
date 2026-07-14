@@ -39,6 +39,15 @@ func (s *Store) Upsert(ctx context.Context, it Item) error {
 	return err
 }
 
+// UpdateBodyCN sets the Chinese translation and the model that produced it for a
+// single item. Used by the retranslate endpoint and translation backfills.
+func (s *Store) UpdateBodyCN(ctx context.Context, id, cn, model string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE items SET body_cn=$2, body_cn_model=$3, updated_at=now() WHERE id=$1`,
+		id, cn, model)
+	return err
+}
+
 // ClearClusters removes cluster assignments for items published in [since, until).
 func (s *Store) ClearClusters(ctx context.Context, since, until time.Time) error {
 	_, err := s.pool.Exec(ctx, `

@@ -80,6 +80,29 @@ func NewTranslateClientFromEnv() (*Client, error) {
 	return NewClient(base, key, model), nil
 }
 
+// defaultRetryTranslateModel is the stronger tier used when a user manually
+// retries a failed translation from the detail page.
+const defaultRetryTranslateModel = "auto-std"
+
+// NewRetryTranslateClientFromEnv builds a client on the same proxy/key as
+// NewClientFromEnv but with the retry translation model (AIHOT_TRANSLATE_RETRY_MODEL
+// override, default auto-std).
+func NewRetryTranslateClientFromEnv() (*Client, error) {
+	key := os.Getenv("AIHOT_LLM_API_KEY")
+	if key == "" {
+		return nil, fmt.Errorf("AIHOT_LLM_API_KEY not set")
+	}
+	base := os.Getenv("AIHOT_LLM_BASE_URL")
+	if base == "" {
+		base = defaultBaseURL
+	}
+	model := os.Getenv("AIHOT_TRANSLATE_RETRY_MODEL")
+	if model == "" {
+		model = defaultRetryTranslateModel
+	}
+	return NewClient(base, key, model), nil
+}
+
 // defaultTermsModel: term extraction is a short, structured task — the cheap
 // tier is plenty and mustn't compete with auto-max for the shared key's RPM.
 const defaultTermsModel = "deepseek-v4-flash"

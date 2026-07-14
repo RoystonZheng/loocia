@@ -17,6 +17,8 @@ import (
 	"aihot-server/internal/detailpage"
 	"aihot-server/internal/health"
 	"aihot-server/internal/items"
+	"aihot-server/internal/llm"
+	"aihot-server/internal/pipeline"
 	"aihot-server/internal/publicapi"
 	"aihot-server/internal/terms"
 	"aihot-server/internal/version"
@@ -104,7 +106,15 @@ func Run() error {
 	svr.AddHTTPHandle("/healthz", health.NewHandler(healthPinger(pool, poolErr)))
 	svr.AddHTTPHandle("/api/public/items", publicapi.NewItemsHandler(itemsStore, time.Now))
 	// SSR 详情页：GET /items/{id} 直出 HTML（noindex），复用同一个 itemsStore。
-	svr.AddHTTPHandle("/items/", detailpage.NewHandler(itemsStore))
+	// 若有 LLM key，则同时启用 POST /items/{id}/retranslate（auto-std 重译）。
+	detailHandler := detailpage.NewHandler(itemsStore)
+	if retryClient, err := llm.NewRetryTranslateClientFromEnv(); err == nil {
+		retryTr := pipeline.NewTranslator(retryClient, retryClient.Model())
+		detailHandler = detailHandler.WithRetranslate(retryTr, itemsStore)
+	} else {
+		fmt.Printf("[aihot] retranslate disabled: %v\n", err)
+	}
+	svr.AddHTTPHandle("/items/", detailHandler)
 
 	// 日报路由：同一个 pool；EnsureSchema 尽力而为（失败只打日志，服务照常启动，
 	// 请求期由 handler 返回 500）。裸 /api/public/daily 精确匹配优先于 /daily/ 子树。

@@ -49,6 +49,34 @@ func TestUpsertThenGetByIDRoundTrips(t *testing.T) {
 	}
 }
 
+func TestUpdateBodyCN(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	pub := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+
+	in := sampleItem("bc1", pub)
+	in.SourceKind = "rss"
+	body := "<p>English body</p>"
+	in.Body = &body
+	if err := s.Upsert(ctx, in); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	if err := s.UpdateBodyCN(ctx, "bc1", "<p>中文</p>", "auto-std"); err != nil {
+		t.Fatalf("UpdateBodyCN: %v", err)
+	}
+	got, err := s.GetByID(ctx, "bc1")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.BodyCN == nil || *got.BodyCN != "<p>中文</p>" {
+		t.Fatalf("body_cn not updated: %v", got.BodyCN)
+	}
+	if got.BodyCNModel == nil || *got.BodyCNModel != "auto-std" {
+		t.Fatalf("body_cn_model not updated: %v", got.BodyCNModel)
+	}
+}
+
 func TestUpsertUpdatesExistingRow(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

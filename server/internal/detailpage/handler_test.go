@@ -2,6 +2,7 @@ package detailpage
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,6 +40,140 @@ func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
 	return rr
+}
+
+// fakeTranslator returns a canned translation or error.
+type fakeTranslator struct {
+	out   string
+	err   error
+	model string
+}
+
+func (f fakeTranslator) Translate(ctx context.Context, body string) (string, error) {
+	return f.out, f.err
+}
+func (f fakeTranslator) Model() string { return f.model }
+
+// recordingUpdater records the args of the last UpdateBodyCN call.
+type recordingUpdater struct {
+	called        bool
+	id, cn, model string
+	err           error
+}
+
+func (u *recordingUpdater) UpdateBodyCN(ctx context.Context, id, cn, model string) error {
+	u.called = true
+	u.id, u.cn, u.model = id, cn, model
+	return u.err
+}
+
+func post(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, path, nil))
+	return rr
+}
+
+func rssItem(id string) *items.Item {
+	it := mkItem(id)
+	it.SourceKind = "rss"
+	body := "<p>English body to translate</p>"
+	it.Body = &body
+	return it
+}
+
+func TestRetranslateSuccess(t *testing.T) {
+	it := rssItem("abc")
+	upd := &recordingUpdater{}
+	tr := fakeTranslator{out: "<p>中文</p>", model: "auto-std"}
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"abc": it}}).WithRetranslate(tr, upd)
+
+	rr := post(t, h, "/items/abc/retranslate")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code: %d", rr.Code)
+	}
+	if body := rr.Body.String(); body != `{"ok":true}` {
+		t.Fatalf("body: %q", body)
+	}
+	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("content-type: %q", ct)
+	}
+	if !upd.called || upd.id != "abc" || upd.cn != "<p>中文</p>" || upd.model != "auto-std" {
+		t.Fatalf("updater got (%v,%q,%q,%q)", upd.called, upd.id, upd.cn, upd.model)
+	}
+}
+
+func TestRetranslateNonRSS400(t *testing.T) {
+	it := rssItem("mp1")
+	it.SourceKind = "mp"
+	upd := &recordingUpdater{}
+	tr := fakeTranslator{out: "<p>中文</p>", model: "auto-std"}
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"mp1": it}}).WithRetranslate(tr, upd)
+
+	rr := post(t, h, "/items/mp1/retranslate")
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rr.Code)
+	}
+	if upd.called {
+		t.Fatal("updater must not be called for non-rss")
+	}
+}
+
+func TestRetranslateTranslatorFails(t *testing.T) {
+	it := rssItem("abc")
+	upd := &recordingUpdater{}
+	tr := fakeTranslator{err: errors.New("model refused"), model: "auto-std"}
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"abc": it}}).WithRetranslate(tr, upd)
+
+	rr := post(t, h, "/items/abc/retranslate")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rr.Code)
+	}
+	if body := rr.Body.String(); body != `{"ok":false}` {
+		t.Fatalf("body: %q", body)
+	}
+	if upd.called {
+		t.Fatal("updater must not be called when translation fails")
+	}
+}
+
+func TestRetranslateNotFound(t *testing.T) {
+	upd := &recordingUpdater{}
+	tr := fakeTranslator{out: "<p>中文</p>", model: "auto-std"}
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{}}).WithRetranslate(tr, upd)
+
+	rr := post(t, h, "/items/nope/retranslate")
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", rr.Code)
+	}
+	if upd.called {
+		t.Fatal("updater must not be called on not-found")
+	}
+}
+
+func TestRetranslateDisabledWhenUnset(t *testing.T) {
+	it := rssItem("abc")
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"abc": it}}) // no WithRetranslate
+
+	rr := post(t, h, "/items/abc/retranslate")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rr.Code)
+	}
+	if body := rr.Body.String(); body != `{"ok":false}` {
+		t.Fatalf("body: %q", body)
+	}
+}
+
+func TestGetStillRenders(t *testing.T) {
+	h := NewHandler(fakeGetter{byID: map[string]*items.Item{"abc": rssItem("abc")}}).
+		WithRetranslate(fakeTranslator{out: "x", model: "auto-std"}, &recordingUpdater{})
+	rr := get(t, h, "/items/abc")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code: %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "<h1") {
+		t.Fatalf("GET should still render the page:\n%s", rr.Body.String())
+	}
 }
 
 func TestRendersItemPage(t *testing.T) {

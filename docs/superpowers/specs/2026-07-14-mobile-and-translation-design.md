@@ -42,9 +42,13 @@
   - 即：详情页 `GetByID` 拿到真 body_cn，列表拿到 nil。与 reason 一致。
 
 ### 翻译单元（新文件 `pipeline/translate.go`）
-- `Translator` 接口 + 实现，复用现有 `llm.Client`（自带 429 重试/退避）。
-- `func Translate(ctx, body string) (string, error)`：system prompt 指示"把下面的 HTML 正文翻成中文，**保留所有 HTML 标签、图片、链接不动，只翻译文字内容**；只输出翻译结果，不要解释"。body 短，单次调用即可；超长（>8000 字）先 `truncateRunes` 截断到安全长度再翻。
+- **模型**：独立一个 `llm.Client`，走同一内网代理（同 baseURL/key），但**用低档模型**，不占用 enrichment 的 `auto-max`。
+  - 默认 `deepseek-v4-flash`（DeepSeek 快/省档：英文理解 + 中文生成都强、便宜、具名可复现，最适合 EN→ZH）。
+  - 可配 env `AIHOT_TRANSLATE_MODEL`（质量不满意可换 `glm-5.1` / `auto-std` / 甚至 `auto-max`，改 env 重启即可）。
+  - 装配：pulse/backfill 里 `translateModel := os.Getenv("AIHOT_TRANSLATE_MODEL"); if ""==translateModel { translateModel = "deepseek-v4-flash" }`；`llm.NewClient(base, key, translateModel)`（base/key 复用 enricher 那套来源）。复用 Client 自带的 429 重试/退避。
+- `func Translate(ctx, body string) (string, error)`：system prompt 指示"把下面的 HTML 正文翻成中文，**保留所有 HTML 标签、图片、链接不动，只翻译文字内容**；技术术语和产品名（Transformer、OpenAI 等）按惯例保留英文；说人话、别硬译；只输出翻译结果，不要解释"。body 短，单次调用即可；超长（>8000 字）先 `truncateRunes` 截断到安全长度再翻。
 - 输出直接作为 `body_cn`（仍是 HTML），详情页渲染时照走 `renderBody` 消毒（沿用 lazy/no-referrer 图片处理）。
+- 质量兜底（低档模型下更关键）：英文原文一键可切（下方开关）+ 回填后抽检一批 + 单条失败/空则不写 body_cn 回退英文。
 
 ### 流水线接入（`pipeline/processor.go`）
 - `processOne`：enrichment 成功后，若 `r.SourceKind=="rss"` 且 body 非空，调用 `Translate`，成功则 `it.BodyCN=&cn`。
@@ -79,8 +83,9 @@
 
 ## 部署
 - schema：`ALTER TABLE items ADD COLUMN IF NOT EXISTS body_cn TEXT`（生产 aihot 执行；新列可空，无需回填约束）。
+- 翻译模型 env：在 Melos 的 cron 包装脚本 `/root/aihot/bin/aihot-cron.sh` 里 `export AIHOT_TRANSLATE_MODEL="deepseek-v4-flash"`（pulse + backfill 都经它）。不设则代码默认也是 deepseek-v4-flash。
 - 编译发：server（详情页 + 列结构）、pulse（翻译接入）；web bundle（移动端 CSS）。
-- 跑一次 `backfilltranslate`（228 条）。
+- 跑一次 `backfilltranslate`（228 条，走翻译模型的 RPM）；跑完抽检几条中文质量。
 - 验证：手机窄屏核对导航/正文；打开一条英文源详情页 → 默认中文、按钮能切回英文；mp 详情页无按钮、不变。
 
 ## Out of scope / Follow-up

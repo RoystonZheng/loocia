@@ -77,6 +77,29 @@ func NewTranslateClientFromEnv() (*Client, error) {
 	return NewClient(base, key, model), nil
 }
 
+// defaultTermsModel: term extraction is a short, structured task — the cheap
+// tier is plenty and mustn't compete with auto-max for the shared key's RPM.
+const defaultTermsModel = "deepseek-v4-flash"
+
+// NewTermsClientFromEnv builds a client on the same proxy/key as
+// NewClientFromEnv but with the lower-tier terms model (AIHOT_TERMS_MODEL
+// override, default deepseek-v4-flash).
+func NewTermsClientFromEnv() (*Client, error) {
+	key := os.Getenv("AIHOT_LLM_API_KEY")
+	if key == "" {
+		return nil, fmt.Errorf("AIHOT_LLM_API_KEY not set")
+	}
+	base := os.Getenv("AIHOT_LLM_BASE_URL")
+	if base == "" {
+		base = defaultBaseURL
+	}
+	model := os.Getenv("AIHOT_TERMS_MODEL")
+	if model == "" {
+		model = defaultTermsModel
+	}
+	return NewClient(base, key, model), nil
+}
+
 type msgRequest struct {
 	Model     string       `json:"model"`
 	MaxTokens int          `json:"max_tokens"`

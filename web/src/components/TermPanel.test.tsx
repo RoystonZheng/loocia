@@ -23,6 +23,8 @@ describe('TermPanel', () => {
     expect(globalThis.fetch).toHaveBeenCalledWith(`/api/public/graph/term/${encodeURIComponent('OpenAI')}?window=7d`)
     expect(screen.getByRole('link', { name: '大新闻' })).toHaveAttribute('href', '/items/i1')
     expect(screen.getByText(/42 条相关/)).toBeInTheDocument()
+    // meta line: source + publishedAt formatted in Beijing time (08:00Z → 16:00 +08:00)
+    expect(screen.getByText(/OpenAI Blog · 2026-07-10 16:00/)).toBeInTheDocument()
   })
 
   it('clicking a neighbor switches focus via onSelect', async () => {

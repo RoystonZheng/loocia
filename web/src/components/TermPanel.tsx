@@ -20,11 +20,13 @@ export function TermPanel({
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
+    let stale = false
     setData(null)
     setFailed(false)
     fetchTerm(term, win)
-      .then(setData)
-      .catch(() => setFailed(true))
+      .then((d) => { if (!stale) setData(d) })
+      .catch(() => { if (!stale) setFailed(true) })
+    return () => { stale = true }
   }, [term, win])
 
   if (failed) return <div className="gv-panel gv-status">加载失败，稍后再试</div>

@@ -211,8 +211,7 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
 .tag{font-size:12px;color:var(--text-2);background:var(--chip);border-radius:6px;padding:4px 10px;}
 .readmore{display:inline-block;padding:10px 18px;background:var(--accent);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;}
 .note{margin-top:26px;font-size:.8rem;color:var(--muted);}
-@media (max-width:720px){.sidebar{display:none;}.main{padding:22px 16px 60px;}}
-@media(max-width:600px){
+@media (max-width:720px){
 .shell{flex-direction:column;}
 .sidebar{display:flex;width:auto;height:auto;position:sticky;top:0;z-index:20;flex-direction:row;align-items:center;gap:8px;border-right:none;border-bottom:1px solid var(--border);padding:8px 12px;overflow-x:auto;}
 .logo{margin:0 8px 0 0;font-size:17px;}

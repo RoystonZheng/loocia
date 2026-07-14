@@ -1,11 +1,12 @@
 import type { Theme } from '../theme'
 
-export type View = 'selected' | 'all' | 'daily'
+export type View = 'selected' | 'all' | 'daily' | 'graph'
 
 const NAV: { view: View; label: string; icon: string }[] = [
   { view: 'selected', label: '精选', icon: '✦' },
   { view: 'all', label: '全部 AI 动态', icon: '≣' },
   { view: 'daily', label: 'AI 日报', icon: '▤' },
+  { view: 'graph', label: '图谱', icon: '❖' },
 ]
 
 const THEMES: { key: Theme; glyph: string; title: string }[] = [

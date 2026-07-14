@@ -69,4 +69,16 @@ describe('GraphView', () => {
     render(<GraphView />)
     await waitFor(() => expect(screen.getByText(/加载失败/)).toBeInTheDocument())
   })
+
+  it('preserves the selected term across a window switch', async () => {
+    globalThis.fetch = mockFetch()
+    render(<GraphView />)
+    await waitFor(() => expect(screen.getByText('OpenAI')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('OpenAI'))
+    await waitFor(() => expect(screen.getByText('推理模型')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '30 天' }))
+    await waitFor(() =>
+      expect(globalThis.fetch).toHaveBeenCalledWith(`/api/public/graph/term/${encodeURIComponent('OpenAI')}?window=30d`))
+  })
 })

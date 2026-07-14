@@ -233,3 +233,42 @@ button { font-family: inherit; }
   .feed-search input { flex: 1; width: auto; min-width: 0; }
   .tl-row { grid-template-columns: 40px 16px 1fr; }
 }
+
+/* ---- 图谱视图 ---- */
+.gv-controls { display: flex; gap: 8px; margin: 4px 0 16px; }
+.gv-win-btn {
+  padding: 4px 14px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--chip); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.gv-win-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.gv-cloud { width: 100%; height: auto; display: block; }
+.gv-word { cursor: pointer; font-family: var(--sans); font-weight: 600; }
+.gv-word.entity { fill: var(--accent); }
+.gv-word.topic { fill: var(--gold); }
+.gv-word:hover, .gv-word.selected { opacity: .7; text-decoration: underline; }
+
+.gv-status { color: var(--muted); padding: 32px 0; text-align: center; }
+
+.gv-panel {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  border-top: 1px solid var(--border); margin-top: 20px; padding-top: 20px;
+}
+.gv-subgraph svg { width: 100%; height: auto; }
+.gv-edge { stroke: var(--rail); }
+.gv-node { cursor: pointer; }
+.gv-node.focus { cursor: default; }
+.gv-node.entity circle { fill: var(--accent); }
+.gv-node.topic circle { fill: var(--gold); }
+.gv-node.focus circle { stroke: var(--text); stroke-width: 2; }
+.gv-node text { fill: var(--text); font-size: 12px; }
+
+.gv-items h3 { font-size: 15px; margin: 0 0 10px; }
+.gv-item-row { padding: 7px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+.gv-item-row a { color: var(--text); text-decoration: none; font-size: 14px; }
+.gv-item-row a:hover { color: var(--accent); }
+.gv-item-meta { color: var(--muted); font-size: 12px; }
+
+@media (max-width: 600px) {
+  .gv-panel { grid-template-columns: 1fr; }
+}

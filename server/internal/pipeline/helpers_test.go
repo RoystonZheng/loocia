@@ -40,7 +40,7 @@ func testStores(t *testing.T, pool *pgxpool.Pool) (*ingest.RawStore, *items.Stor
 	if _, err := pool.Exec(ctx, "TRUNCATE raw_items"); err != nil {
 		t.Fatalf("truncate raw_items: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "TRUNCATE items"); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE items CASCADE"); err != nil {
 		t.Fatalf("truncate items: %v", err)
 	}
 	return raw, it

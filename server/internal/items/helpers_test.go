@@ -24,7 +24,7 @@ func newTestStore(t *testing.T) *Store {
 	if err := s.EnsureSchema(context.Background()); err != nil {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
-	if _, err := pool.Exec(context.Background(), "TRUNCATE items"); err != nil {
+	if _, err := pool.Exec(context.Background(), "TRUNCATE items CASCADE"); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	return s

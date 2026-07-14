@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,30 @@ type fakeTranslator struct {
 
 func (f fakeTranslator) Translate(ctx context.Context, body string) (string, error) {
 	return f.out, f.err
+}
+
+type fakePage struct{ img, vid, article *string }
+
+func (f fakePage) Resolve(ctx context.Context, u string) (image, video, article *string) {
+	return f.img, f.vid, f.article
+}
+
+func TestBetterBody(t *testing.T) {
+	short := "one short line"
+	long := strings.Repeat("full article text ", 40)
+	if !betterBody(long, &short) {
+		t.Fatal("long extract should replace a short snippet")
+	}
+	if betterBody("tiny", &short) {
+		t.Fatal("too-short extract must not replace")
+	}
+	existing := strings.Repeat("existing long body words ", 50)
+	if betterBody("also fairly short here", &existing) {
+		t.Fatal("extract must be >=1.5x current text length")
+	}
+	if !betterBody(long, nil) {
+		t.Fatal("long extract should replace nil body")
+	}
 }
 
 func TestShouldTranslate(t *testing.T) {
@@ -93,6 +118,54 @@ func TestProcessBatchTranslatesRSSBody(t *testing.T) {
 	}
 	if got.BodyCN == nil || *got.BodyCN != "<p>中文正文。</p>" {
 		t.Fatalf("BodyCN should be set on rss translation: %v", got.BodyCN)
+	}
+}
+
+func TestProcessBatchUsesFullArticleForRSS(t *testing.T) {
+	pool := testPool(t)
+	raw, itemsStore := testStores(t, pool)
+	ctx := context.Background()
+
+	long := strings.Repeat("full extracted article body words ", 40)
+
+	short := "short snippet"
+	rss := ingest.RawItem{
+		ID: ingest.RawID("https://ex.com/full-rss"), Source: "Src", SourceKind: "rss",
+		URL: "https://ex.com/full-rss", Title: "T", RawContent: &short,
+	}
+	if _, err := raw.InsertRaw(ctx, rss); err != nil {
+		t.Fatal(err)
+	}
+
+	mpBody := "short snippet"
+	mp := ingest.RawItem{
+		ID: ingest.RawID("https://ex.com/full-mp"), Source: "Src", SourceKind: "mp",
+		URL: "https://ex.com/full-mp", Title: "T", RawContent: &mpBody,
+	}
+	if _, err := raw.InsertRaw(ctx, mp); err != nil {
+		t.Fatal(err)
+	}
+
+	enr := fakeEnricher{out: Enrichment{TitleCN: "标题", SummaryCN: "摘要", Category: "ai-models", Relevance: 5, Score: 4}}
+	p := NewProcessor(raw, itemsStore, enr).WithPageResolver(fakePage{article: &long})
+	if _, err := p.ProcessBatch(ctx, 10); err != nil {
+		t.Fatalf("ProcessBatch: %v", err)
+	}
+
+	gotRSS, err := itemsStore.GetByID(ctx, rss.ID)
+	if err != nil {
+		t.Fatalf("GetByID rss: %v", err)
+	}
+	if gotRSS.Body == nil || *gotRSS.Body != long {
+		t.Fatalf("rss body should be the full extracted article: %v", gotRSS.Body)
+	}
+
+	gotMP, err := itemsStore.GetByID(ctx, mp.ID)
+	if err != nil {
+		t.Fatalf("GetByID mp: %v", err)
+	}
+	if gotMP.Body == nil || *gotMP.Body != mpBody {
+		t.Fatalf("mp body must stay the snippet (page not consulted for body): %v", gotMP.Body)
 	}
 }
 

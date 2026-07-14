@@ -74,7 +74,7 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 	sum.SourceErrors = len(res.Errors)
 
 	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricher(d.LLM)).
-		WithMediaResolver(ingest.NewOGResolver()).
+		WithPageResolver(ingest.NewPageResolver()).
 		WithTranslator(d.Translator)
 	if d.Terms != nil {
 		proc = proc.WithTermExtractor(d.Terms, termsStore)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"aihot-server/internal/ingest"
@@ -18,11 +19,11 @@ type Result struct {
 	Errors    []error
 }
 
-// MediaResolver fills missing media (image/video) for an item by inspecting its
-// article page — e.g. Open Graph tags. Best-effort: returns nil pointers when it
-// finds nothing. Implemented by ingest.OGResolver.
-type MediaResolver interface {
-	Resolve(ctx context.Context, pageURL string) (image, video *string)
+// PageResolver fetches a page once and fills missing media plus the extracted
+// full article body. Best-effort: nil pointers when nothing found. Implemented
+// by ingest.PageResolver.
+type PageResolver interface {
+	Resolve(ctx context.Context, pageURL string) (image, video, article *string)
 }
 
 // Processor enriches unprocessed raw items into the items table.
@@ -30,7 +31,7 @@ type Processor struct {
 	raw        *ingest.RawStore
 	items      *items.Store
 	enr        Enricher
-	media      MediaResolver // optional; nil disables OG media backfill
+	page       PageResolver  // optional; nil disables page media/body backfill
 	translator Translator    // optional; nil disables translation
 	termsX     TermExtractor // optional; nil disables term extraction
 	termsSink  TermsSink     // where extracted terms go (item_terms)
@@ -40,9 +41,11 @@ func NewProcessor(raw *ingest.RawStore, itemsStore *items.Store, enr Enricher) *
 	return &Processor{raw: raw, items: itemsStore, enr: enr}
 }
 
-// WithMediaResolver enables OG media backfill for items lacking a feed image.
-func (p *Processor) WithMediaResolver(m MediaResolver) *Processor {
-	p.media = m
+// WithPageResolver enables page-based backfill: missing media for items lacking
+// a feed image, and (for rss) replacing the feed's short snippet body with the
+// full extracted article.
+func (p *Processor) WithPageResolver(r PageResolver) *Processor {
+	p.page = r
 	return p
 }
 
@@ -68,6 +71,27 @@ func (p *Processor) WithTermExtractor(x TermExtractor, sink TermsSink) *Processo
 // English (rss) sources with a non-empty body. MP bodies are already Chinese.
 func shouldTranslate(sourceKind, body string) bool {
 	return sourceKind == "rss" && strings.TrimSpace(body) != ""
+}
+
+// betterBody reports whether an extracted article should replace the current
+// body: it must be substantial (>=300 text chars) and clearly longer than what
+// we have (>=1.5x), so a weak extraction never overwrites a decent snippet.
+func betterBody(extracted string, cur *string) bool {
+	n := textLen(extracted)
+	if n < 300 {
+		return false
+	}
+	if cur == nil {
+		return true
+	}
+	return n >= textLen(*cur)*3/2
+}
+
+var tagRe = regexp.MustCompile(`<[^>]+>`)
+
+// textLen is the visible text length (tags stripped), counted in runes.
+func textLen(s string) int {
+	return len([]rune(strings.TrimSpace(tagRe.ReplaceAllString(s, ""))))
 }
 
 // ProcessBatch enriches up to limit unprocessed raw items. A single item's
@@ -97,17 +121,19 @@ func (p *Processor) processOne(ctx context.Context, r ingest.RawItem) error {
 		return err
 	}
 	it := toItem(r, e)
-	// Backfill media from the article's Open Graph tags when the feed gave us
-	// no image (many sources ship image-less RSS). Best-effort — a resolver
-	// miss or network error just leaves the item as-is.
-	if p.media != nil && it.ImageURL == nil {
-		if img, vid := p.media.Resolve(ctx, r.URL); img != nil || vid != nil {
-			if it.ImageURL == nil {
-				it.ImageURL = img
-			}
-			if it.VideoURL == nil {
-				it.VideoURL = vid
-			}
+	// Fetch the article page once: backfill missing media, and for English
+	// (rss) sources replace the feed's short snippet body with the full
+	// extracted article. Best-effort — misses just leave the item as-is.
+	if p.page != nil {
+		img, vid, article := p.page.Resolve(ctx, r.URL)
+		if it.ImageURL == nil {
+			it.ImageURL = img
+		}
+		if it.VideoURL == nil {
+			it.VideoURL = vid
+		}
+		if r.SourceKind == "rss" && article != nil && betterBody(*article, it.Body) {
+			it.Body = article
 		}
 	}
 	// Translate English (rss) bodies to Chinese, best-effort: a failure just

@@ -110,10 +110,10 @@ func ogBackfill(ctx context.Context, pool *pgxpool.Pool, limit int) (int, int) {
 	}
 	rows.Close()
 
-	resolver := ingest.NewOGResolver()
+	resolver := ingest.NewPageResolver()
 	imgN, vidN := 0, 0
 	for _, t := range targets {
-		img, vid := resolver.Resolve(ctx, t.url)
+		img, vid, _ := resolver.Resolve(ctx, t.url)
 		if img != nil {
 			tag, err := pool.Exec(ctx,
 				`UPDATE items SET image_url=$1, updated_at=now() WHERE id=$2 AND image_url IS NULL`,

@@ -19,26 +19,26 @@ var categoryLabels = map[string]string{
 
 // viewModel is the flattened, render-ready shape (no nil pointers reach the template).
 type viewModel struct {
-	Title       string
-	TitleEN     string        // "" when absent
-	Summary     string        // "" when absent
-	Reason      string        // 精选理由, "" when absent
-	Body        template.HTML // rendered 原文, "" when absent
+	Title          string
+	TitleEN        string        // "" when absent
+	Summary        string        // "" when absent
+	Reason         string        // 精选理由, "" when absent
+	Body           template.HTML // rendered 原文, "" when absent
 	BodyOriginal   template.HTML // 英文原文, 仅 rss+已翻译时非空
 	HasTranslation bool          // true → 展示中文 body + 可切回英文原文
-	Source      string
-	URL         string
-	Domain      string // host of URL, for the 阅读原文·domain label
-	ExportURL   string // permalink + ?format=md
-	Selected    bool
-	Category    string // localized label, "" when absent
-	PublishedAt string // "YYYY-MM-DD HH:MM" Beijing, "" when absent
-	Score       string // "" when absent (tier letter S/A/B/C/D)
-	Tier        string // same letter, for the data-tier styling hook
-	HasScore    bool
-	ImageURL    string // "" when absent
-	VideoURL    string // "" when absent
-	VideoEmbed  bool   // true → render as <iframe> (player/embed), else <video>
+	Source         string
+	URL            string
+	Domain         string // host of URL, for the 阅读原文·domain label
+	ExportURL      string // permalink + ?format=md
+	Selected       bool
+	Category       string // localized label, "" when absent
+	PublishedAt    string // "YYYY-MM-DD HH:MM" Beijing, "" when absent
+	Score          string // "" when absent (tier letter S/A/B/C/D)
+	Tier           string // same letter, for the data-tier styling hook
+	HasScore       bool
+	ImageURL       string // "" when absent
+	VideoURL       string // "" when absent
+	VideoEmbed     bool   // true → render as <iframe> (player/embed), else <video>
 }
 
 func toViewModel(it *items.Item) viewModel {

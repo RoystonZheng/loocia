@@ -171,6 +171,9 @@ button { font-family: inherit; }
 .hot-badge { color: var(--muted); font-size: 12px; flex-shrink: 0; }
 
 /* ---- daily magazine --------------------------------------------------- */
+.home-cloud { margin-bottom: 30px; padding-bottom: 26px; border-bottom: 1px solid var(--border); }
+.home-cloud .page-head { border-bottom: none; padding-bottom: 6px; margin-bottom: 6px; }
+
 .daily-layout { display: grid; grid-template-columns: 220px 1fr; gap: 36px; }
 @media (max-width: 900px) { .daily-layout { grid-template-columns: 1fr; } }
 .daily-archive { border-right: 1px solid var(--border); padding-right: 20px; }

@@ -63,8 +63,6 @@ export function DailyView() {
       <aside className="daily-archive">
         <div className="daily-subnav">
           <button className="active">日报</button>
-          <button disabled title="暂未开放">周报</button>
-          <button disabled title="暂未开放">月报</button>
         </div>
         {groupByMonth(list).map((g) => (
           <div key={g.key} className="darc-month">

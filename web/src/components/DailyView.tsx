@@ -93,6 +93,16 @@ export function DailyView() {
   )
 }
 
+// TOC_MAX bounds headlines per section in the 今日看点 card; the rest collapse
+// into a clickable …等N篇 tail that jumps to the full section.
+const TOC_MAX = 3
+
+// Plain smooth scroll — the URL hash belongs to the view router (#daily/#all/
+// #graph), so anchors must not touch it.
+function jumpToSection(i: number) {
+  document.getElementById(`daily-sec-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 function DailyPaper({ rep }: { rep: DailyReport }) {
   const stories = rep.sections.reduce((n, s) => n + s.items.length, 0)
   const minutes = Math.max(1, Math.round(stories * 0.7))
@@ -123,9 +133,14 @@ function DailyPaper({ rep }: { rep: DailyReport }) {
           <div key={sec.label} className="ph-row">
             <span className="ph-no">{String(i + 1).padStart(2, '0')}</span>
             <div className="ph-body">
-              <div className="ph-cat">{sec.label}</div>
-              {sec.items[0] && (
-                <a className="ph-item" href={sec.items[0].permalink ?? undefined}>{sec.items[0].title}</a>
+              <button type="button" className="ph-cat" onClick={() => jumpToSection(i)}>{sec.label}</button>
+              {sec.items.slice(0, TOC_MAX).map((it, j) => (
+                <a key={j} className="ph-item" href={it.permalink ?? undefined}>{it.title}</a>
+              ))}
+              {sec.items.length > TOC_MAX && (
+                <button type="button" className="ph-more" onClick={() => jumpToSection(i)}>
+                  …等 {sec.items.length} 篇
+                </button>
               )}
             </div>
             <span className="ph-count">{sec.items.length}</span>
@@ -139,8 +154,8 @@ function DailyPaper({ rep }: { rep: DailyReport }) {
         <WordCloud date={rep.date} height={300} />
       </section>
 
-      {rep.sections.map((sec) => (
-        <section key={sec.label} className="paper-section">
+      {rep.sections.map((sec, i) => (
+        <section key={sec.label} id={`daily-sec-${i}`} className="paper-section">
           <h3>{sec.label}</h3>
           {sec.items.map((it, i) => (
             <div key={i} className="paper-item">

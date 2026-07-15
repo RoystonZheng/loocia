@@ -88,7 +88,7 @@ export function GraphView() {
           role="img"
           aria-label="关键词云图"
         >
-          {words.map((w) => (
+          {words.map((w, i) => (
             <text
               key={w.text}
               x={w.x}
@@ -96,6 +96,8 @@ export function GraphView() {
               fontSize={w.size}
               textAnchor="middle"
               className={`gv-word gv-ink-t${w.tier}${selected === w.text ? ' selected' : ''}`}
+              // 呼吸漂浮：周期/相位按序号错开，词与词不同步（确定性，无随机）
+              style={{ '--fd': `${5 + (i % 5) * 0.7}s`, '--fdelay': `${(i % 7) * 0.45}s` } as React.CSSProperties}
               onClick={() => setSelected(w.text)}
             >
               {w.text}

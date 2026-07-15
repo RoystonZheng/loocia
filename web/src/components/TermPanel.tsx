@@ -158,7 +158,7 @@ export function TermPanel({
               <text y={n.r + 12} textAnchor="middle">{n.id}</text>
             </g>
           ))}
-          {layout.rendered.map((n) => (
+          {layout.rendered.map((n, i) => (
             <g
               key={n.id}
               className={[
@@ -173,8 +173,14 @@ export function TermPanel({
               onMouseEnter={() => { if (!n.isFocus) setHovered(n.id) }}
               onMouseLeave={() => setHovered(null)}
             >
-              <circle r={n.r} />
-              <text y={n.r + 12} textAnchor="middle">{n.id}</text>
+              {/* 内层承载漂浮动画，外层 transform 专管定位过渡，二者不抢 transform */}
+              <g
+                className="gv-node-inner"
+                style={{ '--fd': `${5 + (i % 5) * 0.7}s`, '--fdelay': `${(i % 7) * 0.45}s` } as React.CSSProperties}
+              >
+                <circle r={n.r} />
+                <text y={n.r + 12} textAnchor="middle">{n.id}</text>
+              </g>
             </g>
           ))}
         </svg>

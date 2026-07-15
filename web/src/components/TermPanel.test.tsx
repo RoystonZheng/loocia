@@ -89,8 +89,8 @@ describe('TermPanel', () => {
       rerender(<TermPanel term="推理模型" window="7d" onSelect={() => {}} />)
       await vi.waitFor(() => expect(screen.getByText('芯片')).toBeInTheDocument())
       // 「开源」不在新邻居里：先带 exiting 类（保留自己的墨阶），计时器走完后从 DOM 消失
-      expect(screen.getByText('开源').closest('g')!.className.baseVal).toContain('exiting')
-      expect(screen.getByText('开源').closest('g')!.className.baseVal).toContain('gv-ink-t')
+      expect((screen.getByText('开源').closest('.gv-node') as SVGGElement).className.baseVal).toContain('exiting')
+      expect((screen.getByText('开源').closest('.gv-node') as SVGGElement).className.baseVal).toContain('gv-ink-t')
       vi.advanceTimersByTime(500)
       expect(screen.queryByText('开源')).toBeNull()
     } finally {
@@ -102,23 +102,23 @@ describe('TermPanel', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => termPayload }) as unknown as typeof fetch
     render(<TermPanel term="OpenAI" window="7d" onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText('推理模型')).toBeInTheDocument())
-    fireEvent.mouseEnter(screen.getByText('推理模型').closest('g')!)
-    expect(screen.getByText('开源').closest('g')!.className.baseVal).toContain('dim')
-    expect(screen.getByText('推理模型').closest('g')!.className.baseVal).not.toContain('dim')
-    fireEvent.mouseLeave(screen.getByText('推理模型').closest('g')!)
-    expect(screen.getByText('开源').closest('g')!.className.baseVal).not.toContain('dim')
+    fireEvent.mouseEnter(screen.getByText('推理模型').closest('.gv-node')!)
+    expect((screen.getByText('开源').closest('.gv-node') as SVGGElement).className.baseVal).toContain('dim')
+    expect((screen.getByText('推理模型').closest('.gv-node') as SVGGElement).className.baseVal).not.toContain('dim')
+    fireEvent.mouseLeave(screen.getByText('推理模型').closest('.gv-node')!)
+    expect((screen.getByText('开源').closest('.gv-node') as SVGGElement).className.baseVal).not.toContain('dim')
   })
 
   it('hover 不改变节点几何（布局在数据不变时冻结）', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => termPayload }) as unknown as typeof fetch
     render(<TermPanel term="OpenAI" window="7d" onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText('推理模型')).toBeInTheDocument())
-    const node = screen.getByText('开源').closest('g')!
+    const node = screen.getByText('开源').closest('.gv-node')!
     const before = node.getAttribute('transform')
     expect(before).toBeTruthy()
-    fireEvent.mouseEnter(screen.getByText('推理模型').closest('g')!)
+    fireEvent.mouseEnter(screen.getByText('推理模型').closest('.gv-node')!)
     expect(node.getAttribute('transform')).toBe(before)
-    fireEvent.mouseLeave(screen.getByText('推理模型').closest('g')!)
+    fireEvent.mouseLeave(screen.getByText('推理模型').closest('.gv-node')!)
     expect(node.getAttribute('transform')).toBe(before)
   })
 })

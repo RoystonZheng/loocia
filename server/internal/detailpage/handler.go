@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"aihot-server/internal/items"
 )
@@ -32,15 +33,24 @@ type Handler struct {
 	store ItemGetter
 	tr    Translator    // optional; nil → retranslate returns 503
 	upd   BodyCNUpdater // optional; nil → retranslate returns 503
+	gate  *rtGate       // set alongside tr/upd
 }
 
 func NewHandler(store ItemGetter) *Handler {
 	return &Handler{store: store}
 }
 
+// Retranslate budget: enough for a human retrying a page or two, far below
+// anything that could dent the shared LLM key's RPM.
+const (
+	retranslateBurst     = 6
+	retranslatePerMinute = 3
+)
+
 // WithRetranslate enables the POST /items/{id}/retranslate endpoint.
 func (h *Handler) WithRetranslate(tr Translator, upd BodyCNUpdater) *Handler {
 	h.tr, h.upd = tr, upd
+	h.gate = newRTGate(retranslateBurst, retranslatePerMinute, time.Now())
 	return h
 }
 
@@ -116,29 +126,47 @@ func (h *Handler) retranslate(w http.ResponseWriter, r *http.Request, id string)
 		writeJSONOK(w, false, http.StatusServiceUnavailable)
 		return
 	}
-	it, err := h.store.GetByID(r.Context(), id)
-	if errors.Is(err, items.ErrNotFound) {
-		writeJSONOK(w, false, http.StatusNotFound)
+	call, leader := h.gate.begin(id)
+	if !leader {
+		// A translation for this item is already running; share its outcome
+		// instead of spending a second LLM call.
+		select {
+		case <-call.done:
+			writeJSONOK(w, call.res.ok, call.res.code)
+		case <-r.Context().Done():
+			writeJSONOK(w, false, http.StatusServiceUnavailable)
+		}
 		return
+	}
+	res := h.doRetranslate(r.Context(), id)
+	h.gate.end(id, res)
+	writeJSONOK(w, res.ok, res.code)
+}
+
+func (h *Handler) doRetranslate(ctx context.Context, id string) rtResult {
+	it, err := h.store.GetByID(ctx, id)
+	if errors.Is(err, items.ErrNotFound) {
+		return rtResult{false, http.StatusNotFound}
 	}
 	if err != nil {
-		writeJSONOK(w, false, http.StatusInternalServerError)
-		return
+		return rtResult{false, http.StatusInternalServerError}
 	}
 	if it.SourceKind != "rss" || it.Body == nil || strings.TrimSpace(*it.Body) == "" {
-		writeJSONOK(w, false, http.StatusBadRequest)
-		return
+		return rtResult{false, http.StatusBadRequest}
 	}
-	cn, err := h.tr.Translate(r.Context(), *it.Body)
+	// Token gate sits directly in front of the LLM spend — invalid ids above
+	// cost nothing and never 429.
+	if !h.gate.allow(time.Now()) {
+		return rtResult{false, http.StatusTooManyRequests}
+	}
+	cn, err := h.tr.Translate(ctx, *it.Body)
 	if err != nil || strings.TrimSpace(cn) == "" {
-		writeJSONOK(w, false, http.StatusOK)
-		return
+		return rtResult{false, http.StatusOK}
 	}
-	if err := h.upd.UpdateBodyCN(r.Context(), id, cn, h.tr.Model()); err != nil {
-		writeJSONOK(w, false, http.StatusInternalServerError)
-		return
+	if err := h.upd.UpdateBodyCN(ctx, id, cn, h.tr.Model()); err != nil {
+		return rtResult{false, http.StatusInternalServerError}
 	}
-	writeJSONOK(w, true, http.StatusOK)
+	return rtResult{true, http.StatusOK}
 }
 
 func shortID(id string) string {

@@ -8,10 +8,13 @@ import (
 
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 )
 
 var (
-	mdRenderer = goldmark.New()
+	// GFM adds tables, strikethrough, task lists and autolinks — 公众号 markdown
+	// bodies routinely contain tables, which plain goldmark renders as raw pipes.
+	mdRenderer = goldmark.New(goldmark.WithExtensions(extension.GFM))
 	sanitizer  = bluemonday.UGCPolicy()
 	imgTagRe   = regexp.MustCompile(`(?i)<img\s+`)
 )

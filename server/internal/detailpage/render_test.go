@@ -15,6 +15,21 @@ func TestRenderBodyMarkdown(t *testing.T) {
 	}
 }
 
+func TestRenderBodyGFMTable(t *testing.T) {
+	md := "| 资产类型 | 定义 |\n| --- | --- |\n| 业务规则库 | 是什么怎么算 |\n| SQL 规范库 | 怎么写才合格 |"
+	out := string(renderBody("mp", md))
+	if !strings.Contains(out, "<table") || !strings.Contains(out, "<td>") {
+		t.Fatalf("GFM table not rendered (extension off or sanitized away): %q", out)
+	}
+	if !strings.Contains(out, "业务规则库") || !strings.Contains(out, "SQL 规范库") {
+		t.Fatalf("table cell content missing: %q", out)
+	}
+	// pipes must NOT survive as literal text
+	if strings.Contains(out, "| --- |") {
+		t.Fatalf("table delimiter leaked as raw text: %q", out)
+	}
+}
+
 func TestRenderBodyStripsScripts(t *testing.T) {
 	out := string(renderBody("rss", `<p>hi</p><script>alert(1)</script><p onclick="x()">bye</p>`))
 	if strings.Contains(out, "<script") || strings.Contains(out, "alert") {

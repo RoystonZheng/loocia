@@ -126,6 +126,35 @@ func TestParseSearchIsAllTime(t *testing.T) {
 	}
 }
 
+func TestParseSourceKind(t *testing.T) {
+	// mp is a historical archive → browsing it drops the 7-day floor.
+	p, err := parseListParams(vals("source_kind=mp"), refNow)
+	if err != nil {
+		t.Fatalf("source_kind=mp: %v", err)
+	}
+	if p.SourceKind == nil || *p.SourceKind != "mp" {
+		t.Fatalf("SourceKind: %v", p.SourceKind)
+	}
+	if p.Since != nil {
+		t.Fatalf("mp browse should have no since floor, got %v", p.Since)
+	}
+	// rss keeps the 7-day freshness window.
+	p, err = parseListParams(vals("source_kind=rss"), refNow)
+	if err != nil {
+		t.Fatalf("source_kind=rss: %v", err)
+	}
+	if p.SourceKind == nil || *p.SourceKind != "rss" {
+		t.Fatalf("SourceKind: %v", p.SourceKind)
+	}
+	if p.Since == nil || !p.Since.Equal(refNow.Add(-7*24*time.Hour)) {
+		t.Fatalf("rss should keep 7d window: %v", p.Since)
+	}
+	// Invalid value → 400.
+	if _, err := parseListParams(vals("source_kind=email"), refNow); err == nil {
+		t.Fatal("invalid source_kind should 400")
+	}
+}
+
 func lenPtr(s *string) int {
 	if s == nil {
 		return -1

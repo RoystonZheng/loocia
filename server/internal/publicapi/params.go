@@ -52,6 +52,15 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		p.Category = &cc
 	}
 
+	// source_kind filter: mp (公众号) | rss (英文源). Any other value → 400.
+	if sk := q.Get("source_kind"); sk != "" {
+		if sk != "mp" && sk != "rss" {
+			return p, errBadRequest
+		}
+		skk := sk
+		p.SourceKind = &skk
+	}
+
 	p.Limit = defaultTake
 	if t := q.Get("take"); t != "" {
 		n, err := strconv.Atoi(t)
@@ -72,6 +81,12 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		p.Q = &qs
 	}
 
+	// The 公众号 (mp) corpus is historical, so browsing it must ignore the 7-day
+	// freshness floor — otherwise the archive is invisible. Searching already
+	// spans all time; explicitly viewing the mp source opens the archive too.
+	archive := p.SourceKind != nil && *p.SourceKind == "mp"
+	allTime := isSearch || archive
+
 	lower := now.Add(-sinceWindow)
 	if s := q.Get("since"); s != "" {
 		ts, err := time.Parse(time.RFC3339, s)
@@ -81,13 +96,13 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		if ts.After(now.Add(futureSkew)) {
 			return p, errBadRequest
 		}
-		if !isSearch && ts.Before(lower) {
-			ts = lower // clamp to the window only when browsing
+		if !allTime && ts.Before(lower) {
+			ts = lower // clamp to the window only when browsing fresh sources
 		}
 		tt := ts.UTC()
 		p.Since = &tt
-	} else if !isSearch {
-		p.Since = &lower // default window; a search omits it → all-time
+	} else if !allTime {
+		p.Since = &lower // default window; search / mp archive → all-time
 	}
 
 	if cur := q.Get("cursor"); cur != "" {

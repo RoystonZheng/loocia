@@ -24,6 +24,7 @@ export interface ItemList {
 export interface ListQuery {
   mode?: 'selected' | 'all'
   category?: string
+  sourceKind?: 'mp' | 'rss'
   q?: string
   take?: number
   cursor?: string
@@ -33,6 +34,7 @@ export async function fetchItems(query: ListQuery): Promise<ItemList> {
   const params = new URLSearchParams()
   if (query.mode) params.set('mode', query.mode)
   if (query.category) params.set('category', query.category)
+  if (query.sourceKind) params.set('source_kind', query.sourceKind)
   if (query.q) params.set('q', query.q)
   if (query.take != null) params.set('take', String(query.take))
   if (query.cursor) params.set('cursor', query.cursor)

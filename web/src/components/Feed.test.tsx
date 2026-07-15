@@ -62,6 +62,23 @@ describe('Feed', () => {
     expect(searchUrl).toContain('q=OpenAI')
   })
 
+  it('switching the source toggle refetches with source_kind and resets the list', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => page(['a', 'b'], null) })
+      .mockResolvedValueOnce({ ok: true, json: async () => page(['mp1'], null) })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<Feed mode="all" />)
+    await waitFor(() => expect(screen.getByText('t-a')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '公众号' }))
+
+    await waitFor(() => expect(screen.getByText('t-mp1')).toBeInTheDocument())
+    expect(screen.queryByText('t-a')).toBeNull()
+    const mpUrl = fetchMock.mock.calls[1][0] as string
+    expect(mpUrl).toContain('source_kind=mp')
+  })
+
   it('shows an error message when the fetch fails', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 }) as unknown as typeof fetch
     render(<Feed mode="all" />)

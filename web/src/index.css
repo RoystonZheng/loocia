@@ -108,6 +108,7 @@ button { font-family: inherit; }
 .page-head h1 { font-size: 26px; }
 .page-sub { color: var(--muted); font-size: 14px; margin-top: 4px; }
 .feed-controls { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.feed-sources { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
 .feed-cats { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   padding: 6px 14px; border: 1px solid transparent; border-radius: 999px;

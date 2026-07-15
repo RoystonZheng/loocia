@@ -6,6 +6,11 @@ import { HotTopics } from './HotTopics'
 import { categoryLabel, beijingParts } from '../format'
 
 const CATEGORIES = ['ai-models', 'ai-products', 'industry', 'paper', 'tip']
+const SOURCES: { key: 'mp' | 'rss' | undefined; label: string }[] = [
+  { key: undefined, label: '全部来源' },
+  { key: 'mp', label: '公众号' },
+  { key: 'rss', label: '英文源' },
+]
 const PAGE_SIZE = 20
 
 export function Feed({ mode }: { mode: 'selected' | 'all' }) {
@@ -17,6 +22,7 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
   const [q, setQ] = useState('')
   const [submittedQ, setSubmittedQ] = useState('')
   const [category, setCategory] = useState<string | undefined>(undefined)
+  const [sourceKind, setSourceKind] = useState<'mp' | 'rss' | undefined>(undefined)
 
   const load = useCallback(
     async (reset: boolean, curCursor: string | null) => {
@@ -28,6 +34,7 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
           take: PAGE_SIZE,
           q: submittedQ || undefined,
           category,
+          sourceKind,
           cursor: reset ? undefined : curCursor ?? undefined,
         })
         setItems((prev) => (reset ? res.items : [...prev, ...res.items]))
@@ -39,7 +46,7 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
         setLoading(false)
       }
     },
-    [mode, submittedQ, category],
+    [mode, submittedQ, category, sourceKind],
   )
 
   useEffect(() => {
@@ -51,6 +58,17 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
       {mode === 'selected' && <HotTopics />}
 
       <div className="feed-controls">
+        <div className="feed-sources">
+          {SOURCES.map((s) => (
+            <button
+              key={s.label}
+              className={sourceKind === s.key ? 'chip active' : 'chip'}
+              onClick={() => setSourceKind(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
         <div className="feed-cats">
           <button
             className={category === undefined ? 'chip active' : 'chip'}

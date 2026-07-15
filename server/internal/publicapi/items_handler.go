@@ -19,14 +19,26 @@ type Lister interface {
 // Clock returns the current time (injected for testability).
 type Clock func() time.Time
 
+// maxConcurrentSearches bounds in-flight q= queries. A search is a trigram
+// ILIKE over four columns including full bodies — measured ~100× slower per
+// request under a 60-way burst than solo — and unbounded concurrency lets a
+// search storm saturate DB CPU and starve every other query. Excess searches
+// queue here (bounded by the client's own timeout) instead of on the DB.
+const maxConcurrentSearches = 6
+
 // ItemsHandler serves GET /api/public/items.
 type ItemsHandler struct {
-	store Lister
-	now   Clock
+	store     Lister
+	now       Clock
+	searchSem chan struct{}
 }
 
 func NewItemsHandler(store Lister, now Clock) *ItemsHandler {
-	return &ItemsHandler{store: store, now: now}
+	return &ItemsHandler{
+		store:     store,
+		now:       now,
+		searchSem: make(chan struct{}, maxConcurrentSearches),
+	}
 }
 
 func (h *ItemsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +46,16 @@ func (h *ItemsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid query parameters")
 		return
+	}
+
+	if p.Q != nil {
+		select {
+		case h.searchSem <- struct{}{}:
+			defer func() { <-h.searchSem }()
+		case <-r.Context().Done():
+			writeError(w, http.StatusServiceUnavailable, "search busy")
+			return
+		}
 	}
 
 	take := p.Limit

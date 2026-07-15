@@ -13,6 +13,27 @@ const termPayload = {
   ],
 }
 
+const termPayload2 = {
+  term: '推理模型', kind: 'topic', count: 18,
+  neighbors: [
+    { term: 'OpenAI', kind: 'entity', weight: 9 },
+    { term: '芯片', kind: 'topic', weight: 2 },
+  ],
+  items: [
+    { id: 'i2', title: '另一条', url: 'https://x/i2', permalink: '/items/i2', source: 'S2', selected: false },
+  ],
+}
+
+function mockTwoTerms() {
+  globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+    const u = decodeURIComponent(String(url))
+    if (u.includes('/graph/term/推理模型')) {
+      return Promise.resolve({ ok: true, json: async () => termPayload2 })
+    }
+    return Promise.resolve({ ok: true, json: async () => termPayload })
+  }) as unknown as typeof fetch
+}
+
 describe('TermPanel', () => {
   beforeEach(() => vi.restoreAllMocks())
 
@@ -46,5 +67,44 @@ describe('TermPanel', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 }) as unknown as typeof fetch
     render(<TermPanel term="x" window="7d" onSelect={() => {}} />)
     await waitFor(() => expect(screen.getByText(/加载失败/)).toBeInTheDocument())
+  })
+
+  it('keeps shared nodes mounted across a focus switch (smooth transition)', async () => {
+    mockTwoTerms()
+    const { rerender } = render(<TermPanel term="OpenAI" window="7d" onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('推理模型')).toBeInTheDocument())
+    const before = screen.getByText('OpenAI').closest('g')
+    rerender(<TermPanel term="推理模型" window="7d" onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('芯片')).toBeInTheDocument())
+    // OpenAI 在两轮里都存在（先焦点后邻居）：DOM 节点必须是同一个（没被重建）
+    expect(screen.getByText('OpenAI').closest('g')).toBe(before)
+  })
+
+  it('fades out and removes exiting nodes after the transition', async () => {
+    vi.useFakeTimers()
+    try {
+      mockTwoTerms()
+      const { rerender } = render(<TermPanel term="OpenAI" window="7d" onSelect={() => {}} />)
+      await vi.waitFor(() => expect(screen.getByText('开源')).toBeInTheDocument())
+      rerender(<TermPanel term="推理模型" window="7d" onSelect={() => {}} />)
+      await vi.waitFor(() => expect(screen.getByText('芯片')).toBeInTheDocument())
+      // 「开源」不在新邻居里：先带 exiting 类，计时器走完后从 DOM 消失
+      expect(screen.getByText('开源').closest('g')!.className.baseVal).toContain('exiting')
+      vi.advanceTimersByTime(500)
+      expect(screen.queryByText('开源')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('dims非 hover 的节点', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => termPayload }) as unknown as typeof fetch
+    render(<TermPanel term="OpenAI" window="7d" onSelect={() => {}} />)
+    await waitFor(() => expect(screen.getByText('推理模型')).toBeInTheDocument())
+    fireEvent.mouseEnter(screen.getByText('推理模型').closest('g')!)
+    expect(screen.getByText('开源').closest('g')!.className.baseVal).toContain('dim')
+    expect(screen.getByText('推理模型').closest('g')!.className.baseVal).not.toContain('dim')
+    fireEvent.mouseLeave(screen.getByText('推理模型').closest('g')!)
+    expect(screen.getByText('开源').closest('g')!.className.baseVal).not.toContain('dim')
   })
 })

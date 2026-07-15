@@ -11,18 +11,32 @@ const HEADERS: Record<Exclude<View, 'daily' | 'graph'>, { title: string; sub: st
   all: { title: '全部 AI 动态', sub: 'AI 相关资讯全量信息流' },
 }
 
+function viewFromHash(): View {
+  switch (window.location.hash) {
+    case '#all': return 'all'
+    case '#daily': return 'daily'
+    case '#graph': return 'graph'
+    default: return 'selected'
+  }
+}
+
 export default function App() {
   const [v, setV] = useState<PublicVersion | null>(null)
-  const [view, setView] = useState<View>('selected')
+  const [view, setView] = useState<View>(viewFromHash)
   const [theme, setTheme] = useTheme()
 
   useEffect(() => {
     fetchVersion().then(setV).catch(() => {})
   }, [])
 
+  function handleView(v: View) {
+    history.replaceState(null, '', v === 'selected' ? '/' : '#' + v)
+    setView(v)
+  }
+
   return (
     <div className="shell">
-      <Sidebar view={view} onView={setView} theme={theme} onTheme={setTheme} />
+      <Sidebar view={view} onView={handleView} theme={theme} onTheme={setTheme} />
       <div className="main">
         {view === 'daily' ? (
           <DailyView />

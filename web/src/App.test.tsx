@@ -62,3 +62,15 @@ it('switches to the graph view', async () => {
   await waitFor(() => expect(screen.getByText('词云词')).toBeInTheDocument())
   expect(screen.queryByText('标题A')).toBeNull()
 })
+
+it('deep-links to the graph view via location hash', async () => {
+  mockAll()
+  window.location.hash = '#graph'
+  try {
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('词云词')).toBeInTheDocument())
+    expect(screen.queryByText('标题A')).toBeNull()
+  } finally {
+    window.location.hash = ''
+  }
+})

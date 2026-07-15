@@ -192,6 +192,7 @@ func TestRendersItemPage(t *testing.T) {
 		"2026-05-07 12:00", "Original English Title",
 		`href="https://source.example/post"`, "阅读原文", // outbound
 		`href="/"`, "全部 AI 动态", // sidebar shell nav back to the SPA
+		`href="/#graph"`, "图谱", // sidebar link to the graph view
 		"AI 摘要",       // summary box label
 		"导出 Markdown", // export affordance
 		"<title>中文标题", // page title

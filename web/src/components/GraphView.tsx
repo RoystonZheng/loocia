@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchCloud, type CloudTerm, type GraphWindow } from '../api/graph'
 import { layoutCloud, type PlacedWord } from '../cloudLayout'
+import { inkTier } from '../ink'
 import { TermPanel } from './TermPanel'
 
 const CLOUD_W = 900
@@ -42,7 +43,12 @@ export function GraphView() {
         }
         const maxCount = res.terms[0].count
         const placed = await layoutCloud(
-          res.terms.map((t: CloudTerm) => ({ text: t.term, size: fontSize(t.count, maxCount), kind: t.kind })),
+          res.terms.map((t: CloudTerm) => ({
+            text: t.term,
+            size: fontSize(t.count, maxCount),
+            kind: t.kind,
+            tier: inkTier(t.count, maxCount),
+          })),
           CLOUD_W, CLOUD_H,
         )
         if (!stale) setWords(placed)
@@ -89,7 +95,7 @@ export function GraphView() {
               y={w.y}
               fontSize={w.size}
               textAnchor="middle"
-              className={`gv-word ${w.kind === 'entity' ? 'entity' : 'topic'}${selected === w.text ? ' selected' : ''}`}
+              className={`gv-word gv-ink-t${w.tier}${selected === w.text ? ' selected' : ''}`}
               onClick={() => setSelected(w.text)}
             >
               {w.text}

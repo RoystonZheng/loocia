@@ -19,6 +19,11 @@
   --gold-soft: #fff8e8;
   --sans: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, "Segoe UI", Roboto, sans-serif;
   --serif: "Songti SC", "SimSun", Georgia, "Times New Roman", serif;
+  --gv-paper: #faf9f6;
+  --gv-ink-1: #1a1a1a;
+  --gv-ink-2: #3d3d3b;
+  --gv-ink-3: #6a6a63;
+  --gv-ink-4: #98988f;
   font: 15px/1.6 var(--sans);
   color: var(--text);
   background: var(--bg);
@@ -44,9 +49,14 @@
   --chip: #1c1f25;
   --gold: #e0a83a;
   --gold-soft: #241f14;
+  --gv-paper: #16181d;
+  --gv-ink-1: #e8e8e4;
+  --gv-ink-2: #c9c9c4;
+  --gv-ink-3: #9a9a92;
+  --gv-ink-4: #6b6b64;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) { --bg: #0f1115; --sidebar: #121419; --text: #e6e8eb; --text-2: #b3b8bf; --muted: #7c828b; --border: #24272e; --card: #16181d; --rail: #2a2e35; --chip: #1c1f25; }
+  :root:not([data-theme]) { --bg: #0f1115; --sidebar: #121419; --text: #e6e8eb; --text-2: #b3b8bf; --muted: #7c828b; --border: #24272e; --card: #16181d; --rail: #2a2e35; --chip: #1c1f25; --gv-paper: #16181d; --gv-ink-1: #e8e8e4; --gv-ink-2: #c9c9c4; --gv-ink-3: #9a9a92; --gv-ink-4: #6b6b64; }
 }
 
 * { box-sizing: border-box; }
@@ -242,10 +252,17 @@ button { font-family: inherit; }
 }
 .gv-win-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 
-.gv-cloud { width: 100%; height: auto; display: block; }
-.gv-word { cursor: pointer; font-family: var(--sans); font-weight: 600; }
-.gv-word.entity { fill: var(--accent); }
-.gv-word.topic { fill: var(--gold); }
+.gv-cloud {
+  width: 100%; height: auto; display: block;
+  background: var(--gv-paper); border: 1px solid var(--border); border-radius: 10px;
+  animation: gv-fade .3s ease both;
+}
+@keyframes gv-fade { from { opacity: 0; } to { opacity: 1; } }
+.gv-word { cursor: pointer; font-family: var(--serif); }
+.gv-ink-t1 { fill: var(--gv-ink-1); font-weight: 900; }
+.gv-ink-t2 { fill: var(--gv-ink-2); font-weight: 700; }
+.gv-ink-t3 { fill: var(--gv-ink-3); font-weight: 400; }
+.gv-ink-t4 { fill: var(--gv-ink-4); font-weight: 400; }
 .gv-word:hover, .gv-word.selected { opacity: .7; text-decoration: underline; }
 
 .gv-status { color: var(--muted); padding: 32px 0; text-align: center; }

@@ -4,6 +4,7 @@ export interface CloudWord {
   text: string
   size: number
   kind: string
+  tier: number
 }
 
 export interface PlacedWord extends CloudWord {

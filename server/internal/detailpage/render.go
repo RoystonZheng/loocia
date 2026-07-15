@@ -9,6 +9,8 @@ import (
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 var (
@@ -60,10 +62,32 @@ func renderBody(sourceKind, body string) template.HTML {
 		raw = body
 	}
 	clean := sanitizer.Sanitize(raw)
+	// Balance before the attr injections below: bodies are third-party and LLM
+	// translations routinely drop closing tags; an unclosed div here swallows the
+	// page's later sibling containers (seen live: #orig-en vanished inside
+	// #orig-cn). A parse→render round trip closes everything it opens.
+	clean = balanceHTML(clean)
 	// Post-sanitize (so these fixed handlers survive): lazy-load, hide broken, and
 	// send no Referer — WeChat's mmbiz.qpic.cn serves an anti-hotlink placeholder
 	// when the Referer isn't a weixin domain; no-referrer gets the real image.
 	clean = imgTagRe.ReplaceAllString(clean, `<img loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'" `)
 	clean = emptyTheadRe.ReplaceAllString(clean, "")
 	return template.HTML(clean)
+}
+
+// balanceHTML re-serializes a fragment through a real HTML parser so every
+// opened tag is closed. Parse errors fall back to the input unchanged.
+func balanceHTML(fragment string) string {
+	ctx := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
+	nodes, err := html.ParseFragment(strings.NewReader(fragment), ctx)
+	if err != nil {
+		return fragment
+	}
+	var buf bytes.Buffer
+	for _, n := range nodes {
+		if err := html.Render(&buf, n); err != nil {
+			return fragment
+		}
+	}
+	return buf.String()
 }

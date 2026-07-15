@@ -87,3 +87,27 @@ func TestRenderBodyEmpty(t *testing.T) {
 		t.Fatal("blank body should render empty")
 	}
 }
+
+func TestRenderBodyBalancesUnclosedTags(t *testing.T) {
+	// LLM translations routinely drop closing tags (seen live: an unclosed
+	// readability wrapper div swallowed the sibling #orig-en container, so
+	// toggling to English showed nothing). The rendered fragment must close
+	// every tag it opens.
+	out := string(renderBody("rss", `<div id="readability-page-1" class="page"><p>正文第一段<p>第二段`))
+	opens := strings.Count(out, "<div")
+	closes := strings.Count(out, "</div>")
+	if opens != closes {
+		t.Fatalf("unbalanced divs: %d open vs %d close in %q", opens, closes, out)
+	}
+	if !strings.Contains(out, "正文第一段") || !strings.Contains(out, "第二段") {
+		t.Fatalf("content should survive balancing: %q", out)
+	}
+}
+
+func TestRenderBodyBalanceKeepsImgHandlers(t *testing.T) {
+	// Balancing must not run after the img-attr injection gets escaped away.
+	out := string(renderBody("rss", `<div><img src="https://x/y.png">`))
+	if !strings.Contains(out, `loading="lazy"`) || !strings.Contains(out, "onerror") {
+		t.Fatalf("img handlers must survive balancing: %q", out)
+	}
+}

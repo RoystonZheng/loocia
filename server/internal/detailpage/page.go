@@ -252,9 +252,9 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
     <div class="logo">AI<span class="dot">◉</span>Cool</div>
     <div class="nav-label">内容</div>
     <nav class="nav">
-      <a href="/">✦ 精选</a>
+      <a href="/">▤ AI 日报</a>
+      <a href="/#selected">✦ 精选</a>
       <a href="/#all">≣ 全部 AI 动态</a>
-      <a href="/#daily">▤ AI 日报</a>
       <a href="/#graph">❖ 图谱</a>
     </nav>
     <div class="theme" role="group" aria-label="主题">

@@ -20,21 +20,22 @@ type fakeGraphStore struct {
 	err       error
 
 	gotSince *time.Time // captured from the last call
+	gotUntil *time.Time
 	gotTerm  string
 }
 
-func (f *fakeGraphStore) Cloud(ctx context.Context, since *time.Time, limit int) ([]terms.CloudTerm, error) {
-	f.gotSince = since
+func (f *fakeGraphStore) Cloud(ctx context.Context, since, until *time.Time, limit int) ([]terms.CloudTerm, error) {
+	f.gotSince, f.gotUntil = since, until
 	return f.cloud, f.err
 }
-func (f *fakeGraphStore) Neighbors(ctx context.Context, term string, since *time.Time, limit int) ([]terms.Neighbor, error) {
-	f.gotTerm, f.gotSince = term, since
+func (f *fakeGraphStore) Neighbors(ctx context.Context, term string, since, until *time.Time, limit int) ([]terms.Neighbor, error) {
+	f.gotTerm, f.gotSince, f.gotUntil = term, since, until
 	return f.neighbors, f.err
 }
-func (f *fakeGraphStore) ItemsForTerm(ctx context.Context, term string, since *time.Time, limit int) ([]terms.TermItem, error) {
+func (f *fakeGraphStore) ItemsForTerm(ctx context.Context, term string, since, until *time.Time, limit int) ([]terms.TermItem, error) {
 	return f.items, f.err
 }
-func (f *fakeGraphStore) TermInfo(ctx context.Context, term string, since *time.Time) (string, int, error) {
+func (f *fakeGraphStore) TermInfo(ctx context.Context, term string, since, until *time.Time) (string, int, error) {
 	return f.kind, f.count, f.err
 }
 
@@ -90,6 +91,37 @@ func TestGraphCloudWindowParams(t *testing.T) {
 		} else if f.gotSince == nil || !f.gotSince.Equal(fixedNow().Add(-c.offset)) {
 			t.Fatalf("%s: since %v", c.q, f.gotSince)
 		}
+	}
+}
+
+func TestGraphCloudPerDay(t *testing.T) {
+	// ?date=YYYY-MM-DD → a Beijing-day window [dayStart, nextDay), overriding
+	// the freshness window so each day gets its own cloud.
+	f := &fakeGraphStore{}
+	h := NewGraphCloudHandler(f, fixedNow)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/public/graph/cloud?date=2026-07-14", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code: %d", rr.Code)
+	}
+	bj := time.FixedZone("CST", 8*3600)
+	wantSince := time.Date(2026, 7, 14, 0, 0, 0, 0, bj)
+	wantUntil := time.Date(2026, 7, 15, 0, 0, 0, 0, bj)
+	if f.gotSince == nil || !f.gotSince.Equal(wantSince) {
+		t.Fatalf("since: %v want %v", f.gotSince, wantSince)
+	}
+	if f.gotUntil == nil || !f.gotUntil.Equal(wantUntil) {
+		t.Fatalf("until: %v want %v", f.gotUntil, wantUntil)
+	}
+	// A malformed date falls back to the default 7-day window (no upper bound).
+	f2 := &fakeGraphStore{}
+	NewGraphCloudHandler(f2, fixedNow).ServeHTTP(
+		httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/public/graph/cloud?date=nope", nil))
+	if f2.gotUntil != nil {
+		t.Fatalf("malformed date should have no upper bound, got %v", f2.gotUntil)
+	}
+	if f2.gotSince == nil || !f2.gotSince.Equal(fixedNow().Add(-7*24*time.Hour)) {
+		t.Fatalf("malformed date should fall back to 7d: %v", f2.gotSince)
 	}
 }
 

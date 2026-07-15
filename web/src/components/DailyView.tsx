@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchDailyList, fetchDailyByDate, type DailyReport, type DailySummary } from '../api/daily'
+import { WordCloud } from './WordCloud'
 
 type State = 'loading' | 'ready' | 'empty' | 'error'
 
@@ -130,6 +131,12 @@ function DailyPaper({ rep }: { rep: DailyReport }) {
             <span className="ph-count">{sec.items.length}</span>
           </div>
         ))}
+      </section>
+
+      <section className="paper-cloud">
+        <h3>今日热词</h3>
+        <p className="paper-cloud-hint">词越大越热，点一个词看当天跟它相关的内容</p>
+        <WordCloud date={rep.date} height={300} />
       </section>
 
       {rep.sections.map((sec) => (

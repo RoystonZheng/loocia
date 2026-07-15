@@ -57,7 +57,7 @@ func TestProcessorWritesTerms(t *testing.T) {
 		t.Fatalf("batch: %+v err=%v", res, err)
 	}
 
-	cloud, err := ts.Cloud(context.Background(), nil, 10)
+	cloud, err := ts.Cloud(context.Background(), nil, nil, 10)
 	if err != nil {
 		t.Fatalf("cloud: %v", err)
 	}

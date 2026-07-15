@@ -171,8 +171,9 @@ button { font-family: inherit; }
 .hot-badge { color: var(--muted); font-size: 12px; flex-shrink: 0; }
 
 /* ---- daily magazine --------------------------------------------------- */
-.home-cloud { margin-bottom: 30px; padding-bottom: 26px; border-bottom: 1px solid var(--border); }
-.home-cloud .page-head { border-bottom: none; padding-bottom: 6px; margin-bottom: 6px; }
+.paper-cloud { margin: 30px 0; padding: 20px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.paper-cloud h3 { font-size: 15px; letter-spacing: 1px; margin: 0 0 2px; }
+.paper-cloud-hint { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
 
 .daily-layout { display: grid; grid-template-columns: 220px 1fr; gap: 36px; }
 @media (max-width: 900px) { .daily-layout { grid-template-columns: 1fr; } }

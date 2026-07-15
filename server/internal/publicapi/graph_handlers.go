@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -12,10 +13,28 @@ import (
 
 // GraphStore is the read surface the graph handlers need (satisfied by *terms.Store).
 type GraphStore interface {
-	Cloud(ctx context.Context, since *time.Time, limit int) ([]terms.CloudTerm, error)
-	Neighbors(ctx context.Context, term string, since *time.Time, limit int) ([]terms.Neighbor, error)
-	ItemsForTerm(ctx context.Context, term string, since *time.Time, limit int) ([]terms.TermItem, error)
-	TermInfo(ctx context.Context, term string, since *time.Time) (kind string, count int, err error)
+	Cloud(ctx context.Context, since, until *time.Time, limit int) ([]terms.CloudTerm, error)
+	Neighbors(ctx context.Context, term string, since, until *time.Time, limit int) ([]terms.Neighbor, error)
+	ItemsForTerm(ctx context.Context, term string, since, until *time.Time, limit int) ([]terms.TermItem, error)
+	TermInfo(ctx context.Context, term string, since, until *time.Time) (kind string, count int, err error)
+}
+
+// beijing is the calendar day used for the per-day (?date=) cloud, matching the
+// daily report's Beijing-midnight window.
+var beijing = time.FixedZone("CST", 8*3600)
+
+// parseGraphRange resolves the time filter. An explicit ?date=YYYY-MM-DD (a
+// Beijing calendar day) → [dayStart, nextDay) so each day gets its own cloud;
+// otherwise ?window=7d|30d|all → (since, nil] as before.
+func parseGraphRange(q url.Values, now time.Time) (since, until *time.Time) {
+	if d := q.Get("date"); d != "" {
+		if day, err := time.ParseInLocation("2006-01-02", d, beijing); err == nil {
+			s := day
+			u := day.AddDate(0, 0, 1)
+			return &s, &u
+		}
+	}
+	return parseWindow(q.Get("window"), now), nil
 }
 
 const (
@@ -52,8 +71,8 @@ type cloudResponse struct {
 // NewGraphCloudHandler serves GET /api/public/graph/cloud?window=7d|30d|all.
 func NewGraphCloudHandler(s GraphStore, now func() time.Time) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		since := parseWindow(r.URL.Query().Get("window"), now())
-		rows, err := s.Cloud(r.Context(), since, cloudLimit)
+		since, until := parseGraphRange(r.URL.Query(), now())
+		rows, err := s.Cloud(r.Context(), since, until, cloudLimit)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -92,19 +111,19 @@ func NewGraphTermHandler(s GraphStore, now func() time.Time) http.Handler {
 			writeError(w, http.StatusNotFound, "term not found")
 			return
 		}
-		since := parseWindow(r.URL.Query().Get("window"), now())
+		since, until := parseGraphRange(r.URL.Query(), now())
 
-		kind, count, err := s.TermInfo(r.Context(), term, since)
+		kind, count, err := s.TermInfo(r.Context(), term, since, until)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		ns, err := s.Neighbors(r.Context(), term, since, neighborLimit)
+		ns, err := s.Neighbors(r.Context(), term, since, until, neighborLimit)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		its, err := s.ItemsForTerm(r.Context(), term, since, termItemsLimit)
+		its, err := s.ItemsForTerm(r.Context(), term, since, until, termItemsLimit)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return

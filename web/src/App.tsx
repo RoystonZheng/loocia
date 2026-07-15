@@ -3,7 +3,6 @@ import { fetchVersion, type PublicVersion } from './api/version'
 import { Feed } from './components/Feed'
 import { DailyView } from './components/DailyView'
 import { GraphView } from './components/GraphView'
-import { WordCloud } from './components/WordCloud'
 import { Sidebar, type View } from './components/Sidebar'
 import { useTheme } from './theme'
 
@@ -40,16 +39,7 @@ export default function App() {
       <Sidebar view={view} onView={handleView} theme={theme} onTheme={setTheme} />
       <div className="main">
         {view === 'daily' ? (
-          <>
-            <section className="home-cloud">
-              <header className="page-head">
-                <h1>AI 热词图谱</h1>
-                <p className="page-sub">词越大越热，点一个词看它跟谁连着</p>
-              </header>
-              <WordCloud height={300} />
-            </section>
-            <DailyView />
-          </>
+          <DailyView />
         ) : view === 'graph' ? (
           <GraphView />
         ) : (

@@ -20,10 +20,11 @@ function fontSize(count: number, maxCount: number): number {
   return MIN_FONT + (MAX_FONT - MIN_FONT) * Math.sqrt(count / maxCount)
 }
 
-// WordCloud renders the interactive keyword cloud (size = frequency in the
-// window) with a time-range selector; clicking a word opens its co-occurrence
-// panel. Reused by the 图谱 page and the home hero (pass a shorter `height`).
-export function WordCloud({ height = DEFAULT_H }: { height?: number }) {
+// WordCloud renders the interactive keyword cloud (size = frequency); clicking
+// a word opens its co-occurrence panel. Two modes: a rolling time window (图谱
+// page, with a 7天/30天/全部 selector) or a single Beijing day (`date`, used by
+// each daily report — the selector is hidden since the day is fixed).
+export function WordCloud({ height = DEFAULT_H, date }: { height?: number; date?: string }) {
   const [win, setWin] = useState<GraphWindow>('7d')
   const [words, setWords] = useState<PlacedWord[] | null>(null)
   const [empty, setEmpty] = useState(false)
@@ -35,7 +36,8 @@ export function WordCloud({ height = DEFAULT_H }: { height?: number }) {
     setWords(null)
     setEmpty(false)
     setFailed(false)
-    fetchCloud(win)
+    setSelected(null)
+    fetchCloud(win, date)
       .then(async (res) => {
         if (stale) return
         if (res.terms.length === 0) {
@@ -56,22 +58,24 @@ export function WordCloud({ height = DEFAULT_H }: { height?: number }) {
       })
       .catch(() => { if (!stale) setFailed(true) })
     return () => { stale = true }
-  }, [win, height])
+  }, [win, height, date])
 
   return (
     <>
-      <div className="gv-controls" role="group" aria-label="时间范围">
-        {WINDOWS.map((w) => (
-          <button
-            key={w.key}
-            className={`gv-win-btn${win === w.key ? ' active' : ''}`}
-            aria-pressed={win === w.key}
-            onClick={() => setWin(w.key)}
-          >
-            {w.label}
-          </button>
-        ))}
-      </div>
+      {!date && (
+        <div className="gv-controls" role="group" aria-label="时间范围">
+          {WINDOWS.map((w) => (
+            <button
+              key={w.key}
+              className={`gv-win-btn${win === w.key ? ' active' : ''}`}
+              aria-pressed={win === w.key}
+              onClick={() => setWin(w.key)}
+            >
+              {w.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {failed && <div className="gv-status">加载失败，稍后再试</div>}
       {empty && <div className="gv-status">该时间段暂无数据</div>}
@@ -102,7 +106,7 @@ export function WordCloud({ height = DEFAULT_H }: { height?: number }) {
         </svg>
       )}
 
-      {selected && <TermPanel term={selected} window={win} onSelect={setSelected} />}
+      {selected && <TermPanel term={selected} window={win} date={date} onSelect={setSelected} />}
     </>
   )
 }

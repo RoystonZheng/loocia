@@ -88,16 +88,17 @@ func (s *Store) ReplaceForItem(ctx context.Context, itemID string, ts []Term) er
 
 // Cloud returns the top terms by distinct-item count since `since` (nil = all
 // time). MIN(kind) prefers 'entity' when the same term was tagged both ways.
-func (s *Store) Cloud(ctx context.Context, since *time.Time, limit int) ([]CloudTerm, error) {
+func (s *Store) Cloud(ctx context.Context, since, until *time.Time, limit int) ([]CloudTerm, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT t.term, MIN(t.kind), COUNT(*)::int AS cnt
 		FROM item_terms t
 		JOIN items i ON i.id = t.item_id
 		WHERE i.present AND i.duplicate_of_id IS NULL
 		  AND ($1::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $1)
+		  AND ($2::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) < $2)
 		GROUP BY t.term
 		ORDER BY cnt DESC, t.term
-		LIMIT $2`, since, limit)
+		LIMIT $3`, since, until, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func (s *Store) Cloud(ctx context.Context, since *time.Time, limit int) ([]Cloud
 
 // Neighbors returns terms co-occurring with `term` (same item), weight-desc.
 // An item inside a hot cluster (same-event, multi-source) counts double.
-func (s *Store) Neighbors(ctx context.Context, term string, since *time.Time, limit int) ([]Neighbor, error) {
+func (s *Store) Neighbors(ctx context.Context, term string, since, until *time.Time, limit int) ([]Neighbor, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT b.term, MIN(b.kind),
 		       SUM(CASE WHEN i.cluster_id IS NOT NULL THEN 2 ELSE 1 END)::int AS weight
@@ -124,9 +125,10 @@ func (s *Store) Neighbors(ctx context.Context, term string, since *time.Time, li
 		JOIN items i ON i.id = a.item_id
 		WHERE a.term = $1 AND i.present AND i.duplicate_of_id IS NULL
 		  AND ($2::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $2)
+		  AND ($3::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) < $3)
 		GROUP BY b.term
 		ORDER BY weight DESC, b.term
-		LIMIT $3`, term, since, limit)
+		LIMIT $4`, term, since, until, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +145,7 @@ func (s *Store) Neighbors(ctx context.Context, term string, since *time.Time, li
 }
 
 // ItemsForTerm returns the newest items carrying the term, public fields only.
-func (s *Store) ItemsForTerm(ctx context.Context, term string, since *time.Time, limit int) ([]TermItem, error) {
+func (s *Store) ItemsForTerm(ctx context.Context, term string, since, until *time.Time, limit int) ([]TermItem, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT i.id, i.title, i.title_en, i.url, i.permalink, i.source, i.published_at,
 		       i.summary, i.image_url, i.category, i.score, i.selected
@@ -151,8 +153,9 @@ func (s *Store) ItemsForTerm(ctx context.Context, term string, since *time.Time,
 		JOIN items i ON i.id = t.item_id
 		WHERE t.term = $1 AND i.present AND i.duplicate_of_id IS NULL
 		  AND ($2::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $2)
+		  AND ($3::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) < $3)
 		ORDER BY COALESCE(i.published_at,'epoch'::timestamptz) DESC, i.id DESC
-		LIMIT $3`, term, since, limit)
+		LIMIT $4`, term, since, until, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -171,13 +174,14 @@ func (s *Store) ItemsForTerm(ctx context.Context, term string, since *time.Time,
 
 // TermInfo returns a term's kind + item count in the window; ("", 0, nil) when
 // the term doesn't appear at all (the handler still answers 200 with empties).
-func (s *Store) TermInfo(ctx context.Context, term string, since *time.Time) (kind string, count int, err error) {
+func (s *Store) TermInfo(ctx context.Context, term string, since, until *time.Time) (kind string, count int, err error) {
 	err = s.pool.QueryRow(ctx, `
 		SELECT COALESCE(MIN(t.kind), ''), COUNT(*)::int
 		FROM item_terms t
 		JOIN items i ON i.id = t.item_id
 		WHERE t.term = $1 AND i.present AND i.duplicate_of_id IS NULL
-		  AND ($2::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $2)`,
-		term, since).Scan(&kind, &count)
+		  AND ($2::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) >= $2)
+		  AND ($3::timestamptz IS NULL OR COALESCE(i.published_at,'epoch'::timestamptz) < $3)`,
+		term, since, until).Scan(&kind, &count)
 	return kind, count, err
 }

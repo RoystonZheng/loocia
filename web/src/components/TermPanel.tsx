@@ -38,10 +38,11 @@ interface ExitNode extends NodeSnapshot {
 // subgraph with staged transitions (shared nodes slide, leavers fade out,
 // newcomers fade in) + the term's newest items.
 export function TermPanel({
-  term, window: win, onSelect,
+  term, window: win, date, onSelect,
 }: {
   term: string
   window: GraphWindow
+  date?: string
   onSelect: (term: string) => void
 }) {
   const [data, setData] = useState<TermResponse | null>(null)
@@ -59,11 +60,11 @@ export function TermPanel({
     setLoading(true)
     setFailed(false)
     setHovered(null)
-    fetchTerm(term, win)
+    fetchTerm(term, win, date)
       .then((d) => { if (!stale) { setData(d); setLoading(false) } })
       .catch(() => { if (!stale) { setFailed(true); setLoading(false) } })
     return () => { stale = true }
-  }, [term, win])
+  }, [term, win, date])
 
   // geometry is frozen between data changes: hover-only re-renders must NOT
   // re-run the force simulation (it reheats and drifts nodes a few px per run)

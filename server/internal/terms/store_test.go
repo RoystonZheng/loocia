@@ -60,7 +60,7 @@ func TestReplaceForItemIdempotent(t *testing.T) {
 	if err := ts.ReplaceForItem(ctx, "a", []Term{{Term: "英伟达", Kind: "entity"}}); err != nil {
 		t.Fatalf("replace2: %v", err)
 	}
-	cloud, err := ts.Cloud(ctx, nil, 10)
+	cloud, err := ts.Cloud(ctx, nil, nil, 10)
 	if err != nil {
 		t.Fatalf("cloud: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestCloudCountsWindowAndKind(t *testing.T) {
 	must("old", []Term{{Term: "OpenAI", Kind: "entity"}, {Term: "远古话题", Kind: "topic"}})
 
 	// all（since=nil）：OpenAI=3 居首
-	all, err := ts.Cloud(ctx, nil, 10)
+	all, err := ts.Cloud(ctx, nil, nil, 10)
 	if err != nil {
 		t.Fatalf("cloud all: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestCloudCountsWindowAndKind(t *testing.T) {
 	}
 	// 7d 窗口：old 被滤掉
 	since := now.Add(-7 * 24 * time.Hour)
-	recent, err := ts.Cloud(ctx, &since, 10)
+	recent, err := ts.Cloud(ctx, &since, nil, 10)
 	if err != nil {
 		t.Fatalf("cloud 7d: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestNeighborsCooccurrenceAndClusterBoost(t *testing.T) {
 		t.Fatalf("replace clustered: %v", err)
 	}
 
-	ns, err := ts.Neighbors(ctx, "OpenAI", nil, 10)
+	ns, err := ts.Neighbors(ctx, "OpenAI", nil, nil, 10)
 	if err != nil {
 		t.Fatalf("neighbors: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestItemsForTermAndTermInfo(t *testing.T) {
 		}
 	}
 
-	its, err := ts.ItemsForTerm(ctx, "OpenAI", nil, 10)
+	its, err := ts.ItemsForTerm(ctx, "OpenAI", nil, nil, 10)
 	if err != nil {
 		t.Fatalf("items: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestItemsForTermAndTermInfo(t *testing.T) {
 		t.Fatalf("fields: %+v", its[0])
 	}
 
-	kind, count, err := ts.TermInfo(ctx, "OpenAI", nil)
+	kind, count, err := ts.TermInfo(ctx, "OpenAI", nil, nil)
 	if err != nil {
 		t.Fatalf("terminfo: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestItemsForTermAndTermInfo(t *testing.T) {
 		t.Fatalf("terminfo: kind=%q count=%d", kind, count)
 	}
 	// 不存在的词：count=0 不报错
-	kind, count, err = ts.TermInfo(ctx, "没有的词", nil)
+	kind, count, err = ts.TermInfo(ctx, "没有的词", nil, nil)
 	if err != nil || count != 0 || kind != "" {
 		t.Fatalf("missing term: kind=%q count=%d err=%v", kind, count, err)
 	}

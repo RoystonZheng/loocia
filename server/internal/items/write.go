@@ -63,6 +63,20 @@ func (s *Store) AssignCluster(ctx context.Context, id, clusterID string, primary
 	return err
 }
 
+// ClearStaleClusterRefs removes cluster assignments whose cluster id is not in
+// live. ClearClusters only resets the trailing window, so an item that ages out
+// of the window keeps its last assignment forever; if its primary was since
+// reassigned, a selected secondary would silently vanish from the feed (the
+// query folds non-primary members). Calling this after each pass with the
+// clusters that survived keeps assignments consistent with the clusters table.
+// An empty live set clears every assignment.
+func (s *Store) ClearStaleClusterRefs(ctx context.Context, live []string) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE items SET cluster_id = NULL, cluster_primary = NULL
+		WHERE cluster_id IS NOT NULL AND NOT (cluster_id = ANY($1))`, live)
+	return tag.RowsAffected(), err
+}
+
 // GetByID returns the item, or ErrNotFound.
 func (s *Store) GetByID(ctx context.Context, id string) (*Item, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+itemColumns+` FROM items WHERE id=$1`, id)

@@ -111,3 +111,51 @@ func TestRunFewItemsClearsClusters(t *testing.T) {
 		t.Fatalf("stale clusters should be cleared: %+v", rows)
 	}
 }
+
+func TestRunClearsStaleAssignmentsOutsideWindow(t *testing.T) {
+	cs, is, _ := newLiveStores(t)
+	ctx := context.Background()
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	base := now.Add(-4 * time.Hour)
+
+	// In-window pair that the LLM groups this pass.
+	seedItem(t, is, "ev1a", "OpenAI Blog", 5, base, true)
+	seedItem(t, is, "ev1b", "机器之心", 4, base.Add(time.Hour), true)
+	// Aged-out item carrying a stale non-primary assignment from a long-gone
+	// cluster (the "orphan" that would be folded out of the selected feed).
+	seedItem(t, is, "old-orphan", "量子位", 4, now.Add(-100*time.Hour), true)
+	if err := is.AssignCluster(ctx, "old-orphan", "gone-cluster", false); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewPass(is, cs, &fakeLLM{reply: `{"clusters":[{"item_ids":["ev1a","ev1b"]}]}`})
+	if _, err := p.Run(ctx, 72*time.Hour, now); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// The stale assignment is reconciled away; the fresh one stays.
+	orphan, _ := is.GetByID(ctx, "old-orphan")
+	if orphan.ClusterID != nil || orphan.ClusterPrimary != nil {
+		t.Fatalf("stale assignment should be cleared: %+v", orphan)
+	}
+	ga, _ := is.GetByID(ctx, "ev1a")
+	if ga.ClusterID == nil || *ga.ClusterID != "ev1a" {
+		t.Fatalf("fresh assignment should survive: %+v", ga)
+	}
+
+	// And the orphan is visible in the selected feed again.
+	tru := true
+	feed, err := is.List(ctx, items.ListParams{Selected: &tru, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, it := range feed {
+		if it.ID == "old-orphan" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("old-orphan should reappear in selected feed after reconcile")
+	}
+}

@@ -67,6 +67,16 @@ func (p *Pass) Run(ctx context.Context, window time.Duration, now time.Time) (Re
 	if err := p.store.ReplaceAll(ctx, clusters); err != nil {
 		return res, fmt.Errorf("replace clusters: %w", err)
 	}
+	// Items that aged out of the window keep their last assignment; once their
+	// cluster is gone from the rebuilt table a stale non-primary flag would fold
+	// them out of the selected feed forever. Reconcile against the live set.
+	live := make([]string, 0, len(clusters))
+	for _, c := range clusters {
+		live = append(live, c.ID)
+	}
+	if _, err := p.items.ClearStaleClusterRefs(ctx, live); err != nil {
+		return res, fmt.Errorf("clear stale refs: %w", err)
+	}
 	res.Clusters = len(clusters)
 	return res, nil
 }

@@ -5,6 +5,8 @@ set -euo pipefail
 UNIT="$1"; shift || true
 
 export AIHOT_DATABASE_URL="postgres://aihot:aihot@localhost:5432/aihot"
+export AIHOT_MP_CORPUS_DIR="/root/wechat-corpus"
+export AIHOT_TRANSLATE_MODEL="deepseek-v4-flash"
 # The LLM key lives in the wechat-push env file on this host.
 export AIHOT_LLM_API_KEY="$(grep '^LLM_API_KEY' /root/wechat-push/.env | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r')"
 

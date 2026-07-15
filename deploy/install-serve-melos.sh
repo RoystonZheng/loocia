@@ -19,7 +19,10 @@ echo "== server binary + conf + public =="
 # Stop a running server first — can't overwrite a busy binary (ETXTBSY).
 ssh "$HOST" 'supervisorctl stop aihot-server 2>/dev/null; true'
 scp out/server "$HOST:/root/aihot/bin/server"
-ssh "$HOST" 'chmod +x /root/aihot/bin/server'
+# Launch wrapper: injects the LLM key from wechat-push's env (supervisor conf
+# execs this, not the bare binary — without it retranslate runs keyless → 503).
+scp aihot-server.sh "$HOST:/root/aihot/bin/aihot-server.sh"
+ssh "$HOST" 'chmod +x /root/aihot/bin/server /root/aihot/bin/aihot-server.sh'
 scp -r "$ROOT/server/conf/." "$HOST:/root/aihot/conf/"
 # public/ is optional (SSE demo assets); ship if present
 if [ -d "$ROOT/server/public" ]; then scp -r "$ROOT/server/public" "$HOST:/root/aihot/"; fi

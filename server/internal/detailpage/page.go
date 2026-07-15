@@ -224,6 +224,11 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
 .orig pre{overflow-x:auto;background:var(--chip);padding:12px;border-radius:8px;}
 .orig code{background:var(--chip);padding:1px 5px;border-radius:4px;}
 .orig blockquote{margin:0 0 1em;padding-left:14px;border-left:3px solid var(--border);color:var(--text-2);}
+.orig table{border-collapse:collapse;width:100%;margin:18px 0;font-size:.92rem;line-height:1.6;display:block;overflow-x:auto;}
+.orig th,.orig td{border:1px solid var(--border);padding:8px 12px;text-align:left;vertical-align:top;}
+.orig thead th{background:var(--chip);font-weight:700;}
+.orig tbody tr:first-child td{background:var(--chip);font-weight:600;}
+.orig tbody tr:nth-child(even):not(:first-child) td{background:color-mix(in srgb,var(--chip) 45%,transparent);}
 .tags{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0;}
 .tag{font-size:12px;color:var(--text-2);background:var(--chip);border-radius:6px;padding:4px 10px;}
 .readmore{display:inline-block;padding:10px 18px;background:var(--accent);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;}

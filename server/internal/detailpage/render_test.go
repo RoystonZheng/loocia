@@ -30,6 +30,18 @@ func TestRenderBodyGFMTable(t *testing.T) {
 	}
 }
 
+func TestRenderBodyDropsEmptyTableHead(t *testing.T) {
+	// an all-empty header row (公众号 spacer) → thead removed, data rows kept
+	md := "|  |  |\n| --- | --- |\n| 资产类型 | 定义 |\n| 业务规则库 | 是什么 |"
+	out := string(renderBody("mp", md))
+	if strings.Contains(out, "<thead>") {
+		t.Fatalf("empty thead should be dropped: %q", out)
+	}
+	if !strings.Contains(out, "<table") || !strings.Contains(out, "资产类型") {
+		t.Fatalf("table/data should survive: %q", out)
+	}
+}
+
 func TestRenderBodyStripsScripts(t *testing.T) {
 	out := string(renderBody("rss", `<p>hi</p><script>alert(1)</script><p onclick="x()">bye</p>`))
 	if strings.Contains(out, "<script") || strings.Contains(out, "alert") {

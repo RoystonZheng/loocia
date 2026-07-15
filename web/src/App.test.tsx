@@ -41,8 +41,8 @@ it('renders the daily home with the word cloud by default, and switches views', 
   render(<App />)
   // home = the daily report (日报导语) with its per-day 今日热词 cloud (词云词);
   // the feed is not shown
-  await waitFor(() => expect(screen.getByText('日报导语')).toBeInTheDocument())
-  expect(screen.getByText('今日热词')).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByText('今日热词')).toBeInTheDocument())
+  expect(screen.getByText('日报导语')).toBeInTheDocument()
   await waitFor(() => expect(screen.getByText('词云词')).toBeInTheDocument())
   expect(screen.queryByText('标题A')).toBeNull()
 

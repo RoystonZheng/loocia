@@ -17,6 +17,10 @@ var (
 	mdRenderer = goldmark.New(goldmark.WithExtensions(extension.GFM))
 	sanitizer  = bluemonday.UGCPolicy()
 	imgTagRe   = regexp.MustCompile(`(?i)<img\s+`)
+	// Some 公众号 tables ship an all-empty header row (used as a spacer); GFM
+	// still emits a <thead>, which renders as an ugly blank band. Drop a thead
+	// whose cells are all empty so the table starts at its first real row.
+	emptyTheadRe = regexp.MustCompile(`(?is)<thead>\s*<tr>\s*(?:<th[^>]*>\s*</th>\s*)+</tr>\s*</thead>`)
 )
 
 // renderBody turns an item's stored body into safe HTML for the detail page.
@@ -44,5 +48,6 @@ func renderBody(sourceKind, body string) template.HTML {
 	// send no Referer — WeChat's mmbiz.qpic.cn serves an anti-hotlink placeholder
 	// when the Referer isn't a weixin domain; no-referrer gets the real image.
 	clean = imgTagRe.ReplaceAllString(clean, `<img loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'" `)
+	clean = emptyTheadRe.ReplaceAllString(clean, "")
 	return template.HTML(clean)
 }

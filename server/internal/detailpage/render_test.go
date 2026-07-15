@@ -42,6 +42,19 @@ func TestRenderBodyDropsEmptyTableHead(t *testing.T) {
 	}
 }
 
+func TestRenderBodyStripsWeixinFooter(t *testing.T) {
+	body := "正文最后一句。\n\n预览时标签不可点\n\n[知道了](javascript:;)\n\n[取消](javascript:void(0);)\n[允许](javascript:void(0);)\n\n×\n\n![图片](http://mmbiz.qpic.cn/x/0?wx_fmt=png)\n\n微信扫一扫可打开此内容，\n使用完整服务\n\n视频\n小程序\n赞\n，轻点两下取消赞"
+	out := string(renderBody("mp", body))
+	if !strings.Contains(out, "正文最后一句") {
+		t.Fatalf("real content dropped: %q", out)
+	}
+	for _, junk := range []string{"预览时标签不可点", "微信扫一扫", "轻点两下取消赞", "知道了", "wx_fmt"} {
+		if strings.Contains(out, junk) {
+			t.Fatalf("WeChat footer junk %q survived: %q", junk, out)
+		}
+	}
+}
+
 func TestRenderBodyStripsScripts(t *testing.T) {
 	out := string(renderBody("rss", `<p>hi</p><script>alert(1)</script><p onclick="x()">bye</p>`))
 	if strings.Contains(out, "<script") || strings.Contains(out, "alert") {

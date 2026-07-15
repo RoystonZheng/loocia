@@ -159,6 +159,7 @@ function rd(){try{return localStorage.getItem(K)||'system';}catch(e){return 'sys
 function ap(t){var e=t==='system'?(sd()?'dark':'light'):t;document.documentElement.dataset.theme=e;}
 function mk(t){['light','dark','system'].forEach(function(k){var el=document.getElementById('th-'+k);if(el)el.setAttribute('aria-pressed',String(k===t));});}
 window.__setTheme=function(t){try{localStorage.setItem(K,t);}catch(e){}ap(t);mk(t);};
+window.__goBack=function(){if(document.referrer&&history.length>1){history.back();return false;}return true;};
 window.__toggleOrig=function(){var cn=document.getElementById('orig-cn'),en=document.getElementById('orig-en'),b=document.getElementById('tr-toggle');if(!cn||!en||!b)return;var showEn=en.style.display==='none';en.style.display=showEn?'':'none';cn.style.display=showEn?'none':'';b.textContent=showEn?'看中文翻译':'看英文原文';};
 window.__retranslate=function(id){var b=document.getElementById('tr-retry');if(b){b.disabled=true;b.textContent='翻译中…';}fetch('/items/'+id+'/retranslate',{method:'POST'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok){location.reload();}else{if(b){b.disabled=false;b.textContent='重试仍失败，可稍后再试';}}}).catch(function(){if(b){b.disabled=false;b.textContent='重试失败，可稍后再试';}});};
 ap(rd());document.addEventListener('DOMContentLoaded',function(){mk(rd());});})();
@@ -266,7 +267,7 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
   <main class="main">
     <article class="article">
       <div class="topbar">
-        <a class="back" href="/">← 返回</a>
+        <a class="back" href="/" onclick="return __goBack()">← 返回</a>
         <span class="src">{{.Source}}</span>
         {{if .Selected}}<span class="badge-sel">✦ 精选</span>{{end}}
         {{if .HasScore}}<span class="badge-score" data-tier="{{.Tier}}">{{.Score}}</span>{{end}}

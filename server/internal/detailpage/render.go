@@ -21,7 +21,22 @@ var (
 	// still emits a <thead>, which renders as an ugly blank band. Drop a thead
 	// whose cells are all empty so the table starts at its first real row.
 	emptyTheadRe = regexp.MustCompile(`(?is)<thead>\s*<tr>\s*(?:<th[^>]*>\s*</th>\s*)+</tr>\s*</thead>`)
+	// weixinFooterMarkers denote where a WeChat article's export chrome begins —
+	// the "preview" hint, permission dialogs, QR code, share bar. Everything from
+	// the earliest marker on is boilerplate scraped into the body, not content.
+	weixinFooterMarkers = []string{"预览时标签不可点", "微信扫一扫可打开此内容", "轻点两下取消赞"}
 )
+
+// stripWeixinFooter truncates an mp body at the first WeChat chrome marker.
+func stripWeixinFooter(body string) string {
+	cut := len(body)
+	for _, m := range weixinFooterMarkers {
+		if i := strings.Index(body, m); i >= 0 && i < cut {
+			cut = i
+		}
+	}
+	return strings.TrimRight(body[:cut], " \n\t")
+}
 
 // renderBody turns an item's stored body into safe HTML for the detail page.
 // mp bodies are Markdown (goldmark → HTML); rss bodies are already HTML/text.
@@ -34,6 +49,7 @@ func renderBody(sourceKind, body string) template.HTML {
 	}
 	var raw string
 	if sourceKind == "mp" {
+		body = stripWeixinFooter(body)
 		var buf bytes.Buffer
 		if err := mdRenderer.Convert([]byte(body), &buf); err != nil {
 			raw = "<p>" + template.HTMLEscapeString(body) + "</p>"

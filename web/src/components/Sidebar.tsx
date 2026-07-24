@@ -27,7 +27,15 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sb-logo">
         <span className="sb-logo-ai">AI</span>
-        <span className="sb-logo-dot">◉</span>
+        <svg className="sb-logo-mark" width="21" height="21" viewBox="0 0 20 20" aria-hidden="true">
+          <defs>
+            <linearGradient id="sbLogoMark" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#5ab6ff" />
+              <stop offset="1" stopColor="#2f6bff" />
+            </linearGradient>
+          </defs>
+          <path d="M10 1.5C10 6 10 6 14.2 8 10 10 10 10 10 18.5 10 10 10 10 5.8 8 10 6 10 6 10 1.5Z" fill="url(#sbLogoMark)" />
+        </svg>
         <span className="sb-logo-hot">Cool</span>
       </div>
 

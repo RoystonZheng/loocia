@@ -77,8 +77,8 @@ func toViewModel(it *items.Item) viewModel {
 	} else if it.Body != nil {
 		vm.Body = renderBody(it.SourceKind, *it.Body)
 	}
-	vm.CanRetranslate = it.SourceKind == "rss" && it.Body != nil &&
-		(it.BodyCN == nil || strings.TrimSpace(*it.BodyCN) == "")
+	// rss + 有原文 → 就能重译(不管当前有没有译文;已有译文也允许重译,修不完整的翻译)
+	vm.CanRetranslate = it.SourceKind == "rss" && it.Body != nil
 	if it.Category != nil {
 		if lbl, ok := categoryLabels[*it.Category]; ok {
 			vm.Category = lbl
@@ -152,7 +152,7 @@ var pageTemplate = template.Must(template.New("item").Parse(`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>{{.Title}} · AI Cool（内网）</title>
+<title>{{.Title}} · AI Cool</title>
 <script>
 (function(){var K='aihot-theme';function sd(){return typeof matchMedia!=='undefined'&&matchMedia('(prefers-color-scheme: dark)').matches;}
 function rd(){try{return localStorage.getItem(K)||'system';}catch(e){return 'system';}}
@@ -161,7 +161,7 @@ function mk(t){['light','dark','system'].forEach(function(k){var el=document.get
 window.__setTheme=function(t){try{localStorage.setItem(K,t);}catch(e){}ap(t);mk(t);};
 window.__goBack=function(){if(document.referrer&&history.length>1){history.back();return false;}return true;};
 window.__toggleOrig=function(){var cn=document.getElementById('orig-cn'),en=document.getElementById('orig-en'),b=document.getElementById('tr-toggle');if(!cn||!en||!b)return;var showEn=en.style.display==='none';en.style.display=showEn?'':'none';cn.style.display=showEn?'none':'';b.textContent=showEn?'看中文翻译':'看英文原文';};
-window.__retranslate=function(id){var b=document.getElementById('tr-retry');if(b){b.disabled=true;b.textContent='翻译中…';}fetch('/items/'+id+'/retranslate',{method:'POST'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok){location.reload();}else{if(b){b.disabled=false;b.textContent='重试仍失败，可稍后再试';}}}).catch(function(){if(b){b.disabled=false;b.textContent='重试失败，可稍后再试';}});};
+window.__retranslate=function(id){var bs=document.querySelectorAll('.tr-retry-btn');bs.forEach(function(b){b.disabled=true;b.textContent='翻译中…';});fetch('/items/'+id+'/retranslate',{method:'POST'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok){location.reload();}else{bs.forEach(function(b){b.disabled=false;b.textContent='重试仍失败';});}}).catch(function(){bs.forEach(function(b){b.disabled=false;b.textContent='重试失败';});});};
 ap(rd());document.addEventListener('DOMContentLoaded',function(){mk(rd());});})();
 </script>
 <style>
@@ -216,8 +216,8 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
 .back{font-size:13px;color:var(--text-2);text-decoration:none;font-weight:600;}
 .back:hover{color:var(--text);}
 .tr-note{font-size:12px;color:var(--muted);margin-top:8px;}
-#tr-retry{margin-top:8px;font-size:13px;padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--accent-2);cursor:pointer;}
-#tr-retry:disabled{opacity:.6;cursor:default;}
+.tr-retry-btn:disabled{opacity:.6;cursor:default;}
+.tr-relink{background:none;border:0;padding:0;font-size:inherit;color:var(--accent-2);text-decoration:underline;cursor:pointer;}
 .orig p{margin:0 0 1.1em;}
 .orig h1,.orig h2,.orig h3{font-size:1.15rem;margin:1.4em 0 .6em;line-height:1.4;}
 .orig img{max-width:100%;height:auto;border-radius:8px;margin:.6em 0;}
@@ -290,17 +290,16 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
       <div class="media"><img src="{{.ImageURL}}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.style.display='none'"></div>
       {{end}}
       {{if .Body}}
-      <div class="orig-h">原文{{if .HasTranslation}} <button type="button" class="tr-toggle" id="tr-toggle" onclick="__toggleOrig()">看英文原文</button>{{end}}</div>
+      <div class="orig-h">原文{{if .HasTranslation}} <button type="button" class="tr-toggle" id="tr-toggle" onclick="__toggleOrig()">看英文原文</button>{{end}}{{if .CanRetranslate}} <button type="button" class="tr-toggle tr-retry-btn" onclick="__retranslate('{{.ID}}')">{{if .HasTranslation}}重新翻译{{else}}翻译{{end}}</button>{{end}}</div>
       <div class="orig" id="orig-cn">{{.Body}}</div>
       {{if .HasTranslation}}<div class="orig" id="orig-en" style="display:none">{{.BodyOriginal}}</div>
-      <p class="tr-note">本文由 AI（{{.BodyCNModel}}）翻译</p>{{end}}
-      {{if .CanRetranslate}}<button type="button" id="tr-retry" onclick="__retranslate('{{.ID}}')">翻译失败 · 点此重试翻译</button>{{end}}
+      <p class="tr-note">本文由 DeepSeek 翻译{{if .CanRetranslate}} · <button type="button" class="tr-relink tr-retry-btn" onclick="__retranslate('{{.ID}}')">重新翻译</button>{{end}}</p>{{end}}
       {{end}}
       <div class="tags">
         {{if .Category}}<span class="tag">#{{.Category}}</span>{{end}}
       </div>
       <a class="readmore" href="{{.URL}}" target="_blank" rel="noopener nofollow">阅读原文 →</a>
-      <p class="note">本页为站内中文呈现（内网 noindex）；正文版权归原信源所有，请以「阅读原文」为准。</p>
+      <p class="note">本页为站内中文呈现；正文版权归原信源所有，请以「阅读原文」为准。</p>
     </article>
   </main>
 </div>
@@ -309,7 +308,7 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
 
 var notFoundTemplate = template.Must(template.New("404").Parse(`<!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>未找到 · AI Cool（内网）</title>
+<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>未找到 · AI Cool</title>
 <style>body{max-width:600px;margin:0 auto;padding:48px 18px;font:16px/1.6 system-ui,sans-serif;text-align:center;color-scheme:light dark;}a{color:#2f6bff;}</style>
 </head>
 <body>

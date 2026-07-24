@@ -22,8 +22,9 @@ const translateSystemPrompt = `你是专业的科技翻译。把用户给的 HTM
 6. 不要索要内容、不要解释、不要返回英文原文、不要输出除译文外的任何文字。`
 
 // maxTranslateRunes caps the body sent to the model. RSS bodies are short
-// (median ~165 chars); the rare long one is truncated to stay under token limits.
-const maxTranslateRunes = 8000
+// (median ~165 chars); long ones are truncated. 12000 runes 英文 → ~7000 输出 token,
+// 配合 maxTokens=8192 仍不会截断;再长的极少数文章才截输入。
+const maxTranslateRunes = 12000
 
 type translator struct {
 	llm   LLM

@@ -102,14 +102,15 @@ func TestDetailShowsModelNoteWhenTranslated(t *testing.T) {
 	model := "deepseek-v4-flash"
 	out := renderDetail(t, &items.Item{ID: "x", Title: "t", URL: "https://e.com/x", Permalink: "/items/x",
 		Source: "S", SourceKind: "rss", Body: &en, BodyCN: &cn, BodyCNModel: &model})
-	if !strings.Contains(out, "本文由 AI") {
-		t.Fatalf("model note missing")
+	if !strings.Contains(out, "本文由 DeepSeek 翻译") {
+		t.Fatalf("DeepSeek attribution missing")
 	}
-	if !strings.Contains(out, "deepseek-v4-flash") {
-		t.Fatalf("model name missing")
+	// 已翻译的文章也应有「重新翻译」按钮(供用户重译不完整/不满意的译文)
+	if !strings.Contains(out, `tr-toggle tr-retry-btn`) {
+		t.Fatalf("retranslate button should be present when translated")
 	}
-	if strings.Contains(out, `id="tr-retry"`) {
-		t.Fatalf("retry button should be absent when translated")
+	if !strings.Contains(out, "重新翻译") {
+		t.Fatalf("retranslate label 重新翻译 missing when translated")
 	}
 }
 
@@ -117,7 +118,7 @@ func TestDetailShowsRetryWhenTranslationMissing(t *testing.T) {
 	en := "<p>English.</p>"
 	out := renderDetail(t, &items.Item{ID: "abc123", Title: "t", URL: "https://e.com/x", Permalink: "/items/abc123",
 		Source: "S", SourceKind: "rss", Body: &en})
-	if !strings.Contains(out, `id="tr-retry"`) {
+	if !strings.Contains(out, `tr-toggle tr-retry-btn`) {
 		t.Fatalf("retry button missing")
 	}
 	if !strings.Contains(out, "__retranslate('abc123')") {
@@ -132,7 +133,7 @@ func TestDetailNoRetryForMP(t *testing.T) {
 	body := "# t\n正文"
 	out := renderDetail(t, &items.Item{ID: "x", Title: "t", URL: "https://e.com/x", Permalink: "/items/x",
 		Source: "S", SourceKind: "mp", Body: &body})
-	if strings.Contains(out, `id="tr-retry"`) {
+	if strings.Contains(out, `tr-toggle tr-retry-btn`) {
 		t.Fatalf("mp item should not have retry button")
 	}
 	if strings.Contains(out, "本文由 AI") {

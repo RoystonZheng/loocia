@@ -95,6 +95,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Robots-Tag", "noindex")
+	w.Header().Set("Cache-Control", "no-cache") // 内容会随重译变化,让浏览器每次校验拿最新
 	if err := pageTemplate.Execute(w, toViewModel(it)); err != nil {
 		// header already sent on partial write; best-effort log-free fallback
 		return

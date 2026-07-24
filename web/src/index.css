@@ -1,3 +1,6 @@
+/* Orbitron(OFL开源)子集:仅含 logo 用的 'AI Cool' 字符,~2.5KB 内嵌,无外链 */
+@font-face{font-family:'Orbitron';font-weight:700;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');}
+
 /* ---- design tokens ---------------------------------------------------- */
 :root {
   --bg: #ffffff;
@@ -79,13 +82,13 @@ button { font-family: inherit; }
   position: sticky; top: 0; height: 100vh;
 }
 .sb-logo {
-  display: flex; align-items: center; gap: 3px; font-weight: 800;
-  font-size: 20px; letter-spacing: 1px; padding: 6px 8px 16px;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  font-family: 'Orbitron', var(--sans); font-weight: 700;
+  font-size: 24px; letter-spacing: .5px; padding: 14px 8px;
   border: 1px solid var(--border-2); border-radius: 12px; margin-bottom: 10px;
-  justify-content: center;
 }
-.sb-logo { padding: 14px 8px; }
-.sb-logo-dot { color: var(--accent); font-size: 14px; }
+.sb-logo-hot { color: var(--accent); }
+.sb-logo-mark { flex-shrink: 0; display: block; }
 .sb-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .sb-group { font-size: 11px; color: var(--muted); padding: 14px 10px 6px; letter-spacing: .5px; }
 .sb-item {
@@ -175,10 +178,41 @@ button { font-family: inherit; }
 .paper-cloud h3 { font-size: 15px; letter-spacing: 1px; margin: 0 0 2px; }
 .paper-cloud-hint { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
 
-.daily-layout { display: grid; grid-template-columns: 220px 1fr; gap: 36px; }
-@media (max-width: 900px) { .daily-layout { grid-template-columns: 1fr; } }
-.daily-archive { border-right: 1px solid var(--border); padding-right: 20px; }
-@media (max-width: 900px) { .daily-archive { border-right: none; padding-right: 0; } }
+.daily-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 36px; }
+.daily-archive {
+  border-right: 1px solid var(--border); padding-right: 20px; min-width: 0;
+  /* 吸附:往下滚正文时,左侧日期栏一直停在视口左上;列表太长则自身内滚。
+     align-self:start 让它在 grid 里按内容高(而非撑满行高),否则 sticky 不生效。 */
+  position: sticky; top: 20px; align-self: start;
+  max-height: calc(100vh - 40px); overflow-y: auto;
+}
+/* 手机端日期条(桌面隐藏) */
+.daily-datebar { display: none; }
+@media (max-width: 900px) {
+  .daily-layout { grid-template-columns: minmax(0, 1fr); }
+  .daily-archive { display: none; }               /* 手机藏掉左侧长列表 */
+  .daily-datebar {
+    display: flex; align-items: center; justify-content: space-between;
+    position: relative; padding: 4px 2px 14px; margin-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ddb-current { font-size: 15px; font-weight: 700; color: var(--text); }
+  .ddb-toggle {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 15px;
+    border: 1px solid var(--border-2); background: var(--bg); color: var(--text-2);
+    border-radius: 999px; font-size: 13px; cursor: pointer;
+  }
+  .ddb-toggle.open { color: var(--accent-2); border-color: var(--accent); }
+  .ddb-caret { transition: transform .2s ease; font-size: 10px; }
+  .ddb-toggle.open .ddb-caret { transform: rotate(180deg); }
+  .ddb-backdrop { position: fixed; inset: 0; z-index: 25; }
+  .ddb-dropdown {
+    position: absolute; top: 100%; right: 0; left: 0; z-index: 30; margin-top: 6px;
+    background: var(--card); border: 1px solid var(--border-2); border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.16); padding: 8px 10px;
+    max-height: 62vh; overflow-y: auto;
+  }
+}
 .daily-subnav { display: flex; gap: 6px; margin-bottom: 20px; }
 .daily-subnav button { flex: 1; padding: 7px; border: 1px solid var(--border-2); background: var(--bg); color: var(--text-2); border-radius: 8px; cursor: pointer; font-size: 13px; }
 .daily-subnav button.active { background: var(--accent-soft); color: var(--accent-2); border-color: transparent; font-weight: 600; }
@@ -186,17 +220,23 @@ button { font-family: inherit; }
 .darc-month { margin-bottom: 12px; }
 .darc-month-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: var(--text); padding: 8px 4px; }
 .darc-count { color: var(--muted); font-weight: 400; }
-.darc-item { display: flex; gap: 8px; width: 100%; text-align: left; padding: 7px 10px; border: none; background: transparent; border-radius: 8px; cursor: pointer; color: var(--text-2); border-left: 2px solid transparent; }
+.darc-item { display: flex; gap: 8px; width: 100%; min-width: 0; text-align: left; padding: 7px 10px; border: none; background: transparent; border-radius: 8px; cursor: pointer; color: var(--text-2); border-left: 2px solid transparent; }
 .darc-item:hover { background: var(--bg-soft); }
 .darc-item.active { background: var(--accent-soft); border-left-color: var(--accent); }
-.darc-day { flex-shrink: 0; font-weight: 600; color: var(--text); font-size: 12px; width: 30px; }
-.darc-snip { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.darc-day { flex-shrink: 0; font-weight: 600; color: var(--text); font-size: 12px; width: 38px; white-space: nowrap; }
+.darc-snip { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .paper-masthead { text-align: left; border-bottom: 3px solid var(--text); padding-bottom: 20px; margin-bottom: 24px; }
 .paper-vol { display: flex; align-items: center; gap: 12px; font-size: 12px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; }
 .paper-vol-rule { width: 40px; height: 3px; background: var(--accent); display: inline-block; }
 .paper-name { font-family: var(--serif); font-size: 72px; line-height: 1; letter-spacing: 2px; }
-@media (max-width: 900px) { .paper-name { font-size: 48px; } }
+@media (max-width: 900px) { .paper-name { font-size: 46px; } }
+@media (max-width: 600px) {
+  .paper-name { font-size: 34px; letter-spacing: 1px; }
+  .paper-masthead { padding-bottom: 14px; margin-bottom: 18px; }
+  .paper-highlights { padding: 16px 15px; }
+  .paper-vol { font-size: 11px; letter-spacing: 1px; }
+}
 .paper-name-hot { color: var(--accent-2); }
 .paper-dateline { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 16px; font-size: 14px; color: var(--text-2); }
 .paper-daily-tag { font-size: 11px; letter-spacing: 2px; color: var(--muted); }

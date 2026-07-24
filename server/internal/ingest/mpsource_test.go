@@ -22,6 +22,8 @@ source: we-mp-rss
 
 # Loop Engineering又是啥？
 
+![封面](https://mmbiz.qpic.cn/sz_mmbiz_jpg/cover/0?wx_fmt=jpeg&from=appmsg)
+
 正文第一段。`
 
 func TestParseMPFrontmatter(t *testing.T) {
@@ -43,6 +45,9 @@ func TestParseMPFrontmatter(t *testing.T) {
 	}
 	if a.Body == "" || a.Body[0] != '#' {
 		t.Fatalf("body should start at markdown heading: %q", a.Body)
+	}
+	if a.ImageURL != "https://mmbiz.qpic.cn/sz_mmbiz_jpg/cover/0?wx_fmt=jpeg&from=appmsg" {
+		t.Fatalf("image_url: %q", a.ImageURL)
 	}
 }
 
@@ -129,6 +134,9 @@ publish_time: '2026-07-01T00:00:00+08:00'
 	}
 	if it.RawContent == nil || *it.RawContent == "" {
 		t.Fatal("body should be RawContent")
+	}
+	if it.ImageURL == nil || *it.ImageURL != "https://mmbiz.qpic.cn/sz_mmbiz_jpg/cover/0?wx_fmt=jpeg&from=appmsg" {
+		t.Fatalf("image should come from the first Markdown image: %v", it.ImageURL)
 	}
 }
 

@@ -26,11 +26,47 @@ function groupByMonth(list: DailySummary[]): { key: string; label: string; items
   return groups
 }
 
+// 手机端日期条上显示的当前日期，如「7 月 16 日 · 周四」
+function fmtBar(date: string): string {
+  const wd = weekday(date)
+  return `${Number(date.slice(5, 7))} 月 ${Number(date.slice(8, 10))} 日${wd ? ' · ' + wd : ''}`
+}
+
+// 往期日期列表（桌面左栏 + 手机下拉复用同一份，避免重复）
+function ArchiveList({ list, idx, onPick }: { list: DailySummary[]; idx: number; onPick: (i: number) => void }) {
+  return (
+    <>
+      {groupByMonth(list).map((g) => (
+        <div key={g.key} className="darc-month">
+          <div className="darc-month-head">
+            <span>{g.label}</span>
+            <span className="darc-count">{g.items.length}</span>
+          </div>
+          {g.items.map((s) => {
+            const active = list[idx].date === s.date
+            return (
+              <button
+                key={s.date}
+                className={`darc-item${active ? ' active' : ''}`}
+                onClick={() => onPick(list.findIndex((x) => x.date === s.date))}
+              >
+                <span className="darc-day">{Number(s.date.slice(8, 10))} 日</span>
+                <span className="darc-snip">{s.leadTitle}</span>
+              </button>
+            )
+          })}
+        </div>
+      ))}
+    </>
+  )
+}
+
 export function DailyView() {
   const [state, setState] = useState<State>('loading')
   const [list, setList] = useState<DailySummary[]>([]) // newest first
   const [idx, setIdx] = useState(0)
   const [report, setReport] = useState<DailyReport | null>(null)
+  const [archiveOpen, setArchiveOpen] = useState(false) // 手机端「往期」下拉开合
 
   useEffect(() => {
     fetchDailyList()
@@ -61,31 +97,32 @@ export function DailyView() {
 
   return (
     <div className="daily-layout">
+      {/* 手机端：顶部日期条 + 往期下拉（桌面隐藏） */}
+      <div className="daily-datebar">
+        <span className="ddb-current">{fmtBar(list[idx].date)}</span>
+        <button
+          className={`ddb-toggle${archiveOpen ? ' open' : ''}`}
+          onClick={() => setArchiveOpen((o) => !o)}
+          aria-expanded={archiveOpen}
+        >
+          往期 <span className="ddb-caret">▾</span>
+        </button>
+        {archiveOpen && (
+          <>
+            <div className="ddb-backdrop" onClick={() => setArchiveOpen(false)} />
+            <div className="ddb-dropdown">
+              <ArchiveList list={list} idx={idx} onPick={(i) => { setIdx(i); setArchiveOpen(false) }} />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 桌面端：左侧往期栏（手机隐藏） */}
       <aside className="daily-archive">
         <div className="daily-subnav">
           <button className="active">日报</button>
         </div>
-        {groupByMonth(list).map((g) => (
-          <div key={g.key} className="darc-month">
-            <div className="darc-month-head">
-              <span>{g.label}</span>
-              <span className="darc-count">{g.items.length}</span>
-            </div>
-            {g.items.map((s) => {
-              const active = list[idx].date === s.date
-              return (
-                <button
-                  key={s.date}
-                  className={`darc-item${active ? ' active' : ''}`}
-                  onClick={() => setIdx(list.findIndex((x) => x.date === s.date))}
-                >
-                  <span className="darc-day">{Number(s.date.slice(8, 10))} 日</span>
-                  <span className="darc-snip">{s.leadTitle}</span>
-                </button>
-              )
-            })}
-          </div>
-        ))}
+        <ArchiveList list={list} idx={idx} onPick={setIdx} />
       </aside>
 
       <div className="daily-main">{report && <DailyPaper rep={report} />}</div>

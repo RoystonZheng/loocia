@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -15,7 +16,18 @@ type mpArticle struct {
 	MPName      string
 	Title       string
 	PublishTime string
+	ImageURL    string
 	Body        string
+}
+
+var markdownImageRe = regexp.MustCompile(`!\[[^\]]*\]\(\s*<?(https?://[^)\s>]+)>?`)
+
+func firstMarkdownImage(body string) string {
+	m := markdownImageRe.FindStringSubmatch(body)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
 }
 
 // parseMPFrontmatter extracts the scalar frontmatter fields we need (url,
@@ -60,7 +72,16 @@ func parseMPFrontmatter(data []byte) (mpArticle, bool) {
 			a.Title = val
 		case "publish_time":
 			a.PublishTime = val
+		case "image_url", "pic_url":
+			a.ImageURL = val
 		}
+	}
+	// The domestic corpus already contains the WeChat cover as its first
+	// Markdown image. Prefer that local evidence over fetching mp.weixin.qq.com
+	// from the overseas serving host, which receives a verification page with no
+	// og:image. Explicit frontmatter remains the stronger source when present.
+	if a.ImageURL == "" {
+		a.ImageURL = firstMarkdownImage(a.Body)
 	}
 	if a.URL == "" || a.Title == "" {
 		return mpArticle{}, false
@@ -160,6 +181,10 @@ func (s *MPCorpusSource) toRaw(a mpArticle) RawItem {
 	if a.Body != "" {
 		body := a.Body
 		r.RawContent = &body
+	}
+	if strings.HasPrefix(a.ImageURL, "http://") || strings.HasPrefix(a.ImageURL, "https://") {
+		imageURL := a.ImageURL
+		r.ImageURL = &imageURL
 	}
 	return r
 }

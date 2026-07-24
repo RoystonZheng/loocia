@@ -13,3 +13,11 @@
 **规避：** 修复或绕过方式；相关操作链接到 [`../runbooks/`](../runbooks/)，相关设计链接到 [`../design/`](../design/)。
 
 > 前端常见坑类目（供参考）：全局样式污染、响应式断点、状态管理时序、SSR / hydration 不一致、组件库（如 Ant Design）版本差异。
+
+## 公网服务器不能依赖直抓微信文章补封面
+
+**症状：** 公众号卡片正文、标题和评分正常，但新文章连续没有配图；RSS 卡片仍能正常显示图片。
+
+**原因：** 新加坡服务器请求 `mp.weixin.qq.com` 时可能只得到 HTTP 200 的验证页面，其中没有 `og:image`。国内抓取链生成的 Markdown 已包含封面图，但旧的 `MPCorpusSource` 只解析标题、链接、时间和正文，没有把首张图片带入 `image_url`。
+
+**规避：** 公众号入库优先读取 Markdown frontmatter 的 `image_url` / `pic_url`，缺失时使用正文第一张 HTTP(S) Markdown 图片。不要把海外服务器直抓微信 OG 元数据作为主链路；历史缺图只运行 `backfillimages -og-limit 0` 的 feed pass，避免无效访问微信页面。

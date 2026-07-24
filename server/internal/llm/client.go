@@ -16,7 +16,9 @@ import (
 const (
 	defaultBaseURL = "https://llm-proxy.intra.xiaojukeji.com"
 	defaultModel   = "auto-max"
-	maxTokens      = 1024
+	// 8192 = deepseek-chat 的输出上限。原来 1024 太小,长文章翻译(输入允许 8000 字)
+	// 会在 ~1500-2000 中文字处被截断,连带把正文后半段的图片也截没了。
+	maxTokens      = 8192
 )
 
 // Client calls the internal Anthropic-compatible LLM proxy.

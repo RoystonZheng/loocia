@@ -2,6 +2,13 @@
 
 本目录维护各模块的长期设计——后端的数据 / 模型设计，以及前端的 UI / 交互设计。
 
+## 文档索引
+
+| 文件 | 说明 |
+|---|---|
+| [`ai-cool-2.0-product-design.md`](./ai-cool-2.0-product-design.md) | AI Cool 2.0 资讯、工具雷达、评测、工具箱与后续能力库的产品设计 |
+| [`prototypes/ai-cool-2.0-tools-prototype.html`](./prototypes/ai-cool-2.0-tools-prototype.html) | 工具雷达、评测报告、评测任务、团队工具箱与来源治理的本地交互原型 |
+
 放：
 
 - 后端：模块设计、DBML / 表结构、状态机、跨系统同步方案。

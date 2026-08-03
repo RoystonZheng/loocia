@@ -2,6 +2,14 @@
 
 本目录沉淀上游资料的事实来源快照：PRD、外部系统接入文档、平台规范等。开发全新功能时，先从这里确认需求和约束的原始出处。
 
+## 文档索引
+
+| 文件 | 说明 |
+|---|---|
+| [`ai-cool-2.0-requirements.md`](./ai-cool-2.0-requirements.md) | AI Cool 2.0 会议逐字稿摘录、范围判断与当前实现证据 |
+| [`ai-cool-2.0-benchmark/README.md`](./ai-cool-2.0-benchmark/README.md) | 竞品/开源项目调研、AI Hot 专项结论与 Ego Lite 页面截图 |
+| [`openapi.yaml`](./openapi.yaml) | 当前项目 OpenAPI 参考契约 |
+
 放：上游 PRD、设计稿 / 原型（Figma / 蓝湖等）、外部接入文档、平台/规范文档的快照和摘要。
 不放：已经加工过的技术决策（那是 [`../decisions/`](../decisions/)）、模块设计（那是 [`../design/`](../design/)）。
 

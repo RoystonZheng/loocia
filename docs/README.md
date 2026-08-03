@@ -130,3 +130,7 @@ AI 在新增/调整文档时维护本节。`overview/` 五篇是固定起点；�
 | [`overview/architecture.md`](./overview/architecture.md) | 系统模块、外部依赖、交互边界；前端：路由、组件分层 |
 | [`overview/technical-stack.md`](./overview/technical-stack.md) | 语言、框架、存储、测试、部署；前端：React / 组件库 / 状态管理 / 构建 / 测试 |
 | [`overview/implementation-status.md`](./overview/implementation-status.md) | 已实现、部分实现、待办和风险快照 |
+| [`references/ai-cool-2.0-requirements.md`](./references/ai-cool-2.0-requirements.md) | AI Cool 2.0 逐字稿需求摘录与范围边界 |
+| [`references/ai-cool-2.0-benchmark/README.md`](./references/ai-cool-2.0-benchmark/README.md) | 竞品、开源替代、AI Hot 使用边界与 Ego Lite 截图 |
+| [`design/ai-cool-2.0-product-design.md`](./design/ai-cool-2.0-product-design.md) | AI Cool 2.0 产品方案、状态机、路线图和验收标准 |
+| [`design/prototypes/ai-cool-2.0-tools-prototype.html`](./design/prototypes/ai-cool-2.0-tools-prototype.html) | 工具雷达与评测闭环的本地交互原型 |

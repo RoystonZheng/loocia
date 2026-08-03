@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cool 2.0 - 工具雷达原型</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --surface-2: #f9fafb;
+      --sidebar: #f1f3f5;
+      --text: #19202a;
+      --text-2: #4f5968;
+      --muted: #7c8592;
+      --line: #dde1e6;
+      --line-2: #cdd3da;
+      --blue: #285ee8;
+      --blue-soft: #e9efff;
+      --green: #16794b;
+      --green-soft: #e6f5ed;
+      --amber: #9a6200;
+      --amber-soft: #fff2d2;
+      --red: #af3333;
+      --red-soft: #fdeaea;
+      --purple: #7052a5;
+      --shadow: 0 14px 36px rgba(24, 32, 45, .14);
+      --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body { margin: 0; color: var(--text); background: var(--bg); font: 14px/1.55 var(--sans); }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    a { color: inherit; text-decoration: none; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 208px minmax(0, 1fr); }
+    .sidebar {
+      position: sticky; top: 0; height: 100vh; padding: 18px 14px;
+      background: var(--sidebar); border-right: 1px solid var(--line);
+      display: flex; flex-direction: column;
+    }
+    .brand {
+      height: 54px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+      border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface);
+      font-size: 21px; font-weight: 750;
+    }
+    .brand-mark { color: var(--blue); }
+    .brand small { margin-left: auto; color: var(--muted); font-size: 10px; font-weight: 700; }
+    .nav { margin-top: 14px; flex: 1; }
+    .nav-group { padding: 13px 10px 5px; color: var(--muted); font-size: 11px; }
+    .nav-button {
+      width: 100%; min-height: 38px; padding: 8px 10px; margin: 2px 0; border: 0;
+      border-radius: 7px; background: transparent; color: var(--text-2); cursor: pointer;
+      display: flex; align-items: center; gap: 10px; text-align: left;
+    }
+    .nav-button:hover { background: rgba(255, 255, 255, .72); }
+    .nav-button.active { color: var(--blue); background: var(--blue-soft); font-weight: 650; }
+    .nav-icon { width: 18px; color: var(--muted); text-align: center; }
+    .nav-button.active .nav-icon { color: var(--blue); }
+    .nav-badge { margin-left: auto; min-width: 22px; padding: 1px 6px; border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 11px; text-align: center; }
+    .sidebar-foot { border-top: 1px solid var(--line); padding: 12px 8px 0; color: var(--muted); font-size: 11px; }
+    .workspace { min-width: 0; }
+    .topbar {
+      height: 64px; padding: 0 28px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.92);
+      display: flex; align-items: center; justify-content: space-between; gap: 18px;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .top-search { width: min(460px, 48vw); position: relative; }
+    .top-search input {
+      width: 100%; height: 38px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2);
+      padding: 0 38px 0 13px; color: var(--text); outline: none;
+    }
+    .top-search input:focus { border-color: var(--blue); background: var(--surface); }
+    .search-key { position: absolute; right: 10px; top: 9px; color: var(--muted); font-size: 11px; }
+    .user { display: flex; align-items: center; gap: 10px; color: var(--text-2); white-space: nowrap; }
+    .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #24334a; color: #fff; font-size: 12px; }
+    .content { padding: 24px 28px 48px; max-width: 1500px; }
+    .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
+    .page-head h1 { margin: 0; font-size: 25px; line-height: 1.25; }
+    .page-head p { margin: 5px 0 0; color: var(--muted); }
+    .notice { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid #efcf88; border-radius: 7px; background: #fff8e7; color: #694b0c; font-size: 12px; }
+    .notice strong { white-space: nowrap; }
+    .notice.compact { margin: 12px 0 0; }
+    .head-actions { display: flex; gap: 8px; }
+    .btn {
+      min-height: 36px; padding: 7px 13px; border: 1px solid var(--line-2); border-radius: 7px;
+      background: var(--surface); cursor: pointer; font-weight: 600;
+    }
+    .btn:hover { border-color: #aeb6c0; }
+    .btn.primary { border-color: var(--blue); background: var(--blue); color: #fff; }
+    .btn.danger { color: var(--red); }
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .kpi { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
+    .kpi-label { color: var(--muted); font-size: 12px; }
+    .kpi-value { margin-top: 5px; font-size: 24px; font-weight: 750; font-variant-numeric: tabular-nums; }
+    .kpi-foot { margin-top: 4px; color: var(--text-2); font-size: 11px; }
+    .toolbar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px;
+      border: 1px solid var(--line); border-radius: 8px 8px 0 0; background: var(--surface);
+    }
+    .segmented { display: flex; padding: 3px; gap: 2px; border-radius: 7px; background: var(--sidebar); }
+    .segmented button { border: 0; border-radius: 5px; padding: 5px 10px; background: transparent; color: var(--text-2); cursor: pointer; }
+    .segmented button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(30,40,55,.12); }
+    .select { height: 32px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text-2); padding: 0 28px 0 9px; }
+    .toolbar-spacer { flex: 1; }
+    .muted { color: var(--muted); }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; background: var(--surface); }
+    table { width: 100%; border-collapse: collapse; min-width: 980px; }
+    th { padding: 10px 12px; color: var(--muted); background: var(--surface-2); font-size: 11px; font-weight: 650; text-align: left; border-bottom: 1px solid var(--line); }
+    td { padding: 13px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #fafbfc; }
+    .tool-cell { display: flex; gap: 11px; min-width: 260px; }
+    .tool-logo { width: 34px; height: 34px; border-radius: 7px; flex: 0 0 auto; display: grid; place-items: center; font-weight: 800; color: #fff; background: #24334a; }
+    .tool-logo.blue { background: var(--blue); }
+    .tool-logo.green { background: var(--green); }
+    .tool-logo.purple { background: var(--purple); }
+    .tool-name { font-weight: 700; }
+    .tool-desc { margin-top: 2px; color: var(--muted); font-size: 12px; max-width: 420px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag { padding: 2px 7px; border-radius: 5px; background: #eef0f3; color: var(--text-2); font-size: 11px; white-space: nowrap; }
+    .tag.source { color: #315a87; background: #eaf3fb; }
+    .signal { display: flex; flex-direction: column; gap: 4px; min-width: 110px; }
+    .signal-line { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    .dot.mid { background: #c68410; }
+    .status { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 650; white-space: nowrap; }
+    .status.discovered { color: #4f5968; background: #edf0f3; }
+    .status.assess { color: var(--amber); background: var(--amber-soft); }
+    .status.trial { color: var(--blue); background: var(--blue-soft); }
+    .status.adopt { color: var(--green); background: var(--green-soft); }
+    .status.caution { color: var(--red); background: var(--red-soft); }
+    .status.conditional { color: var(--amber); background: var(--amber-soft); }
+    .status.notadopt { color: var(--red); background: var(--red-soft); }
+    .status.stale { color: #606975; background: #e8ebef; }
+    .risk { display: flex; align-items: center; gap: 5px; color: var(--text-2); font-size: 12px; }
+    .risk i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+    .risk.medium i { background: #c68410; }
+    .risk.high i { background: var(--red); }
+    .empty { padding: 56px; text-align: center; color: var(--muted); }
+    .section { margin-top: 22px; }
+    .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .section-head h2 { margin: 0; font-size: 17px; }
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .card { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 16px; }
+    .card-top { display: flex; gap: 11px; align-items: flex-start; }
+    .card h3 { margin: 0; font-size: 15px; }
+    .card p { margin: 6px 0 0; color: var(--text-2); font-size: 12px; }
+    .card-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--line); margin-top: 13px; padding-top: 12px; color: var(--muted); font-size: 11px; }
+    .card-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 12px; margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .card-fact { min-width: 0; }
+    .card-fact span { display: block; color: var(--muted); font-size: 10px; }
+    .card-fact strong { display: block; margin-top: 2px; color: var(--text-2); font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+    .link-button { padding: 0; border: 0; background: transparent; color: var(--blue); cursor: pointer; font-weight: 650; }
+    .category-strip { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+    .category-strip button { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 6px 10px; cursor: pointer; }
+    .category-strip button.active { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
+    .kanban { display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 10px; overflow-x: auto; }
+    .lane { border: 1px solid var(--line); border-radius: 8px; background: #f1f3f5; min-height: 470px; padding: 10px; }
+    .lane-head { display: flex; justify-content: space-between; color: var(--text-2); font-weight: 700; padding: 2px 2px 10px; }
+    .lane-count { color: var(--muted); font-weight: 500; }
+    .task { background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 12px; margin-bottom: 8px; }
+    .task-title { font-weight: 700; }
+    .task p { margin: 4px 0 10px; color: var(--muted); font-size: 11px; }
+    .task-foot { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 11px; }
+    .assignee { width: 22px; height: 22px; border-radius: 50%; background: #dbe1e8; display: grid; place-items: center; color: var(--text-2); font-size: 10px; }
+    .source-health { display: flex; align-items: center; gap: 7px; }
+    .source-health::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+    .source-health.warn::before { background: #c68410; }
+    .source-health.off::before { background: #a4abb4; }
+    .daily-paper { max-width: 900px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 30px; }
+    .daily-paper h1 { font-family: Georgia, "Songti SC", serif; font-size: 48px; }
+    .daily-lead { margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; }
+    .news-list { max-width: 980px; }
+    .news { display: grid; grid-template-columns: 70px 1fr; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+    .news-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .news h3 { margin: 0; font-size: 16px; }
+    .news p { margin: 5px 0 0; color: var(--text-2); }
+    .term-cloud { min-height: 420px; display: flex; flex-wrap: wrap; align-content: center; justify-content: center; gap: 18px 24px; padding: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+    .term-cloud button { border: 0; background: transparent; cursor: pointer; color: var(--text-2); }
+    .term-cloud button:nth-child(3n) { color: var(--blue); }
+    .term-cloud button:nth-child(4n) { color: var(--green); }
+    .drawer-backdrop { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(20,27,37,.28); }
+    .drawer-backdrop.open { display: block; }
+    .drawer { position: absolute; top: 0; right: 0; width: min(660px, 92vw); min-height: 100%; background: var(--surface); box-shadow: var(--shadow); }
+    .drawer-head { height: 64px; padding: 0 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
+    .drawer-title { display: flex; align-items: center; gap: 10px; font-weight: 750; font-size: 17px; }
+    .icon-button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); cursor: pointer; font-size: 20px; }
+    .drawer-body { padding: 20px; }
+    .drawer-actions { display: flex; gap: 8px; margin-bottom: 18px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .detail-block { border: 1px solid var(--line); border-radius: 8px; padding: 13px; }
+    .detail-block strong { display: block; margin-bottom: 4px; }
+    .detail-block span { color: var(--text-2); font-size: 12px; }
+    .evidence { margin-top: 18px; }
+    .evidence h3 { font-size: 15px; margin: 0 0 9px; }
+    .evidence-row { display: grid; grid-template-columns: 108px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .evidence-row:last-child { border-bottom: 0; }
+    .evidence-label { color: var(--muted); font-size: 12px; }
+    .evidence-value { color: var(--text-2); font-size: 12px; }
+    .score-bars { margin-top: 12px; }
+    .score-row { display: grid; grid-template-columns: 90px 1fr 30px; gap: 8px; align-items: center; margin: 8px 0; font-size: 12px; }
+    .bar { height: 7px; background: #e9ecf0; border-radius: 4px; overflow: hidden; }
+    .bar i { display: block; height: 100%; background: var(--blue); }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field { display: flex; flex-direction: column; gap: 5px; color: var(--text-2); font-size: 12px; }
+    .field.full { grid-column: 1 / -1; }
+    .field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 8px 9px; color: var(--text); }
+    .field textarea { min-height: 90px; resize: vertical; }
+    .decision-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .toast { position: fixed; right: 24px; bottom: 24px; z-index: 60; padding: 11px 14px; border-radius: 7px; background: #202936; color: #fff; box-shadow: var(--shadow); opacity: 0; transform: translateY(8px); pointer-events: none; transition: .18s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .prototype-note { margin-top: 18px; color: var(--muted); font-size: 11px; }
+    @media (max-width: 1100px) {
+      .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { position: static; width: 100%; height: auto; padding: 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .brand { width: 150px; height: 42px; }
+      .nav { display: flex; gap: 5px; overflow-x: auto; margin-top: 8px; }
+      .nav-group, .sidebar-foot, .nav-icon, .nav-badge { display: none; }
+      .nav-button { width: auto; flex: 0 0 auto; min-height: 34px; padding: 7px 10px; }
+      .topbar { top: 0; height: 56px; padding: 0 14px; }
+      .top-search { width: 100%; }
+      .user span { display: none; }
+      .content { padding: 18px 14px 36px; }
+      .page-head { align-items: stretch; flex-direction: column; }
+      .head-actions { width: 100%; }
+      .head-actions .btn { flex: 1; }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .cards { grid-template-columns: 1fr; }
+      .card-facts { grid-template-columns: 1fr; }
+      .kanban { grid-template-columns: repeat(4, 260px); }
+      .detail-grid { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      .daily-paper { padding: 20px; }
+      .daily-paper h1 { font-size: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span>AI</span><span class="brand-mark">Cool</span><small>2.0</small></div>
+      <nav class="nav" aria-label="主导航">
+        <div class="nav-group">内容</div>
+        <button class="nav-button" data-view="daily"><span class="nav-icon">▤</span>AI 日报</button>
+        <button class="nav-button" data-view="selected"><span class="nav-icon">✦</span>精选资讯</button>
+        <button class="nav-button" data-view="graph"><span class="nav-icon">◇</span>话题图谱</button>
+        <div class="nav-group">工具</div>
+        <button class="nav-button active" data-view="radar"><span class="nav-icon">⌁</span>工具雷达<span class="nav-badge">38</span></button>
+        <button class="nav-button" data-view="reports"><span class="nav-icon">▤</span>评测报告<span class="nav-badge">5</span></button>
+        <button class="nav-button" data-view="toolbox"><span class="nav-icon">▦</span>团队工具箱<span class="nav-badge">2</span></button>
+        <div class="nav-group">运营</div>
+        <button class="nav-button" data-view="evaluations"><span class="nav-icon">✓</span>评测任务<span class="nav-badge">7</span></button>
+        <button class="nav-button" data-view="sources"><span class="nav-icon">⇄</span>数据源</button>
+      </nav>
+      <div class="sidebar-foot">产品原型 · 2026-08-03</div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <label class="top-search"><input id="globalSearch" type="search" placeholder="搜索资讯、工具、评测报告"><span class="search-key">⌕</span></label>
+        <div class="user"><span>评测组</span><div class="avatar">YL</div></div>
+      </header>
+      <div id="content" class="content"></div>
+    </main>
+  </div>
+
+  <div id="drawerBackdrop" class="drawer-backdrop" aria-hidden="true">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerName">
+      <div class="drawer-head">
+        <div class="drawer-title"><div id="drawerLogo" class="tool-logo blue">T</div><span id="drawerName">工具详情</span></div>
+        <button id="closeDrawer" class="icon-button" title="关闭" aria-label="关闭">×</button>
+      </div>
+      <div id="drawerBody" class="drawer-body"></div>
+    </aside>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+
+  <script>
+    const tools = [
+      { id: 'playwright', name: 'Playwright MCP', initial: 'P', color: 'blue', desc: '让 Agent 操作浏览器并完成页面检查、填写与回归验证', source: ['GitHub'], useCase: '页面自动化测试', use: ['自动化', '测试'], signal: ['官方仓库', '维护活跃'], candidateState: 'Qualified', evaluationState: 'Planned', decision: null, lifecycle: 'Current', risk: 'medium', riskText: '中', license: 'Apache-2.0', owner: '待认领', version: '候选 2026.08', scope: '供应商页面巡检', updated: '近 7 天', score: [88, 76, 70, 64, 58] },
+      { id: 'trendradar', name: 'TrendRadar', initial: 'T', color: 'green', desc: '聚合多平台热点与 RSS，并生成 AI 分析简报', source: ['GitHub'], useCase: 'AI 资讯监控', use: ['资讯', '监控'], signal: ['开源', '持续发布'], candidateState: 'Shortlisted', evaluationState: 'InTest', decision: null, lifecycle: 'Current', risk: 'medium', riskText: '中', license: 'GPL-3.0', owner: '远琪', version: '候选 2026.08', scope: '公开 AI 资讯', updated: '近 30 天', score: [86, 78, 73, 69, 60] },
+      { id: 'feedsfun', name: 'Feeds Fun', initial: 'F', color: 'purple', desc: '以标签、规则和 LLM 对 RSS 内容做筛选与排序', source: ['GitHub'], useCase: 'AI 资讯监控', use: ['RSS', '评分'], signal: ['可自部署', '规则完整'], candidateState: 'Discovered', evaluationState: null, decision: null, lifecycle: 'Current', risk: 'low', riskText: '低', license: 'BSD-3-Clause', owner: '待认领', version: '未锁定', scope: '待定义', updated: '近 30 天', score: [78, 72, 66, 74, 68] },
+      { id: 'folo', name: 'Folo', initial: 'F', color: 'blue', desc: '聚合订阅源并提供 AI 摘要、翻译和内容发现', source: ['GitHub'], useCase: '团队资讯阅读', use: ['阅读', '摘要'], signal: ['社区活跃', '跨端'], candidateState: 'Discovered', evaluationState: null, decision: null, lifecycle: 'Current', risk: 'low', riskText: '低', license: 'AGPL-3.0 + 例外', owner: '待认领', version: '未锁定', scope: '待定义', updated: '近 7 天', score: [80, 74, 82, 76, 62] },
+      { id: 'langfuse-candidate', name: 'Langfuse', initial: 'L', color: 'green', desc: '追踪 LLM 调用、成本、延迟和评测数据', source: ['资讯提及', 'GitHub'], useCase: 'LLM 链路观测', use: ['可观测', '评测'], signal: ['多源提及', '持续发布'], candidateState: 'Qualified', evaluationState: 'Planned', decision: null, lifecycle: 'Current', risk: 'medium', riskText: '中', license: 'MIT', owner: '瑞涛', version: '候选 2026.08', scope: '新版本复评', updated: '近 7 天', score: [84, 81, 75, 70, 79] },
+    ];
+
+    const reports = [
+      { id: 'playwright-report', name: 'Playwright MCP', initial: 'P', color: 'blue', category: '页面自动化测试', desc: '在受控浏览器环境中执行页面检查、填写和回归验证', decision: 'Adopt', lifecycle: 'Current', report: '内网页面回归评测', version: '评测版本 2026.07', owner: '远琪', scope: '非敏感内网页面；只读或测试账号', evidence: 'B', review: '2026-09-30', security: '最小浏览器权限', method: '3 个内部页面、12 条核心流程、桌面与移动端回归', failure: '文件下载和原生系统对话框仍需人工兜底', alternatives: '人工检查、Playwright 脚本', facts: '12 条主流程完成 11 条；平均单次执行 6 分 40 秒', viewpoint: '适合重复验收，不适合无人值守处理高权限页面' },
+      { id: 'langfuse-report', name: 'Langfuse', initial: 'L', color: 'green', category: 'LLM 链路观测', desc: '追踪 LLM 调用、成本、延迟和评测数据，支持自部署', decision: 'Adopt', lifecycle: 'Current', report: 'Agent 链路观测评测', version: '评测版本 2026.07', owner: '瑞涛', scope: '脱敏测试流量；自部署环境', evidence: 'B', review: '2026-09-15', security: '禁止上传生产明文', method: '2 条 Agent 链路、500 条脱敏 Trace、成本与延迟核对', failure: '历史 Trace 迁移需要额外脚本', alternatives: '自建日志面板、OpenTelemetry', facts: '成本统计误差低于 2%；链路检索满足目标', viewpoint: '适合作为测试环境统一观测入口' },
+      { id: 'dify-report', name: 'Dify', initial: 'D', color: 'purple', category: '低代码工作流', desc: '以可视化方式编排模型、知识库和工具调用流程', decision: 'Conditional', lifecycle: 'Current', report: '内部原型搭建评测', version: '评测版本 2026.07', owner: '评测组', scope: '内部低风险原型；不接生产敏感数据', evidence: 'B', review: '2026-08-31', security: '生产接入需另行审批', method: '2 个内部原型、权限和数据出口检查', failure: '复杂分支调试成本较高；生产权限未通过', alternatives: '代码工作流、n8n', facts: '两项原型均完成，生产权限门槛未满足', viewpoint: '可用于验证想法，不建议直接承载生产流程' },
+      { id: 'folo-report', name: 'Folo', initial: 'F', color: 'blue', category: '团队资讯阅读', desc: '聚合订阅源并提供 AI 摘要、翻译和内容发现', decision: 'NotAdopt', lifecycle: 'Current', report: '团队阅读场景评测', version: '评测版本 2026.06', owner: '评测组', scope: '组内共享资讯阅读', evidence: 'B', review: '不适用', security: '许可证和部署边界需进一步确认', method: '3 名用户连续 5 天阅读和收藏', failure: '与 AI Cool 现有能力重叠，迁移收益不足', alternatives: '继续使用 AI Cool', facts: '新增任务完成率无明显提升', viewpoint: '产品优秀，但当前场景不建议引入' },
+      { id: 'trendradar-report', name: 'TrendRadar', initial: 'T', color: 'green', category: 'AI 资讯监控', desc: '聚合热点并生成 AI 分析简报', decision: 'Adopt', lifecycle: 'Stale', report: '资讯覆盖评测', version: '评测版本 2026.05', owner: '远琪', scope: '公开 AI 资讯', evidence: 'B', review: '已过期', security: '仅公开信息', method: '与 AI Cool 连续 7 天覆盖对比', failure: '上游版本已发生重大变化', alternatives: 'AI Cool 自有采集', facts: '旧版本覆盖增益 12%，当前结果已不可沿用', viewpoint: '待新版本复评后再决定' },
+    ];
+
+    const toolboxEntries = reports.filter(r => r.decision === 'Adopt' && r.lifecycle === 'Current');
+
+    function candidateStatus(t) {
+      if (t.evaluationState === 'InTest') return { key: 'trial', text: '评测中', className: 'trial' };
+      if (t.evaluationState === 'Planned') return { key: 'assess', text: '待评测', className: 'assess' };
+      if (t.candidateState === 'Qualified' || t.candidateState === 'Shortlisted') return { key: 'assess', text: '待初筛', className: 'assess' };
+      return { key: 'discovered', text: '新发现', className: 'discovered' };
+    }
+
+    const decisionClass = decision => ({ Adopt: 'adopt', Conditional: 'conditional', NotAdopt: 'notadopt' }[decision] || 'discovered');
+    const decisionText = decision => ({ Adopt: 'Adopt', Conditional: '条件采用', NotAdopt: '不采用' }[decision] || decision);
+
+    function toast(message) {
+      const el = document.getElementById('toast');
+      el.textContent = message; el.classList.add('show');
+      clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+    }
+
+    function renderRadar() {
+      return `
+        <div class="page-head">
+          <div><h1>工具雷达</h1><p>自动发现候选，人工评测后进入工具箱</p></div>
+          <div class="head-actions"><button class="btn" data-action="refresh">刷新发现</button><button class="btn primary" data-action="create-eval">新建评测</button></div>
+        </div>
+        <div class="notice"><strong>发现不等于推荐</strong><span>候选来自自动信号，尚未经过真实任务评测；排序只表示值得优先查看。</span></div>
+        <div class="kpis">
+          <div class="kpi"><div class="kpi-label">近 7 天新发现</div><div class="kpi-value">38</div><div class="kpi-foot">GitHub 25 · 资讯提及 13</div></div>
+          <div class="kpi"><div class="kpi-label">待初筛</div><div class="kpi-value">17</div><div class="kpi-foot">其中 6 项需检查许可证</div></div>
+          <div class="kpi"><div class="kpi-label">评测中</div><div class="kpi-value">7</div><div class="kpi-foot">本周计划完成 4 项</div></div>
+          <div class="kpi"><div class="kpi-label">本月新建议</div><div class="kpi-value">2</div><div class="kpi-foot">页面测试 · LLM 观测</div></div>
+        </div>
+        <div class="toolbar">
+          <div class="segmented" data-filter="stage">
+            <button class="active" data-value="all">全部</button><button data-value="discovered">新发现</button><button data-value="assess">待评测</button><button data-value="trial">评测中</button>
+          </div>
+          <select id="sourceFilter" class="select" aria-label="发现来源"><option value="all">全部来源</option><option>GitHub</option><option>资讯提及</option></select>
+          <select id="useFilter" class="select" aria-label="使用场景"><option value="all">全部场景</option><option>页面自动化测试</option><option>AI 资讯监控</option><option>团队资讯阅读</option><option>LLM 链路观测</option></select>
+          <div class="toolbar-spacer"></div><span class="muted" id="resultCount">5 个候选</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>工具</th><th>场景</th><th>来源</th><th>发现信号</th><th>风险</th><th>状态</th><th>负责人</th></tr></thead>
+            <tbody id="toolRows">${toolRows(tools)}</tbody>
+          </table>
+        </div>
+        <div class="prototype-note">原型数据仅用于展示信息结构和交互，不代表正式评测结论。</div>`;
+    }
+
+    function toolRows(items) {
+      if (!items.length) return '<tr><td colspan="7"><div class="empty">暂无符合条件的候选</div></td></tr>';
+      return items.map(t => {
+        const state = candidateStatus(t);
+        return `
+        <tr data-tool="${t.id}">
+          <td><div class="tool-cell"><div class="tool-logo ${t.color}">${t.initial}</div><div><div class="tool-name">${t.name}</div><div class="tool-desc">${t.desc}</div></div></div></td>
+          <td><div class="tags">${t.use.map(x => `<span class="tag">${x}</span>`).join('')}</div></td>
+          <td><div class="tags">${t.source.map(x => `<span class="tag source">${x}</span>`).join('')}</div></td>
+          <td><div class="signal">${t.signal.map((x, i) => `<span class="signal-line"><i class="dot ${i ? 'mid' : ''}"></i>${x}</span>`).join('')}</div></td>
+          <td><span class="risk ${t.risk === 'medium' ? 'medium' : t.risk === 'high' ? 'high' : ''}"><i></i>${t.riskText}</span></td>
+          <td><span class="status ${state.className}">${state.text}</span></td>
+          <td>${t.owner}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function toolboxCards(items) {
+      if (!items.length) return '<div class="empty">暂无符合条件的团队工具</div>';
+      return items.map(t => `
+        <article class="card"><div class="card-top"><div class="tool-logo ${t.color}">${t.initial}</div><div><h3>${t.name}</h3><div class="tags"><span class="tag">${t.category}</span><span class="status adopt">Adopt</span></div></div></div><p>${t.desc}</p><div class="card-facts"><div class="card-fact"><span>适用范围</span><strong>${t.scope}</strong></div><div class="card-fact"><span>Owner</span><strong>${t.owner}</strong></div><div class="card-fact"><span>证据 / 复评</span><strong>${t.evidence} · ${t.review}</strong></div><div class="card-fact"><span>安全边界</span><strong>${t.security}</strong></div></div><div class="card-meta"><button class="link-button" data-open-report="${t.id}">查看评测报告</button><strong>${t.version}</strong></div></article>`).join('');
+    }
+
+    function reportCards(items) {
+      if (!items.length) return '<div class="empty">暂无符合条件的评测报告</div>';
+      return items.map(t => `
+        <article class="card"><div class="card-top"><div class="tool-logo ${t.color}">${t.initial}</div><div><h3>${t.name}</h3><div class="tags"><span class="tag">${t.category}</span><span class="status ${decisionClass(t.decision)}">${decisionText(t.decision)}</span>${t.lifecycle === 'Stale' ? '<span class="status stale">已过期</span>' : ''}<span class="tag">证据 ${t.evidence}</span></div></div></div><p>${t.report}。<strong>适用范围：</strong>${t.scope}。</p><div class="card-facts"><div class="card-fact"><span>测试版本</span><strong>${t.version}</strong></div><div class="card-fact"><span>下次复评</span><strong>${t.review}</strong></div><div class="card-fact"><span>安全边界</span><strong>${t.security}</strong></div><div class="card-fact"><span>报告 Owner</span><strong>${t.owner}</strong></div></div><div class="card-meta"><button class="link-button" data-report-detail="${t.id}">打开完整报告</button><span>事实与观点分栏</span></div></article>`).join('');
+    }
+
+    function renderToolbox() {
+      return `
+        <div class="page-head"><div><h1>团队工具箱</h1><p>评审组在明确适用范围内给出的组内优先采用建议</p></div><div class="head-actions"><button class="btn">导出目录</button></div></div>
+        <div class="notice"><strong>结论边界</strong><span>Adopt 不等同公司级安全认证、采购批准或法务批准；超出卡片范围时需重新评估。</span></div>
+        <div class="category-strip"><button class="active" data-toolbox-filter="all">全部 UseCase</button><button data-toolbox-filter="页面自动化测试">页面自动化测试</button><button data-toolbox-filter="LLM 链路观测">LLM 链路观测</button></div>
+        <div id="toolboxCards" class="cards">${toolboxCards(toolboxEntries)}</div>
+        <div class="prototype-note">原型数据只展示信息结构，不代表对示例工具作出真实采用建议。</div>`;
+    }
+
+    function renderReports() {
+      return `
+        <div class="page-head"><div><h1>评测报告</h1><p>查看真实任务证据、适用边界、失败情况和同类替代</p></div><div class="head-actions"><button class="btn">同类对比</button><button class="btn primary" data-action="request-eval">申请评测</button></div></div>
+        <div class="category-strip"><button class="active" data-report-filter="all">全部结论</button><button data-report-filter="Adopt">Adopt</button><button data-report-filter="Conditional">条件采用</button><button data-report-filter="NotAdopt">不采用</button><button data-report-filter="Stale">已过期</button></div>
+        <div id="reportCards" class="cards">${reportCards(reports)}</div>
+        <div class="prototype-note">报告示例为虚构数据；正式报告需记录用例、环境、失败样本、替代品和审批链。</div>`;
+    }
+
+    function renderEvaluations() {
+      const lanes = [
+        ['待初筛', [['Feeds Fun','确认来源与许可证'],['Folo','评估现有能力重叠']]],
+        ['已计划', [['Playwright MCP','页面自动化测试 · 候选 2026.08'],['Langfuse','LLM 链路观测 · 新版本复评']]],
+        ['评测中', [['TrendRadar','AI 资讯监控 · 覆盖率对比']]],
+        ['待决策', []],
+      ];
+      return `<div class="page-head"><div><h1>评测任务</h1><p>从候选筛选到团队推荐的完整证据链</p></div><div class="head-actions"><button class="btn primary" data-action="create-eval">新建评测</button></div></div>
+        <div class="kanban">${lanes.map((lane, li) => `<section class="lane"><div class="lane-head"><span>${lane[0]}</span><span class="lane-count">${lane[1].length}</span></div>${lane[1].length ? lane[1].map((item, i) => `<article class="task"><div class="task-title">${item[0]}</div><p>${item[1]}</p><div class="task-foot"><span>${li < 2 ? '8 月 7 日' : '8 月 5 日'}</span><span class="assignee">${['RT','YQ','MK'][(li+i)%3]}</span></div></article>`).join('') : '<div class="empty">暂无任务</div>'}</section>`).join('')}</div>`;
+    }
+
+    function renderSources() {
+      return `
+        <div class="page-head"><div><h1>数据源</h1><p>统一管理资讯来源、工具发现渠道和运行健康</p></div><div class="head-actions"><button class="btn primary" data-action="add-source">添加来源</button></div></div>
+        <div class="toolbar"><div class="segmented"><button class="active">资讯来源</button><button>工具来源</button></div><div class="toolbar-spacer"></div><span class="muted">每 30 分钟刷新</span></div>
+        <div class="table-wrap"><table><thead><tr><th>来源</th><th>类型</th><th>用途</th><th>采集方式</th><th>最后更新</th><th>健康</th><th>策略</th></tr></thead><tbody>
+          <tr><td><strong>微信公众号语料库</strong></td><td>中文资讯</td><td>正式内容源</td><td>语料同步</td><td>今天 11:30</td><td><span class="source-health">正常</span></td><td>白名单</td></tr>
+          <tr><td><strong>OpenAI Blog</strong></td><td>官方博客</td><td>正式内容源</td><td>RSS</td><td>今天 10:30</td><td><span class="source-health">正常</span></td><td>自动入库</td></tr>
+          <tr><td><strong>虎嗅 / 爱范儿</strong></td><td>中文媒体</td><td>候选内容源</td><td>待验证</td><td>未接入</td><td><span class="source-health off">未启用</span></td><td>版权审核</td></tr>
+          <tr><td><strong>AI Hot</strong></td><td>外部精选</td><td>覆盖率对标</td><td>匿名只读 API v1</td><td>今天 11:45</td><td><span class="source-health">正常</span></td><td>仅元数据与原文链接</td></tr>
+          <tr><td><strong>MIT Technology Review AI</strong></td><td>科技媒体</td><td>正式内容源</td><td>RSS</td><td>今天 10:30</td><td><span class="source-health warn">低频更新</span></td><td>自动入库</td></tr>
+        </tbody></table></div>
+        <div class="section"><div class="section-head"><h2>工具发现渠道</h2></div><div class="cards">
+          <article class="card"><h3>GitHub</h3><p>主题、搜索、Trending、Release 和仓库维护信号。</p><div class="card-meta"><span>每日</span><span class="status adopt">已启用</span></div></article>
+          <article class="card"><h3>MCP Registry</h3><p>Preview 注册表；需处理破坏性变更、重建与降级。</p><div class="card-meta"><span>第二批</span><span class="status trial">验证中</span></div></article>
+          <article class="card"><h3>skills.sh</h3><p>托管 API 的 OIDC 和目录数据用途边界仍需验证。</p><div class="card-meta"><span>待定</span><span class="status caution">待验证</span></div></article>
+        </div></div>`;
+    }
+
+    function renderDaily() {
+      return `<div class="page-head"><div><h1>AI 日报</h1><p>2026 年 8 月 3 日</p></div></div><article class="daily-paper"><div class="muted">VOL.2026.08.03 · AI COOL DAILY</div><h1>AI <span style="color:var(--blue)">Cool</span> 日报</h1><div class="daily-lead"><strong>今日看点</strong><p class="muted">Agent 安全、开源模型与开发工具成为今日高频议题。</p></div><div class="section"><h2>行业动态</h2><div class="news"><div class="news-time">09:30</div><div><h3>AI Agent 安全机制受到持续关注</h3><p>多项研究开始把评估从模型能力延伸到执行过程与权限边界。</p></div></div></div></article>`;
+    }
+
+    function renderSelected() {
+      return `<div class="page-head"><div><h1>精选资讯</h1><p>AI 自动筛选，编辑规则持续校准</p></div></div><div class="news-list">
+        <article class="news"><div class="news-time">11:40</div><div><div class="tags"><span class="tag source">官方博客</span><span class="status adopt">精选</span></div><h3>开发者工具开始引入可复用 Agent 能力目录</h3><p>能力发现、版本治理和安全审计逐渐成为 Agent 工具链的基础能力。</p></div></article>
+        <article class="news"><div class="news-time">10:20</div><div><div class="tags"><span class="tag source">中文媒体</span><span class="status adopt">精选</span></div><h3>企业开始建立内部 AI 工具评测与准入流程</h3><p>从“找到工具”转向“证明工具能解决真实问题”。</p></div></article>
+      </div>`;
+    }
+
+    function renderGraph() {
+      const terms = [['Agent 安全',30],['MCP',24],['开源模型',27],['技能目录',20],['AI 编程',26],['数据分析',22],['模型评测',18],['工作流',25],['企业 AI',23],['多模态',19],['工具治理',21],['提示词',17]];
+      return `<div class="page-head"><div><h1>话题图谱</h1><p>最近 7 天实体与主题共现</p></div></div><div class="term-cloud">${terms.map(t => `<button style="font-size:${t[1]}px">${t[0]}</button>`).join('')}</div>`;
+    }
+
+    const renderers = { radar: renderRadar, reports: renderReports, toolbox: renderToolbox, evaluations: renderEvaluations, sources: renderSources, daily: renderDaily, selected: renderSelected, graph: renderGraph };
+    let currentView = 'radar';
+
+    function mount(view) {
+      currentView = view;
+      document.querySelectorAll('.nav-button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+      document.getElementById('content').innerHTML = renderers[view]();
+      wireView();
+      window.history.replaceState(null, '', '#' + view);
+      document.getElementById('content').scrollIntoView({ block: 'start' });
+    }
+
+    function wireView() {
+      document.querySelectorAll('[data-action]').forEach(btn => btn.addEventListener('click', () => {
+        const action = btn.dataset.action;
+        if (action === 'refresh') toast('发现任务已刷新');
+        if (action === 'create-eval') { mount('evaluations'); toast('已打开评测任务'); }
+        if (action === 'request-eval') openEvaluationRequest();
+        if (action === 'add-source') toast('已打开来源配置');
+      }));
+      if (currentView === 'radar') {
+        document.querySelectorAll('[data-filter="stage"] button').forEach(btn => btn.addEventListener('click', () => {
+          btn.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('active')); btn.classList.add('active'); applyToolFilters();
+        }));
+        document.getElementById('sourceFilter').addEventListener('change', applyToolFilters);
+        document.getElementById('useFilter').addEventListener('change', applyToolFilters);
+        document.querySelectorAll('[data-tool]').forEach(row => row.addEventListener('click', () => openTool(row.dataset.tool)));
+      }
+      if (currentView === 'toolbox') {
+        const bindToolboxReports = () => document.querySelectorAll('[data-open-report]').forEach(btn => btn.addEventListener('click', () => openReport(btn.dataset.openReport)));
+        document.querySelectorAll('[data-toolbox-filter]').forEach(btn => btn.addEventListener('click', () => {
+          btn.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('active')); btn.classList.add('active');
+          const value = btn.dataset.toolboxFilter;
+          document.getElementById('toolboxCards').innerHTML = toolboxCards(toolboxEntries.filter(x => value === 'all' || x.category === value));
+          bindToolboxReports();
+        }));
+        bindToolboxReports();
+      }
+      if (currentView === 'reports') {
+        const bindReportDetails = () => document.querySelectorAll('[data-report-detail]').forEach(btn => btn.addEventListener('click', () => openReport(btn.dataset.reportDetail)));
+        document.querySelectorAll('[data-report-filter]').forEach(btn => btn.addEventListener('click', () => {
+          btn.parentElement.querySelectorAll('button').forEach(x => x.classList.remove('active')); btn.classList.add('active');
+          const value = btn.dataset.reportFilter;
+          document.getElementById('reportCards').innerHTML = reportCards(reports.filter(x => value === 'all' || (value === 'Stale' ? x.lifecycle === 'Stale' : x.decision === value)));
+          bindReportDetails();
+        }));
+        bindReportDetails();
+      }
+    }
+
+    function applyToolFilters() {
+      const stage = document.querySelector('[data-filter="stage"] button.active').dataset.value;
+      const source = document.getElementById('sourceFilter').value;
+      const useCase = document.getElementById('useFilter').value;
+      const result = tools.filter(t => (stage === 'all' || candidateStatus(t).key === stage) && (source === 'all' || t.source.includes(source)) && (useCase === 'all' || t.useCase === useCase));
+      document.getElementById('toolRows').innerHTML = toolRows(result);
+      document.getElementById('resultCount').textContent = result.length + ' 个候选';
+      document.querySelectorAll('[data-tool]').forEach(row => row.addEventListener('click', () => openTool(row.dataset.tool)));
+    }
+
+    function openTool(id) {
+      const t = tools.find(x => x.id === id); if (!t) return;
+      const state = candidateStatus(t);
+      document.getElementById('drawerLogo').textContent = t.initial;
+      document.getElementById('drawerLogo').className = `tool-logo ${t.color}`;
+      document.getElementById('drawerName').textContent = t.name;
+      document.getElementById('drawerBody').innerHTML = `
+        <div class="drawer-actions"><button class="btn primary" id="startEval">加入评测</button><button class="btn danger" id="rejectTool">不纳入</button><button class="btn">查看来源</button></div>
+        <div class="tags"><span class="status ${state.className}">${state.text}</span>${t.source.map(x => `<span class="tag source">${x}</span>`).join('')}${t.use.map(x => `<span class="tag">${x}</span>`).join('')}</div>
+        <div class="notice compact"><strong>尚未完成评测</strong><span>以下仅为发现优先级和证据缺口，不构成使用建议。</span></div>
+        <p style="margin:14px 0;color:var(--text-2)">${t.desc}</p>
+        <div class="detail-grid">
+          <div class="detail-block"><strong>候选版本</strong><span>${t.version}</span></div>
+          <div class="detail-block"><strong>UseCase / Scope</strong><span>${t.useCase} · ${t.scope}</span></div>
+          <div class="detail-block"><strong>候选 / 评测状态</strong><span>${t.candidateState} · ${t.evaluationState || '未计划'}</span></div>
+          <div class="detail-block"><strong>Decision / Lifecycle</strong><span>${t.decision || '尚无结论'} · ${t.lifecycle}</span></div>
+          <div class="detail-block"><strong>许可证</strong><span>${t.license}</span></div>
+          <div class="detail-block"><strong>最近更新</strong><span>${t.updated}</span></div>
+          <div class="detail-block"><strong>评测负责人</strong><span>${t.owner}</span></div>
+          <div class="detail-block"><strong>初步风险</strong><span>${t.riskText} · 安装与权限仍需验证</span></div>
+        </div>
+        <section class="evidence"><h3>发现依据</h3>
+          <div class="evidence-row"><div class="evidence-label">来源信号</div><div class="evidence-value">${t.signal.join(' · ')}</div></div>
+          <div class="evidence-row"><div class="evidence-label">适用任务</div><div class="evidence-value">${t.use.join('、')}</div></div>
+          <div class="evidence-row"><div class="evidence-label">准入缺口</div><div class="evidence-value">真实案例效果、数据权限、安全边界、维护成本</div></div>
+        </section>
+        <section class="evidence"><h3>发现优先级</h3><div class="score-bars">
+          ${['任务相关性','来源多样性','维护活跃','采用趋势','元数据完整'].map((name, i) => `<div class="score-row"><span>${name}</span><div class="bar"><i style="width:${t.score[i]}%"></i></div><strong>${t.score[i]}</strong></div>`).join('')}
+        </div></section>`;
+      const backdrop = document.getElementById('drawerBackdrop'); backdrop.classList.add('open'); backdrop.setAttribute('aria-hidden','false');
+      document.getElementById('startEval').addEventListener('click', () => { closeDrawer(); mount('evaluations'); toast(t.name + ' 已加入待评测'); });
+      document.getElementById('rejectTool').addEventListener('click', () => { closeDrawer(); toast(t.name + ' 已标记为不纳入'); });
+    }
+
+    function openReport(id) {
+      const r = reports.find(x => x.id === id); if (!r) return;
+      document.getElementById('drawerLogo').textContent = r.initial;
+      document.getElementById('drawerLogo').className = `tool-logo ${r.color}`;
+      document.getElementById('drawerName').textContent = r.name + ' · 评测报告';
+      document.getElementById('drawerBody').innerHTML = `
+        <div class="tags"><span class="status ${decisionClass(r.decision)}">${decisionText(r.decision)}</span>${r.lifecycle === 'Stale' ? '<span class="status stale">已过期</span>' : '<span class="tag">Current</span>'}<span class="tag">证据 ${r.evidence}</span></div>
+        <p style="margin:14px 0;color:var(--text-2)">${r.desc}</p>
+        <div class="detail-grid">
+          <div class="detail-block"><strong>UseCase / 适用范围</strong><span>${r.category} · ${r.scope}</span></div>
+          <div class="detail-block"><strong>版本 / 生命周期</strong><span>${r.version} · ${r.lifecycle}</span></div>
+          <div class="detail-block"><strong>Owner / 复评</strong><span>${r.owner} · ${r.review}</span></div>
+          <div class="detail-block"><strong>安全边界</strong><span>${r.security}</span></div>
+        </div>
+        <section class="evidence"><h3>方法与证据</h3>
+          <div class="evidence-row"><div class="evidence-label">测试方法</div><div class="evidence-value">${r.method}</div></div>
+          <div class="evidence-row"><div class="evidence-label">可验证事实</div><div class="evidence-value">${r.facts}</div></div>
+          <div class="evidence-row"><div class="evidence-label">失败与限制</div><div class="evidence-value">${r.failure}</div></div>
+          <div class="evidence-row"><div class="evidence-label">替代方案</div><div class="evidence-value">${r.alternatives}</div></div>
+        </section>
+        <section class="evidence"><h3>评测者观点</h3><div class="detail-block"><span>${r.viewpoint}</span></div></section>
+        <div class="decision-actions"><strong style="width:100%">针对该 UseCase 记录你的决定</strong><button class="btn primary" data-user-decision="Try">试用</button><button class="btn" data-user-decision="Use">采用</button><button class="btn danger" data-user-decision="NotUse">不采用</button>${r.lifecycle === 'Stale' ? '<button class="btn" data-request-review>申请复评</button>' : ''}</div>`;
+      const backdrop = document.getElementById('drawerBackdrop'); backdrop.classList.add('open'); backdrop.setAttribute('aria-hidden','false');
+      document.querySelectorAll('[data-user-decision]').forEach(btn => btn.addEventListener('click', () => { toast(`已记录 ${btn.dataset.userDecision} · ${r.category}`); closeDrawer(); }));
+      document.querySelector('[data-request-review]')?.addEventListener('click', () => { toast('复评申请已提交'); closeDrawer(); });
+    }
+
+    function openEvaluationRequest() {
+      document.getElementById('drawerLogo').textContent = '?';
+      document.getElementById('drawerLogo').className = 'tool-logo blue';
+      document.getElementById('drawerName').textContent = '申请评测';
+      document.getElementById('drawerBody').innerHTML = `
+        <div class="notice"><strong>绑定 UseCase</strong><span>申请进入候选优先级和评测排期，不代表工具会被推荐。</span></div>
+        <form id="evaluationRequestForm" class="form-grid">
+          <label class="field"><span>目标任务</span><select required><option value="">请选择</option><option>页面自动化测试</option><option>AI 资讯监控</option><option>团队资讯阅读</option><option>LLM 链路观测</option><option>新建 UseCase</option></select></label>
+          <label class="field"><span>目标用户</span><input required placeholder="例如：AI 产品经理"></label>
+          <label class="field"><span>部署方式</span><select required><option>内网自部署</option><option>SaaS</option><option>本地客户端</option></select></label>
+          <label class="field"><span>数据敏感级别</span><select required><option>公开数据</option><option>内部非敏感</option><option>内部敏感</option></select></label>
+          <label class="field full"><span>成功标准</span><textarea required placeholder="描述任务、基线、期望结果和不可接受风险"></textarea></label>
+          <div class="drawer-actions field full"><button class="btn" type="button" id="cancelRequest">取消</button><button class="btn primary" type="submit">提交申请</button></div>
+        </form>`;
+      const backdrop = document.getElementById('drawerBackdrop'); backdrop.classList.add('open'); backdrop.setAttribute('aria-hidden','false');
+      document.getElementById('cancelRequest').addEventListener('click', closeDrawer);
+      document.getElementById('evaluationRequestForm').addEventListener('submit', e => { e.preventDefault(); closeDrawer(); toast('评测申请已提交并绑定 UseCase'); });
+    }
+
+    function closeDrawer() { const el = document.getElementById('drawerBackdrop'); el.classList.remove('open'); el.setAttribute('aria-hidden','true'); }
+    document.getElementById('closeDrawer').addEventListener('click', closeDrawer);
+    document.getElementById('drawerBackdrop').addEventListener('click', e => { if (e.target.id === 'drawerBackdrop') closeDrawer(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+    document.querySelectorAll('.nav-button').forEach(btn => btn.addEventListener('click', () => mount(btn.dataset.view)));
+    document.getElementById('globalSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { mount('radar'); toast('已搜索：' + e.target.value); } });
+
+    const initial = location.hash.slice(1);
+    mount(renderers[initial] ? initial : 'radar');
+  </script>
+</body>
+</html>

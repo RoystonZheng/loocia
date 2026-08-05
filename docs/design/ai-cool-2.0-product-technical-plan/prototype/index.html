@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Cool 2.0 工具模块原型</title>
+  <!-- PROTOTYPE: validates the read-only radar/detail/toolbox information architecture. -->
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --panel-soft: #f8fafc;
+      --sidebar: #eef2f5;
+      --text: #17202c;
+      --text-2: #485466;
+      --muted: #5f6c7e;
+      --line: #d7dee7;
+      --line-strong: #bcc7d4;
+      --blue: #255ee8;
+      --blue-soft: #e8efff;
+      --green: #157a55;
+      --green-soft: #e6f5ee;
+      --amber: #a76500;
+      --amber-soft: #fff2d7;
+      --red: #b73b40;
+      --red-soft: #fcebec;
+      --ink: #222a36;
+      --shadow: 0 8px 24px rgba(31, 42, 58, .08);
+      --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+      font: 14px/1.55 var(--sans);
+      color: var(--text);
+      background: var(--bg);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    a { color: inherit; text-decoration: none; }
+    h1, h2, h3, p { margin: 0; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 210px minmax(0, 1fr); }
+    .sidebar {
+      position: sticky; top: 0; height: 100vh; padding: 18px 14px;
+      background: var(--sidebar); border-right: 1px solid var(--line);
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .brand {
+      height: 54px; padding: 0 12px; display: flex; align-items: center; gap: 7px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+      font-weight: 800; font-size: 21px;
+    }
+    .brand strong { color: var(--blue); }
+    .brand small { margin-left: auto; color: var(--muted); font-size: 10px; font-weight: 700; }
+    .nav-group { color: var(--muted); font-size: 11px; padding: 10px 10px 4px; }
+    .nav { display: flex; flex-direction: column; gap: 3px; }
+    .nav-item {
+      width: 100%; height: 38px; border: 0; border-radius: 6px; background: transparent;
+      display: flex; align-items: center; gap: 10px; padding: 0 11px; color: var(--text-2);
+      cursor: default; text-align: left;
+    }
+    button.nav-item { cursor: pointer; }
+    .nav-item:hover { background: rgba(255,255,255,.72); }
+    .nav-item.active { color: var(--blue); background: var(--blue-soft); font-weight: 700; }
+    .nav-icon { width: 17px; color: var(--muted); text-align: center; }
+    .nav-item.active .nav-icon { color: var(--blue); }
+    .sidebar-foot { margin-top: auto; padding: 12px 10px 2px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .workspace { min-width: 0; }
+    .topbar {
+      height: 64px; padding: 0 28px; display: flex; align-items: center; gap: 16px;
+      background: rgba(255,255,255,.94); border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 20;
+    }
+    .search-wrap { position: relative; width: min(500px, 55vw); }
+    .search-icon { position: absolute; left: 13px; top: 9px; color: var(--muted); }
+    .search {
+      width: 100%; height: 38px; padding: 0 14px 0 36px; border: 1px solid var(--line);
+      border-radius: 6px; background: var(--panel-soft); color: var(--text); outline: 0;
+    }
+    .search:focus { border-color: var(--blue); background: var(--panel); }
+    .top-meta { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .mobile-nav { display: none; }
+    main { padding: 26px 28px 56px; max-width: 1480px; }
+    .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .page-head h1 { font-size: 25px; letter-spacing: 0; }
+    .page-head p { color: var(--muted); margin-top: 3px; }
+    .prototype-note {
+      padding: 9px 12px; color: #745000; background: #fff9e9; border: 1px solid #ecd18c;
+      border-radius: 6px; font-size: 12px; white-space: nowrap;
+    }
+    .notice {
+      display: flex; gap: 9px; align-items: flex-start; padding: 11px 13px; margin-bottom: 16px;
+      background: #fff9ec; border: 1px solid #eacb80; border-radius: 6px; color: #684900;
+    }
+    .notice strong { white-space: nowrap; }
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .kpi { padding: 14px 15px; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; }
+    .kpi-label { color: var(--muted); font-size: 12px; }
+    .kpi-value { display: flex; align-items: baseline; gap: 5px; margin: 5px 0 3px; font-size: 26px; font-weight: 800; }
+    .kpi-value small { color: var(--muted); font-size: 11px; font-weight: 500; }
+    .kpi-sub { color: var(--text-2); font-size: 11px; }
+    .surface { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+    .toolbar {
+      padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      border-bottom: 1px solid var(--line); background: var(--panel-soft);
+    }
+    .advanced-filters { display: contents; }
+    .filter-toggle { display: none; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); cursor: pointer; }
+    .segments { display: inline-flex; padding: 3px; border-radius: 6px; background: #e9edf2; gap: 2px; }
+    .segment { border: 0; padding: 6px 10px; background: transparent; border-radius: 4px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+    .segment.active { background: var(--panel); color: var(--text); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.09); }
+    .select { height: 34px; padding: 0 28px 0 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--text-2); }
+    .clear-btn { height: 34px; margin-top: 12px; padding: 0 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--blue); cursor: pointer; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .result-count { margin-left: auto; color: var(--muted); font-size: 12px; }
+    .table-wrap { overflow-x: auto; }
+    .mobile-tool-list { display: none; }
+    table { width: 100%; min-width: 1030px; border-collapse: collapse; table-layout: fixed; }
+    th { height: 38px; padding: 0 12px; text-align: left; color: var(--muted); font-size: 11px; font-weight: 600; background: #fbfcfd; border-bottom: 1px solid var(--line); }
+    td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #f9fbff; }
+    .tool-cell { display: flex; gap: 10px; min-width: 0; }
+    .tool-logo {
+      width: 34px; height: 34px; border-radius: 7px; color: #fff; display: grid; place-items: center;
+      font-weight: 800; flex: 0 0 auto; background: var(--logo, var(--blue));
+    }
+    .tool-name { font-weight: 750; line-height: 1.25; }
+    .tool-summary { color: var(--muted); font-size: 12px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border-radius: 4px; background: #edf1f5; color: var(--text-2); font-size: 11px; }
+    .chip.blue { color: #1854bd; background: #e8f1ff; }
+    .chip.green { color: var(--green); background: var(--green-soft); }
+    .chip.amber { color: var(--amber); background: var(--amber-soft); }
+    .signal-list { display: grid; gap: 3px; font-size: 12px; color: var(--text-2); }
+    .signal-list span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--green); vertical-align: 1px; }
+    .signal-list span.hot::before { background: var(--amber); }
+    .decision { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 5px; font-size: 11px; font-weight: 700; }
+    .decision.adopt { color: var(--green); background: var(--green-soft); }
+    .decision.conditional { color: var(--amber); background: var(--amber-soft); }
+    .decision.not_adopt { color: var(--red); background: var(--red-soft); }
+    .decision.none { color: var(--muted); background: #edf0f4; }
+    .scoped-decisions { display: flex; flex-wrap: wrap; gap: 4px; }
+    .arrow { float: right; color: var(--muted); font-size: 17px; }
+    .empty { padding: 48px 20px; text-align: center; color: var(--muted); }
+
+    .back {
+      width: 34px; height: 34px; border: 1px solid var(--line); background: var(--panel); border-radius: 6px;
+      display: inline-grid; place-items: center; cursor: pointer; font-size: 18px;
+    }
+    .detail-head { display: flex; gap: 15px; align-items: flex-start; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+    .detail-logo { width: 52px; height: 52px; border-radius: 8px; display: grid; place-items: center; color: #fff; font-weight: 900; font-size: 20px; background: var(--logo); }
+    .detail-title { flex: 1; min-width: 0; }
+    .detail-title h1 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 25px; }
+    .detail-title p { color: var(--text-2); margin-top: 4px; max-width: 820px; }
+    .detail-links { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+    .link-btn { border: 1px solid var(--line); background: var(--panel); padding: 6px 9px; border-radius: 5px; color: var(--blue); font-size: 12px; }
+    button.link-btn { cursor: pointer; }
+    .detail-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, .8fr); gap: 18px; margin-top: 18px; }
+    .section { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; margin-bottom: 14px; overflow: hidden; }
+    .section-head { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .section-head h2 { font-size: 15px; }
+    .section-body { padding: 14px; }
+    .facts { display: grid; grid-template-columns: 130px 1fr; gap: 9px 12px; }
+    .facts dt { color: var(--muted); }
+    .facts dd { margin: 0; }
+    .timeline { display: grid; gap: 0; }
+    .timeline-row { position: relative; display: grid; grid-template-columns: 94px 12px 1fr; gap: 8px; min-height: 54px; }
+    .timeline-row:not(:last-child)::after { content: ""; position: absolute; left: 100px; top: 21px; bottom: -3px; width: 1px; background: var(--line); }
+    .timeline-date { color: var(--muted); font-size: 11px; padding-top: 2px; }
+    .timeline-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--blue); margin-top: 6px; z-index: 1; }
+    .timeline-text strong { display: block; font-size: 12px; }
+    .timeline-text span { color: var(--muted); font-size: 11px; }
+    .report-scope { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .version-note { padding: 10px 12px; border-left: 3px solid var(--amber); background: #fff9ed; color: #6f4c00; margin-bottom: 14px; }
+    .report-block { padding: 13px 0; border-top: 1px solid var(--line); }
+    .report-block:first-of-type { border-top: 0; padding-top: 0; }
+    .report-block h3 { font-size: 13px; margin-bottom: 5px; }
+    .report-block p { color: var(--text-2); }
+    .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; }
+    .check { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px dashed var(--line); padding: 5px 0; }
+    .check-result { font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .check-result.conform { color: var(--green); }
+    .check-result.partial { color: var(--amber); }
+    .check-result.nonconform { color: var(--red); }
+    .check-result.not_tested { color: var(--muted); }
+    .related { display: grid; gap: 10px; }
+    .related-item { padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+    .related-item:last-child { padding-bottom: 0; border-bottom: 0; }
+    .related-item strong { display: block; font-size: 12px; }
+    .related-item span { color: var(--muted); font-size: 11px; }
+
+    .toolbox-intro { display: grid; grid-template-columns: 1.3fr .7fr; gap: 14px; margin-bottom: 16px; }
+    .toolbox-copy { padding: 16px; background: var(--ink); color: #fff; border-radius: 7px; }
+    .toolbox-copy h2 { font-size: 17px; }
+    .toolbox-copy p { color: #cbd4df; margin-top: 5px; }
+    .toolbox-rule { padding: 14px; border: 1px solid var(--line); background: var(--panel); border-radius: 7px; }
+    .toolbox-rule strong { display: block; margin-bottom: 5px; }
+    .toolbox-rule code { color: var(--green); font-size: 12px; }
+    .group { margin-top: 18px; }
+    .group-title { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+    .group-title h2 { font-size: 16px; }
+    .group-title span { color: var(--muted); font-size: 12px; }
+    .toolbox-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .toolbox-card { padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+    .toolbox-card:hover { border-color: var(--blue); box-shadow: var(--shadow); }
+    .toolbox-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+    .toolbox-card .tool-logo { width: 30px; height: 30px; }
+    .toolbox-card h3 { font-size: 14px; }
+    .toolbox-card p { color: var(--text-2); min-height: 44px; }
+    .toolbox-meta { display: grid; gap: 5px; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .footer { color: var(--muted); font-size: 11px; padding: 24px 0 0; display: flex; justify-content: space-between; gap: 12px; }
+    .footer a { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+
+    .error-state { padding: 56px 18px; text-align: center; }
+    .error-state h1 { font-size: 22px; }
+    .error-state p { margin: 7px 0 16px; color: var(--muted); }
+    .loading-state { display: grid; gap: 12px; padding: 4px 0; }
+    .skeleton { height: 66px; border: 1px solid var(--line); border-radius: 7px; background: #edf1f5; animation: loading 1.3s infinite ease-in-out; }
+    .skeleton.tall { height: 280px; }
+    @keyframes loading { 50% { opacity: .58; } }
+    @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+    .content-article { max-width: 860px; }
+    .content-meta { color: var(--muted); margin: 6px 0 18px; }
+    .content-article p { color: var(--text-2); margin-top: 10px; }
+
+    @media (max-width: 1100px) {
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .detail-grid { grid-template-columns: 1fr; }
+      .toolbox-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 720px) {
+      .app { display: block; }
+      .sidebar { display: none; }
+      .topbar { position: relative; height: auto; padding: 10px 14px; flex-wrap: wrap; }
+      .topbar::before { content: "AI Cool"; color: var(--blue); font-size: 18px; font-weight: 850; margin-right: auto; }
+      .search-wrap { order: 3; width: 100%; }
+      .top-meta { font-size: 10px; }
+      .mobile-nav {
+        display: flex; gap: 4px; padding: 0 10px 8px; overflow-x: auto; background: var(--panel);
+        border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 19;
+      }
+      .mobile-nav button { flex: 0 0 auto; height: 34px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-2); }
+      .mobile-nav button.active { color: var(--blue); border-color: var(--blue); font-weight: 700; }
+      main { padding: 18px 14px 40px; }
+      .page-head { display: block; }
+      .page-head h1 { font-size: 23px; }
+      .prototype-note { display: inline-block; margin-top: 10px; white-space: normal; }
+      .notice { font-size: 12px; }
+      .notice strong { white-space: normal; }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .kpi { padding: 12px; }
+      .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+      .segments { grid-column: 1 / -1; width: 100%; overflow-x: auto; }
+      .segment { flex: 0 0 auto; }
+      .filter-toggle { display: inline-flex; align-items: center; justify-content: center; }
+      .advanced-filters { display: none; grid-column: 1 / -1; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .advanced-filters.open { display: grid; }
+      .select { width: 100%; min-width: 0; }
+      .result-count { margin: 0; text-align: right; }
+      .table-wrap { display: none; }
+      .mobile-tool-list { display: grid; }
+      .mobile-tool-card { padding: 13px; border-bottom: 1px solid var(--line); background: var(--panel); cursor: pointer; }
+      .mobile-tool-card:last-child { border-bottom: 0; }
+      .mobile-tool-head { display: flex; align-items: flex-start; gap: 9px; }
+      .mobile-tool-head-copy { min-width: 0; flex: 1; }
+      .mobile-tool-card .tool-summary { white-space: normal; }
+      .mobile-tool-card .scoped-decisions { margin-top: 8px; }
+      .mobile-facts { display: grid; gap: 5px; margin: 11px 0 0; }
+      .mobile-facts div { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; }
+      .mobile-facts dt { color: var(--muted); }
+      .mobile-facts dd { margin: 0; color: var(--text-2); }
+      .detail-head { flex-wrap: wrap; }
+      .detail-title { flex-basis: calc(100% - 72px); }
+      .detail-title h1 { font-size: 22px; }
+      .facts { grid-template-columns: 105px 1fr; }
+      .checks { grid-template-columns: 1fr; }
+      .toolbox-intro { grid-template-columns: 1fr; }
+      .toolbox-grid { grid-template-columns: 1fr; }
+      .toolbox-card p { min-height: 0; }
+      .footer { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span>AI</span><strong>Cool</strong><small>2.0</small></div>
+      <nav class="nav" aria-label="主导航">
+        <div class="nav-group">内容</div>
+        <span class="nav-item"><span class="nav-icon">▤</span>AI 日报</span>
+        <span class="nav-item"><span class="nav-icon">✦</span>精选</span>
+        <span class="nav-item"><span class="nav-icon">≣</span>全部 AI 动态</span>
+        <span class="nav-item"><span class="nav-icon">◇</span>图谱</span>
+        <div class="nav-group">工具</div>
+        <button class="nav-item active" data-nav="radar"><span class="nav-icon">⌁</span>工具雷达</button>
+        <button class="nav-item" data-nav="toolbox"><span class="nav-icon">▦</span>团队工具箱</button>
+      </nav>
+      <div class="sidebar-foot">只读产品原型 · 2026-08-05</div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div class="search-wrap">
+          <span class="search-icon">⌕</span>
+          <input id="search" class="search" type="search" placeholder="搜索工具、任务或来源" aria-label="搜索工具">
+        </div>
+        <div class="top-meta">目录版本 · demo-20260805</div>
+      </header>
+      <nav class="mobile-nav" aria-label="移动端导航">
+        <button class="active" data-nav="radar">工具雷达</button>
+        <button data-nav="toolbox">团队工具箱</button>
+      </nav>
+      <main id="main"></main>
+    </section>
+  </div>
+
+  <script>
+    const USE_CASES = {
+      'ai-research': 'AI 信息检索与竞品调研',
+      'agent-app-dev': 'Agent 与 AI 应用开发',
+      'ai-coding-test': 'AI 编码与测试自动化'
+    };
+
+    const FORM_LABELS = {
+      end_user_app: '终端应用', developer_platform: '开发平台',
+      framework_sdk: '框架 / SDK', infrastructure: '基础设施'
+    };
+
+    const DELIVERY_LABELS = {
+      cloud_saas: '云端 SaaS', local_client: '本地客户端',
+      self_hosted: '自部署', hybrid: '混合部署'
+    };
+
+    const DECISION_LABELS = {
+      adopt: '采用', conditional: '条件采用', not_adopt: '不采用', none: '尚未评测'
+    };
+
+    const CHECK_LABELS = {
+      scenario_fit: '场景适配', task_effect: '实际效果', usability: '易用性',
+      stability_performance: '性能与稳定性', integration: '集成能力',
+      deployment_operations: '部署与运维', data_security: '数据与安全',
+      cost_license: '成本与授权', maintenance: '维护持续性',
+      limitations_alternatives: '限制与替代方案'
+    };
+
+    const CHECK_RESULT_LABELS = {
+      conform: '符合', partial: '部分符合', nonconform: '不符合', not_tested: '未测试'
+    };
+
+    const tools = [
+      {
+        slug: 'perplexity', name: 'Perplexity', logo: 'P', color: '#255ee8',
+        summary: '面向研究与事实检索的 AI 搜索应用', primary: 'ai-research', uses: ['ai-research'],
+        form: 'end_user_app', delivery: ['cloud_saas'], license: '商业', pricing: '订阅',
+        sources: ['AI Hot', '资讯提及'], reasons: ['AI Hot 收录', '多篇资讯提及'],
+        discovered: '2026-07-18', updated: '2026-08-04', official: 'https://www.perplexity.ai/', repo: '',
+        latestVersion: 'Web 2026.08',
+        github: null,
+        related: [
+          ['2026-08-03', 'AI 搜索产品开始强化可核验引用'],
+          ['2026-07-28', '研究工作流中的搜索与报告生成']
+        ]
+      },
+      {
+        slug: 'folo', name: 'Folo', logo: 'F', color: '#6653b8',
+        summary: '聚合多种订阅源并提供 AI 摘要的阅读工具', primary: 'ai-research', uses: ['ai-research'],
+        form: 'end_user_app', delivery: ['cloud_saas', 'local_client'], license: '开源', pricing: '免费增值',
+        sources: ['GitHub', '资讯提及'], reasons: ['场景定向发现', 'GitHub 活跃'],
+        discovered: '2026-07-22', updated: '2026-08-03', official: 'https://folo.is/', repo: 'https://github.com/RSSNext/Folo',
+        latestVersion: 'v0.7.x', github: { stars: '38.6k', delta: '+420 / 7日', activity: 420, pushed: '1 天前' },
+        related: [['2026-08-01', 'AI 阅读器如何处理多源订阅']]
+      },
+      {
+        slug: 'trendradar', name: 'TrendRadar', logo: 'T', color: '#167c50',
+        summary: '聚合热点平台与 RSS，生成趋势筛选和分析简报', primary: 'ai-research', uses: ['ai-research'],
+        form: 'end_user_app', delivery: ['self_hosted'], license: '开源', pricing: '自部署',
+        sources: ['GitHub'], reasons: ['GitHub 热门趋势', '场景定向发现'],
+        discovered: '2026-08-01', updated: '2026-08-05', official: 'https://github.com/SANSAN0/TrendRadar', repo: 'https://github.com/SANSAN0/TrendRadar',
+        latestVersion: 'main', github: { stars: '41.2k', delta: '+1.8k / 7日', activity: 1800, pushed: '5 小时前' },
+        related: [['2026-08-04', '开源趋势雷达项目获得快速关注']]
+      },
+      {
+        slug: 'dify', name: 'Dify', logo: 'D', color: '#255ee8',
+        summary: '用于构建、部署和运营 LLM 应用的开发平台', primary: 'agent-app-dev', uses: ['agent-app-dev'],
+        form: 'developer_platform', delivery: ['cloud_saas', 'self_hosted'], license: '开源', pricing: '免费增值',
+        sources: ['AI Hot', 'GitHub', '资讯提及'], reasons: ['场景定向发现', '多来源提及'],
+        discovered: '2026-07-12', updated: '2026-08-05', official: 'https://dify.ai/', repo: 'https://github.com/langgenius/dify',
+        latestVersion: 'v1.10.x', github: { stars: '100k+', delta: '+1.2k / 7日', activity: 1200, pushed: '8 小时前' },
+        related: [
+          ['2026-08-05', 'LLM 应用平台完善工作流编排能力'],
+          ['2026-07-30', '自部署 Agent 平台的运维边界']
+        ]
+      },
+      {
+        slug: 'langgraph', name: 'LangGraph', logo: 'L', color: '#202a36',
+        summary: '用于构建有状态 Agent 工作流的开发框架', primary: 'agent-app-dev', uses: ['agent-app-dev', 'ai-coding-test'],
+        form: 'framework_sdk', delivery: ['self_hosted'], license: '开源', pricing: '免费',
+        sources: ['GitHub', 'AI Hot'], reasons: ['场景定向发现', 'AI Hot 收录'],
+        discovered: '2026-07-15', updated: '2026-08-04', official: 'https://www.langchain.com/langgraph', repo: 'https://github.com/langchain-ai/langgraph',
+        latestVersion: 'v0.x', github: { stars: '20k+', delta: '+310 / 7日', activity: 310, pushed: '1 天前' },
+        related: [['2026-07-31', 'Agent 状态管理与人工介入设计']]
+      },
+      {
+        slug: 'langfuse', name: 'Langfuse', logo: 'L', color: '#167c50',
+        summary: 'LLM 调用追踪、成本分析、评测和 Prompt 管理平台', primary: 'agent-app-dev', uses: ['agent-app-dev'],
+        form: 'infrastructure', delivery: ['cloud_saas', 'self_hosted'], license: '开源', pricing: '免费增值',
+        sources: ['GitHub', '资讯提及'], reasons: ['场景定向发现', 'GitHub 活跃'],
+        discovered: '2026-07-20', updated: '2026-08-05', official: 'https://langfuse.com/', repo: 'https://github.com/langfuse/langfuse',
+        latestVersion: 'v3.x', github: { stars: '16k+', delta: '+180 / 7日', activity: 180, pushed: '4 小时前' },
+        related: [['2026-08-02', 'LLM 应用可观测成为基础能力']]
+      },
+      {
+        slug: 'cursor', name: 'Cursor', logo: 'C', color: '#202a36',
+        summary: '集成 Agent 编码、代码检索和修改能力的本地开发工具', primary: 'ai-coding-test', uses: ['ai-coding-test'],
+        form: 'end_user_app', delivery: ['local_client', 'cloud_saas'], license: '商业', pricing: '订阅',
+        sources: ['AI Hot', '资讯提及'], reasons: ['AI Hot 收录', '多篇资讯提及'],
+        discovered: '2026-07-10', updated: '2026-08-05', official: 'https://www.cursor.com/', repo: '',
+        latestVersion: '客户端 2026.08', github: null,
+        related: [['2026-08-04', 'AI 编码工具进一步增强多文件任务']]
+      },
+      {
+        slug: 'openhands', name: 'OpenHands', logo: 'O', color: '#b44348',
+        summary: '面向软件开发任务的开源智能体平台', primary: 'ai-coding-test', uses: ['ai-coding-test', 'agent-app-dev'],
+        form: 'developer_platform', delivery: ['cloud_saas', 'self_hosted'], license: '开源', pricing: '免费增值',
+        sources: ['GitHub', 'AI Hot'], reasons: ['GitHub 热门趋势', 'AI Hot 收录'],
+        discovered: '2026-07-16', updated: '2026-08-04', official: 'https://www.all-hands.dev/', repo: 'https://github.com/All-Hands-AI/OpenHands',
+        latestVersion: 'v0.x', github: { stars: '60k+', delta: '+760 / 7日', activity: 760, pushed: '1 天前' },
+        related: [['2026-08-01', '开源软件工程智能体持续演进']]
+      },
+      {
+        slug: 'aider', name: 'Aider', logo: 'A', color: '#a76500',
+        summary: '在终端中与大模型协作修改代码的开源工具', primary: 'ai-coding-test', uses: ['ai-coding-test'],
+        form: 'end_user_app', delivery: ['local_client'], license: '开源', pricing: '按模型调用',
+        sources: ['GitHub', '资讯提及'], reasons: ['场景定向发现', 'GitHub 活跃'],
+        discovered: '2026-07-24', updated: '2026-08-05', official: 'https://aider.chat/', repo: 'https://github.com/Aider-AI/aider',
+        latestVersion: 'v0.x', github: { stars: '35k+', delta: '+290 / 7日', activity: 290, pushed: '3 小时前' },
+        related: [['2026-07-29', '终端式 AI 编码工具的工作流取舍']]
+      }
+    ];
+
+    const reports = [
+      makeReport('perplexity-research-2026-08', 'perplexity', 'ai-research', 'cloud_saas', 'Web 2026.08', '2026-08-02', 'adopt', {
+        scenario_fit: 'conform', task_effect: 'conform', usability: 'conform', stability_performance: 'conform', integration: 'partial', deployment_operations: 'not_tested', data_security: 'partial', cost_license: 'partial', maintenance: 'conform', limitations_alternatives: 'conform'
+      }, '在公开信息检索和初步竞品梳理任务中能够快速形成带引用的结果，适合作为研究起点。', '引用仍需逐条核验；深度行业数据和付费数据库不能替代。', '适用于公开资料研究，不把生成结论直接作为最终事实。'),
+      makeReport('folo-research-2026-08', 'folo', 'ai-research', 'local_client', 'v0.7.x', '2026-08-01', 'conditional', {
+        scenario_fit: 'conform', task_effect: 'partial', usability: 'partial', stability_performance: 'conform', integration: 'conform', deployment_operations: 'partial', data_security: 'partial', cost_license: 'conform', maintenance: 'conform', limitations_alternatives: 'conform'
+      }, '多源订阅和阅读体验完整，适合已有明确订阅源的持续跟踪。', '首次配置和跨端状态仍有学习成本；不适合替代临时事实检索。', '建议在订阅型研究任务中使用，并保留原始来源核验。'),
+      makeReport('dify-agent-self-hosted-2026-08', 'dify', 'agent-app-dev', 'self_hosted', 'v1.8.x', '2026-08-03', 'adopt', {
+        scenario_fit: 'conform', task_effect: 'conform', usability: 'conform', stability_performance: 'conform', integration: 'conform', deployment_operations: 'partial', data_security: 'conform', cost_license: 'conform', maintenance: 'conform', limitations_alternatives: 'conform'
+      }, '完成了 RAG、模型切换和多步骤工作流原型，配置效率高于从零搭建。', '复杂工作流的调试和升级仍需要工程投入；生产容量未覆盖本次测试。', '推荐用于内部原型和中等复杂度工作流，采用自部署方式。'),
+      makeReport('langgraph-agent-2026-08', 'langgraph', 'agent-app-dev', 'self_hosted', 'v0.x', '2026-08-02', 'conditional', {
+        scenario_fit: 'conform', task_effect: 'conform', usability: 'partial', stability_performance: 'conform', integration: 'conform', deployment_operations: 'partial', data_security: 'conform', cost_license: 'conform', maintenance: 'conform', limitations_alternatives: 'conform'
+      }, '有状态工作流和人工介入能力清晰，适合需要精细控制的 Agent 应用。', '开发门槛明显高于低代码平台，团队需要维护状态和运行基础设施。', '适合已有工程能力且对流程控制要求高的项目。'),
+      makeReport('cursor-coding-2026-08', 'cursor', 'ai-coding-test', 'local_client', '客户端 2026.08', '2026-08-04', 'adopt', {
+        scenario_fit: 'conform', task_effect: 'conform', usability: 'conform', stability_performance: 'conform', integration: 'conform', deployment_operations: 'not_tested', data_security: 'partial', cost_license: 'partial', maintenance: 'conform', limitations_alternatives: 'conform'
+      }, '在代码理解、跨文件修改和测试修复任务中明显减少重复操作。', '敏感代码边界和模型调用策略需要在使用前确认；大型改动仍需人工审查。', '推荐用于常规开发和测试辅助，不替代代码评审。'),
+      makeReport('openhands-coding-2026-08', 'openhands', 'ai-coding-test', 'self_hosted', 'v0.x', '2026-08-03', 'not_adopt', {
+        scenario_fit: 'partial', task_effect: 'partial', usability: 'partial', stability_performance: 'nonconform', integration: 'partial', deployment_operations: 'nonconform', data_security: 'partial', cost_license: 'conform', maintenance: 'conform', limitations_alternatives: 'conform'
+      }, '可以完成部分隔离开发任务，但连续任务成功率和运行稳定性没有达到试点标准。', '环境准备成本较高，长任务中出现多次中断，失败恢复需要人工介入。', '本轮不进入工具箱，保留观察后续版本。')
+    ];
+
+    function makeReport(id, tool, useCase, deployment, version, date, decision, checks, result, limits, viewpoint) {
+      return { id, tool, useCase, deployment, version, date, decision, checks, result, limits, viewpoint, current: true };
+    }
+
+    const state = {
+      view: 'radar', selectedTool: null, selectedItem: null, useCase: 'all', form: 'all', delivery: 'all',
+      license: 'all', pricing: 'all', source: 'all', evaluated: 'all', sort: 'newest', query: '', filtersOpen: false,
+      demoState: new URLSearchParams(location.search).get('state') || 'ready'
+    };
+
+    function currentReportsFor(toolSlug, useCase = 'all') {
+      return reports.filter(r => r.current && r.tool === toolSlug && (useCase === 'all' || r.useCase === useCase));
+    }
+
+    function reportFor(toolSlug, useCase) {
+      return currentReportsFor(toolSlug, useCase).sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+    }
+
+    function decisionBadge(report) {
+      const value = report ? report.decision : 'none';
+      return `<span class="decision ${value}">${DECISION_LABELS[value]}</span>`;
+    }
+
+    function scopedDecisionsHTML(t) {
+      const useCase = state.useCase === 'all' ? t.primary : state.useCase;
+      const scoped = currentReportsFor(t.slug, useCase).sort((a, b) => a.deployment.localeCompare(b.deployment));
+      if (!scoped.length) return decisionBadge(null);
+      return `<div class="scoped-decisions">${scoped.map(r => `<span class="decision ${r.decision}" title="${USE_CASES[r.useCase]} · ${DELIVERY_LABELS[r.deployment]} · ${r.version}">${DELIVERY_LABELS[r.deployment]} · ${DECISION_LABELS[r.decision]}</span>`).join('')}</div>`;
+    }
+
+    function navTo(view) {
+      state.view = view;
+      state.selectedTool = null;
+      state.selectedItem = null;
+      state.query = '';
+      state.filtersOpen = false;
+      document.getElementById('search').value = '';
+      const target = view === 'radar' ? '#tools' : '#toolbox';
+      if (location.hash !== target) history.pushState(null, '', target);
+      syncNav(); render(); window.scrollTo(0, 0);
+    }
+
+    function openTool(slug) {
+      state.view = 'detail'; state.selectedTool = slug; state.selectedItem = null;
+      history.pushState(null, '', '#tool=' + encodeURIComponent(slug));
+      syncNav(); render(); window.scrollTo(0, 0);
+    }
+
+    function openItem(itemId) {
+      state.view = 'content'; state.selectedItem = itemId;
+      history.pushState(null, '', '#item=' + encodeURIComponent(itemId));
+      syncNav(); render(); window.scrollTo(0, 0);
+    }
+
+    function syncNav() {
+      document.querySelectorAll('[data-nav]').forEach(el => {
+        const selected = el.dataset.nav === (state.view === 'detail' ? 'radar' : state.view);
+        el.classList.toggle('active', selected);
+      });
+    }
+
+    function filteredTools() {
+      const q = state.query.trim().toLowerCase();
+      const rows = tools.filter(t => {
+        const matchesUse = state.useCase === 'all' || t.uses.includes(state.useCase);
+        const matchesForm = state.form === 'all' || t.form === state.form;
+        const matchesDelivery = state.delivery === 'all' || t.delivery.includes(state.delivery);
+        const matchesLicense = state.license === 'all' || t.license === state.license;
+        const matchesPricing = state.pricing === 'all' || t.pricing === state.pricing;
+        const matchesSource = state.source === 'all' || t.sources.includes(state.source);
+        const hasReport = !!reportFor(t.slug, state.useCase);
+        const matchesEvaluation = state.evaluated === 'all' || (state.evaluated === 'yes' ? hasReport : !hasReport);
+        const haystack = [t.name, t.summary, ...t.reasons, ...t.sources, ...t.uses.map(x => USE_CASES[x])].join(' ').toLowerCase();
+        return matchesUse && matchesForm && matchesDelivery && matchesLicense && matchesPricing && matchesSource && matchesEvaluation && (!q || haystack.includes(q));
+      });
+      return rows.sort((a, b) => {
+        if (state.sort === 'updated') return b.updated.localeCompare(a.updated);
+        if (state.sort === 'mentions') return b.sources.length - a.sources.length || b.updated.localeCompare(a.updated);
+        if (state.sort === 'github_activity') return (b.github?.activity || 0) - (a.github?.activity || 0) || b.updated.localeCompare(a.updated);
+        if (state.sort === 'evaluated') return Number(!!reportFor(b.slug, state.useCase)) - Number(!!reportFor(a.slug, state.useCase));
+        return b.discovered.localeCompare(a.discovered);
+      });
+    }
+
+    function render() {
+      const main = document.getElementById('main');
+      if (state.view === 'toolbox') main.innerHTML = toolboxHTML();
+      else if (state.view === 'detail') main.innerHTML = detailHTML(state.selectedTool);
+      else if (state.view === 'content') main.innerHTML = contentDetailHTML(state.selectedItem);
+      else if (state.demoState === 'loading') main.innerHTML = radarLoadingHTML();
+      else if (state.demoState === 'error') main.innerHTML = radarErrorHTML();
+      else main.innerHTML = radarHTML();
+      bindDynamic();
+    }
+
+    function renderAndFocus(selector) {
+      render();
+      document.querySelector(selector)?.focus();
+    }
+
+    function activeFilterCount() {
+      return ['form', 'delivery', 'license', 'pricing', 'source', 'evaluated'].filter(key => state[key] !== 'all').length;
+    }
+
+    function radarLoadingHTML() {
+      return `<div class="page-head"><div><h1>工具雷达</h1><p>正在读取工具目录</p></div></div><div class="loading-state" aria-busy="true" aria-label="工具目录加载中"><div class="skeleton"></div><div class="skeleton tall"></div></div>`;
+    }
+
+    function radarErrorHTML() {
+      return `<div class="error-state"><h1>工具目录暂时无法读取</h1><p>请求没有完成，请稍后重试。</p><button class="clear-btn" id="retryRadar">重试</button></div>`;
+    }
+
+    function radarHTML() {
+      const rows = filteredTools();
+      return `
+        <div class="page-head">
+          <div><h1>工具雷达</h1><p>从资讯和 GitHub 信号中发现值得进一步了解的 AI 工具</p></div>
+          <div class="prototype-note">原型示例数据，不代表真实评测结论</div>
+        </div>
+        <div class="notice"><strong>发现不等于推荐</strong><span>页面只展示可追溯事实信号；是否采用以具体 UseCase 下的实测报告为准。</span></div>
+        <div class="kpis">
+          <div class="kpi"><div class="kpi-label">合格候选</div><div class="kpi-value">30 <small>个</small></div><div class="kpi-sub">原型展示其中 ${tools.length} 个代表条目</div></div>
+          <div class="kpi"><div class="kpi-label">本周新增</div><div class="kpi-value">8 <small>个</small></div><div class="kpi-sub">场景发现 5 · 热门趋势 3</div></div>
+          <div class="kpi"><div class="kpi-label">已有评测</div><div class="kpi-value">6 <small>份</small></div><div class="kpi-sub">每个试点 UseCase 2 份</div></div>
+          <div class="kpi"><div class="kpi-label">当前 Adopt</div><div class="kpi-value">3 <small>个</small></div><div class="kpi-sub">按场景、版本和部署方式生效</div></div>
+        </div>
+        <section class="surface">
+          <div class="toolbar">
+            <div class="segments" role="group" aria-label="使用场景">
+              ${segment('all', '全部')}
+              ${segment('ai-research', '信息检索与调研')}
+              ${segment('agent-app-dev', 'Agent 应用开发')}
+              ${segment('ai-coding-test', 'AI 编码与测试')}
+            </div>
+            <button class="filter-toggle" id="filterToggle" aria-expanded="${state.filtersOpen}" aria-controls="advancedFilters">筛选${activeFilterCount() ? ` · ${activeFilterCount()}` : ''}</button>
+            <div class="advanced-filters ${state.filtersOpen ? 'open' : ''}" id="advancedFilters">
+              ${selectHTML('formFilter', '产品形态', state.form, [['all','全部形态'],['end_user_app','终端应用'],['developer_platform','开发平台'],['framework_sdk','框架 / SDK'],['infrastructure','基础设施']])}
+              ${selectHTML('deliveryFilter', '交付方式', state.delivery, [['all','全部交付'],['cloud_saas','云端 SaaS'],['local_client','本地客户端'],['self_hosted','自部署'],['hybrid','混合部署']])}
+              ${selectHTML('licenseFilter', '授权方式', state.license, [['all','全部授权'],['开源','开源'],['商业','商业']])}
+              ${selectHTML('pricingFilter', '价格模式', state.pricing, [['all','全部价格'],['免费','免费'],['免费增值','免费增值'],['订阅','订阅'],['按模型调用','按量使用'],['自部署','自部署']])}
+              ${selectHTML('sourceFilter', '发现来源', state.source, [['all','全部来源'],['AI Hot','AI Hot'],['GitHub','GitHub'],['资讯提及','资讯提及']])}
+              ${selectHTML('evaluationFilter', '评测状态', state.evaluated, [['all','全部评测状态'],['yes','已有评测'],['no','尚未评测']])}
+              ${selectHTML('sortFilter', '排序方式', state.sort, [['newest','最新发现'],['updated','最近更新'],['mentions','来源提及最多'],['github_activity','GitHub 活跃度'],['evaluated','已完成评测']])}
+            </div>
+            <span class="result-count">当前显示 ${rows.length} 个</span>
+          </div>
+          ${rows.length ? `<div class="table-wrap"><table>
+            <thead><tr><th style="width:27%">工具</th><th style="width:17%">场景</th><th style="width:13%">形态 / 交付</th><th style="width:17%">发现信号</th><th style="width:16%">${state.useCase === 'all' ? '主要场景结论' : '筛选场景结论'}</th><th style="width:10%">更新时间</th></tr></thead>
+            <tbody>${rows.map(toolRow).join('')}</tbody>
+          </table></div><div class="mobile-tool-list">${rows.map(toolMobileCard).join('')}</div>` : `<div class="empty">当前筛选没有候选工具<br><button class="clear-btn" id="clearFilters">清除筛选</button></div>`}
+        </section>
+        ${footerHTML()}`;
+    }
+
+    function segment(value, label) {
+      return `<button class="segment ${state.useCase === value ? 'active' : ''}" data-use-case="${value}" aria-pressed="${state.useCase === value}">${label}</button>`;
+    }
+
+    function selectHTML(id, label, current, options) {
+      return `<select id="${id}" class="select" aria-label="${label}">${options.map(([v,l]) => `<option value="${v}" ${current === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    }
+
+    function toolRow(t) {
+      return `<tr data-tool="${t.slug}" role="link" tabindex="0" aria-label="查看 ${t.name} 详情">
+        <td><div class="tool-cell"><div class="tool-logo" style="--logo:${t.color}">${t.logo}</div><div style="min-width:0"><div class="tool-name">${t.name}</div><div class="tool-summary">${t.summary}</div></div></div></td>
+        <td><div class="chips">${t.uses.map(x => `<span class="chip">${shortUseCase(x)}</span>`).join('')}</div></td>
+        <td><div class="chips"><span class="chip blue">${FORM_LABELS[t.form]}</span>${t.delivery.slice(0,2).map(x => `<span class="chip">${DELIVERY_LABELS[x]}</span>`).join('')}</div></td>
+        <td><div class="signal-list">${t.reasons.map((x,i) => `<span class="${i ? 'hot' : ''}">${x}</span>`).join('')}</div></td>
+        <td>${scopedDecisionsHTML(t)}</td>
+        <td><span style="color:var(--text-2);font-size:12px">${t.updated}</span><span class="arrow">›</span></td>
+      </tr>`;
+    }
+
+    function toolMobileCard(t) {
+      return `<article class="mobile-tool-card" data-tool="${t.slug}" role="link" tabindex="0" aria-label="查看 ${t.name} 详情">
+        <div class="mobile-tool-head"><div class="tool-logo" style="--logo:${t.color}">${t.logo}</div><div class="mobile-tool-head-copy"><div class="tool-name">${t.name}</div><div class="tool-summary">${t.summary}</div>${scopedDecisionsHTML(t)}</div></div>
+        <dl class="mobile-facts">
+          <div><dt>场景</dt><dd>${t.uses.map(shortUseCase).join('、')}</dd></div>
+          <div><dt>形态交付</dt><dd>${FORM_LABELS[t.form]} · ${t.delivery.map(x => DELIVERY_LABELS[x]).join('、')}</dd></div>
+          <div><dt>发现信号</dt><dd>${t.reasons.join('、')}</dd></div>
+          <div><dt>更新时间</dt><dd>${t.updated}</dd></div>
+        </dl>
+      </article>`;
+    }
+
+    function shortUseCase(id) {
+      return id === 'ai-research' ? '信息检索与调研' : id === 'agent-app-dev' ? 'Agent 应用开发' : 'AI 编码与测试';
+    }
+
+    function detailHTML(slug) {
+      const t = tools.find(x => x.slug === slug);
+      if (!t) return `<div class="error-state"><h1>未找到该工具</h1><p>该链接不存在，或工具尚未通过候选质量门槛。</p><button class="clear-btn" id="backToRadar">返回工具雷达</button></div>`;
+      const rs = currentReportsFor(t.slug).sort((a,b) => USE_CASES[a.useCase].localeCompare(USE_CASES[b.useCase]) || a.deployment.localeCompare(b.deployment));
+      return `
+        <div class="page-head"><button class="back" id="backToRadar" title="返回工具雷达" aria-label="返回工具雷达">←</button><div class="prototype-note">原型示例数据，不代表真实评测结论</div></div>
+        <header class="detail-head">
+          <div class="detail-logo" style="--logo:${t.color}">${t.logo}</div>
+          <div class="detail-title"><h1>${t.name}</h1><p>${t.summary}</p>
+            <div class="detail-links"><a class="link-btn" href="${t.official}" target="_blank" rel="noreferrer">官方网站 ↗</a>${t.repo ? `<a class="link-btn" href="${t.repo}" target="_blank" rel="noreferrer">官方仓库 ↗</a>` : ''}</div>
+          </div>
+        </header>
+        <div class="detail-grid">
+          <div>
+            <section class="section"><div class="section-head"><h2>工具信息</h2><span class="chip green">已通过候选质量门槛</span></div><div class="section-body">
+              <dl class="facts">
+                <dt>主要场景</dt><dd>${USE_CASES[t.primary]}</dd>
+                <dt>其他场景</dt><dd>${t.uses.filter(x => x !== t.primary).map(x => USE_CASES[x]).join('、') || '无'}</dd>
+                <dt>产品形态</dt><dd>${FORM_LABELS[t.form]}</dd>
+                <dt>交付方式</dt><dd>${t.delivery.map(x => DELIVERY_LABELS[x]).join('、')}</dd>
+                <dt>授权与价格</dt><dd>${t.license} · ${t.pricing}</dd>
+                <dt>当前观察版本</dt><dd>${t.latestVersion}</dd>
+                <dt>首次 / 最近发现</dt><dd>${t.discovered} / ${t.updated}</dd>
+              </dl>
+            </div></section>
+            ${rs.length ? rs.map(r => reportHTML(t, r)).join('') : `<section class="section"><div class="section-head"><h2>评测报告</h2>${decisionBadge(null)}</div><div class="section-body"><p style="color:var(--muted)">该工具目前只有发现信号，尚未形成实际评测结论。</p></div></section>`}
+          </div>
+          <aside>
+            <section class="section"><div class="section-head"><h2>发现信号</h2><span class="chip">${t.sources.length} 类来源</span></div><div class="section-body"><div class="timeline">
+              ${t.sources.map((s,i) => `<div class="timeline-row"><div class="timeline-date">${i ? t.updated : t.discovered}</div><div class="timeline-dot"></div><div class="timeline-text"><strong>${s}</strong><span>${t.reasons[i] || '持续监测'}</span></div></div>`).join('')}
+              ${t.github ? `<div class="timeline-row"><div class="timeline-date">近 7 日</div><div class="timeline-dot"></div><div class="timeline-text"><strong>GitHub ${t.github.stars} Star</strong><span>${t.github.delta} · ${t.github.pushed}更新</span></div></div>` : ''}
+            </div></div></section>
+            <section class="section"><div class="section-head"><h2>相关资讯</h2><span class="chip">${t.related.length} 条</span></div><div class="section-body"><div class="related">${t.related.map((x,i) => `<a class="related-item" href="#item=${t.slug}-${i}" data-related-item="${t.slug}-${i}"><strong>${x[1]}</strong><span>${x[0]} · 打开资讯详情</span></a>`).join('')}</div></div></section>
+          </aside>
+        </div>
+        ${footerHTML()}`;
+    }
+
+    function findRelatedItem(itemId) {
+      for (const tool of tools) {
+        const index = tool.related.findIndex((_, i) => `${tool.slug}-${i}` === itemId);
+        if (index >= 0) return { id: itemId, tool, date: tool.related[index][0], title: tool.related[index][1] };
+      }
+      return null;
+    }
+
+    function contentDetailHTML(itemId) {
+      const item = findRelatedItem(itemId);
+      if (!item) return `<div class="error-state"><h1>未找到该资讯</h1><p>该关联记录不存在。</p><button class="clear-btn" id="backToRadar">返回工具雷达</button></div>`;
+      return `<div class="page-head"><button class="back" id="backToTool" title="返回 ${item.tool.name}" aria-label="返回 ${item.tool.name}">←</button><div class="prototype-note">现有资讯详情示例</div></div>
+        <article class="section content-article"><div class="section-body"><h1>${item.title}</h1><div class="content-meta">${item.date} · ${item.tool.name} 官方信息</div><div class="notice"><strong>关联工具</strong><span>${item.tool.name} · ${USE_CASES[item.tool.primary]}</span></div><p>${item.tool.name} 围绕 ${USE_CASES[item.tool.primary]} 场景发布了新的产品进展，具体变更与适用范围以原始来源为准。</p><div class="detail-links"><a class="link-btn" href="${item.tool.official}" target="_blank" rel="noreferrer">原始链接 ↗</a><button class="link-btn" data-tool="${item.tool.slug}">查看工具详情</button></div></div></article>${footerHTML()}`;
+    }
+
+    function reportHTML(t, r) {
+      const hasVersionChange = t.latestVersion !== r.version;
+      return `<section class="section"><div class="section-head"><h2>评测报告</h2>${decisionBadge(r)}</div><div class="section-body">
+        <div class="report-scope"><span class="chip blue">${USE_CASES[r.useCase]}</span><span class="chip">评测版本 ${r.version}</span><span class="chip">${DELIVERY_LABELS[r.deployment]}</span><span class="chip">评测日期 ${r.date}</span></div>
+        ${hasVersionChange ? `<div class="version-note">当前观察版本为 ${t.latestVersion}，工具已在本次评测后更新；结论保持不变。</div>` : ''}
+        <div class="report-block"><h3>测试方法</h3><p>使用固定任务、公开测试数据和同类基线完成实际操作，记录完成结果、错误、步骤和限制。</p></div>
+        <div class="report-block"><h3>分项结果</h3><div class="checks">${Object.entries(r.checks).map(([k,v]) => `<div class="check"><span>${CHECK_LABELS[k]}</span><span class="check-result ${v}">${CHECK_RESULT_LABELS[v]}</span></div>`).join('')}</div></div>
+        <div class="report-block"><h3>事实结果</h3><p>${r.result}</p></div>
+        <div class="report-block"><h3>失败与限制</h3><p>${r.limits}</p></div>
+        <div class="report-block"><h3>评测者观点</h3><p>${r.viewpoint}</p></div>
+      </div></section>`;
+    }
+
+    function toolboxHTML() {
+      const currentReports = reports.filter(r => r.current);
+      const adopted = currentReports.filter(r => r.decision === 'adopt').map(r => ({ report: r, tool: tools.find(t => t.slug === r.tool) }));
+      const query = state.query.trim().toLowerCase();
+      const filtered = adopted.filter(x => !query || [x.tool.name, x.tool.summary, USE_CASES[x.report.useCase]].join(' ').toLowerCase().includes(query));
+      return `
+        <div class="page-head"><div><h1>团队工具箱</h1><p>按具体场景、版本和部署方式发布的当前采用清单</p></div><div class="prototype-note">原型示例数据，不代表真实评测结论</div></div>
+        <div class="toolbox-intro"><div class="toolbox-copy"><h2>当前采用建议</h2><p>工具箱只读取最新明确评测结论，不依据热度、总分或日期自动变化。</p></div><div class="toolbox-rule"><strong>进入规则</strong><code>latest decision = adopt</code><br><span style="color:var(--muted);font-size:11px">范围：Tool + UseCase + Deployment</span></div></div>
+        ${Object.entries(USE_CASES).map(([id,name]) => {
+          const rows = filtered.filter(x => x.report.useCase === id);
+          if (!rows.length) return '';
+          return `<section class="group"><div class="group-title"><h2>${name}</h2><span>${rows.length} 个当前 Adopt</span></div><div class="toolbox-grid">${rows.map(toolboxCard).join('')}</div></section>`;
+        }).join('')}
+        ${!filtered.length ? `<div class="empty">没有匹配的工具箱条目</div>` : ''}
+        ${footerHTML()}`;
+    }
+
+    function toolboxCard({tool:t, report:r}) {
+      return `<article class="toolbox-card" data-tool="${t.slug}" role="link" tabindex="0" aria-label="查看 ${t.name} 详情"><div class="toolbox-card-head"><div class="tool-logo" style="--logo:${t.color}">${t.logo}</div><div><h3>${t.name}</h3>${decisionBadge(r)}</div></div><p>${t.summary}</p><div class="toolbox-meta"><span>适用场景：${USE_CASES[r.useCase]}</span><span>版本：${r.version} · ${DELIVERY_LABELS[r.deployment]}</span><span>评测日期：${r.date}</span></div></article>`;
+    }
+
+    function footerHTML() {
+      return `<footer class="footer"><span>只读产品原型 · 无登录和写操作</span><span><a href="https://aihot.virxact.com/" target="_blank" rel="noreferrer">Data source: AI HOT</a> · Build demo-20260805 · Catalog demo-20260805</span></footer>`;
+    }
+
+    function bindDynamic() {
+      document.querySelectorAll('[data-tool]').forEach(el => {
+        el.addEventListener('click', () => openTool(el.dataset.tool));
+        if (!['BUTTON', 'A'].includes(el.tagName)) el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTool(el.dataset.tool); } });
+      });
+      document.querySelectorAll('[data-related-item]').forEach(el => el.addEventListener('click', e => { e.preventDefault(); openItem(el.dataset.relatedItem); }));
+      document.querySelectorAll('[data-use-case]').forEach(el => el.addEventListener('click', () => {
+        state.useCase = el.dataset.useCase;
+        renderAndFocus(`[data-use-case="${state.useCase}"]`);
+      }));
+      const back = document.getElementById('backToRadar'); if (back) back.addEventListener('click', () => navTo('radar'));
+      const backToTool = document.getElementById('backToTool'); if (backToTool) backToTool.addEventListener('click', () => history.back());
+      const retry = document.getElementById('retryRadar'); if (retry) retry.addEventListener('click', () => { state.demoState = 'ready'; render(); });
+      const toggle = document.getElementById('filterToggle'); if (toggle) toggle.addEventListener('click', () => { state.filtersOpen = !state.filtersOpen; renderAndFocus('#filterToggle'); });
+      const bindSelect = (id, key) => { const el = document.getElementById(id); if (el) el.addEventListener('change', e => { state[key] = e.target.value; renderAndFocus(`#${id}`); }); };
+      bindSelect('formFilter', 'form');
+      bindSelect('deliveryFilter', 'delivery');
+      bindSelect('licenseFilter', 'license');
+      bindSelect('pricingFilter', 'pricing');
+      bindSelect('sourceFilter', 'source');
+      bindSelect('evaluationFilter', 'evaluated');
+      bindSelect('sortFilter', 'sort');
+      const clear = document.getElementById('clearFilters'); if (clear) clear.addEventListener('click', () => {
+        Object.assign(state, { useCase: 'all', form: 'all', delivery: 'all', license: 'all', pricing: 'all', source: 'all', evaluated: 'all', sort: 'newest', query: '', filtersOpen: false });
+        document.getElementById('search').value = ''; render(); document.getElementById('search').focus();
+      });
+    }
+
+    document.querySelectorAll('[data-nav]').forEach(el => el.addEventListener('click', () => navTo(el.dataset.nav)));
+    document.getElementById('search').addEventListener('input', e => {
+      state.query = e.target.value;
+      if (state.view === 'detail' || state.view === 'content') {
+        state.view = 'radar'; state.selectedTool = null; state.selectedItem = null;
+        history.pushState(null, '', '#tools');
+      }
+      render(); syncNav();
+    });
+    window.addEventListener('popstate', () => initFromHash());
+
+    function initFromHash() {
+      const hash = location.hash;
+      if (hash.startsWith('#tool=')) { state.view = 'detail'; state.selectedTool = decodeURIComponent(hash.slice(6)); state.selectedItem = null; }
+      else if (hash.startsWith('#item=')) { state.view = 'content'; state.selectedItem = decodeURIComponent(hash.slice(6)); state.selectedTool = null; }
+      else if (hash === '#toolbox') { state.view = 'toolbox'; state.selectedTool = null; state.selectedItem = null; }
+      else { state.view = 'radar'; state.selectedTool = null; state.selectedItem = null; }
+      syncNav(); render();
+    }
+
+    initFromHash();
+  </script>
+</body>
+</html>

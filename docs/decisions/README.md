@@ -1,28 +1,39 @@
-# Architecture Decision Records
+# 决策记录
 
-本目录记录已经定稿的关键技术和业务决策。ADR 用来回答“为什么这么做”，不是替代 PRD、接口文档或实施计划。
+本目录记录已经确定的重要技术或业务决策，用于说明为什么选择当前方案。
 
-## 命名规则
+决策记录只说明已经批准的选择及其理由，不替代需求、API 契约或实现计划。被批准或提出的决策不等于代码已经实现对应行为。
 
-```text
-NNNN-short-decision-title.md
-```
+## 决策索引
 
-示例：
-
-```text
-0001-use-local-cache.md
-```
-
-## Index
-
-| ADR | Status | Decision |
+| ADR | 状态 | 决策摘要 |
 |---|---|---|
-| （按项目填写） | Accepted | 一句话决策摘要 |
+| `0001-<short-title>.md` | Accepted | 一句话说明最终决策 |
 
-## 模板
+## 维护规则
+
+### 命名规则
+
+ADR 使用 `NNNN-short-title.md`，编号递增且不重复。
+
+### 新增和更新规则
+
+只有方案难以回退、存在明显取舍或会长期影响项目时才新增 ADR。决策被替代时保留原文件，将状态改为 `Superseded` 并链接新 ADR。
+
+### 从任务产物晋升决策
+
+当 `$sop-sync-docs` 把已批准的需求工作记录晋升为 canonical 决策时使用以下模板。不是从需求工作记录晋升的架构 ADR 可以沿用项目既有格式；不得为了满足模板而伪造来源信息。
 
 ```markdown
+---
+status: accepted
+state_class: RequestedState
+implementation_status: not_implemented
+source_requirement_path: docs/superpowers/requirements/2026-08-27-login-requirements.md
+source_requirement_commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+source_requirement_blob_digest: git-sha1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+---
+
 # NNNN. Decision Title
 
 ## Status
@@ -31,17 +42,23 @@ Accepted | Superseded | Deprecated
 
 ## Context
 
-背景、约束和触发原因。
+Background, constraints, and trigger.
 
 ## Decision
 
-最终采用的方案。
+Chosen approach.
 
 ## Consequences
 
-正向收益、代价和后续维护责任。
+Benefits, costs, and follow-up ownership.
 
 ## Alternatives Considered
 
-考虑过但未采用的方案，以及放弃原因。
+Options not selected and why.
 ```
+
+批准的需求或设计尚未通过代码证据验证时，必须使用 `RequestedState` 和 `not_implemented`。只有仓库证据证明行为已经实现时，才能使用 `CurrentState` 和 `implemented`。保留精确的需求文档 Git 路径、commit 和 blob identity，后续任务即可审计来源。
+
+## ADR 模板
+
+未从任务产物晋升的 ADR 至少包含 `Status`、`Context`、`Decision`、`Consequences`、`Alternatives Considered` 和 `Related Docs`。

@@ -1,0 +1,68 @@
+# 业务模型
+
+## 当前资讯领域
+
+| 实体 | 代码位置 | 说明 |
+|---|---|---|
+| RawItem | `server/internal/ingest` | 外部来源采集到的原始条目 |
+| Item | `server/internal/items` | 富化后的公开内容，供列表、详情和图谱使用 |
+| Daily | `server/internal/daily` | 日报数据 |
+| HotTopic | `server/internal/cluster` | 热点聚类结果 |
+| Term | `server/internal/terms` | 词云和词条相关内容 |
+
+当前主链路是 `raw_items -> pipeline -> items`。工具发现不复用 `RawItem` 或 `Item`，因为工具需要去重、来源合并、状态流转和测评记录。
+
+## 本次新增工具领域
+
+| 实体 | 说明 |
+|---|---|
+| ToolDiscoveryConfig | 发现配置，包含名称、方式、关键词或 Topic、触发方式、启用状态和最近执行信息 |
+| ToolDiscoveryRun | 一次发现任务执行记录，保存触发来源、操作者、命中数量、失败原因和 GitHub API 限制信息 |
+| Tool | GitHub 仓库级工具实体，以 GitHub `node_id` 去重 |
+| ToolDiscoverySource | 工具被哪些配置、关键词、Topic 或手动入口命中过 |
+| ToolEvaluation | 测评记录，保存测评人、Cooper 链接、开始/完成时间、结论和确认后的一句话介绍 |
+| ToolStatusEvent | 状态变更流水，保存操作人、阶段和原因 |
+| ToolStarSnapshot | Stars 快照，用于计算近 7 天增长 |
+
+## 工具状态
+
+```text
+discovered
+  -> evaluating
+  -> included
+
+discovered
+  -> excluded
+
+evaluating
+  -> excluded
+```
+
+- `discovered`：已发现，尚未决定是否测评。
+- `evaluating`：已选择测评，正在形成 Cooper 记录。
+- `included`：测评完成并纳入团队工具列表。
+- `excluded`：不处理或测评后不纳入；保留记录用于去重，但不出现在主列表。
+
+## 页面和路由
+
+当前前端使用 hash 视图：
+
+- `/`：日报首页。
+- `#selected`：精选。
+- `#all`：全部动态。
+- `#graph`：图谱。
+
+本次工具模块规划新增：
+
+- `#/tools/discovered`：已发现工具。
+- `#/tools/evaluating`：测评中工具。
+- `#/tools/team`：团队工具。
+- `#/tools/configs`：发现配置。
+
+## 关键规则
+
+- GitHub 仓库以 `node_id` 唯一。
+- 重复命中时合并来源并刷新最近发现时间，不重复创建工具。
+- `included` 的一句话介绍以测评人确认值为准。
+- Cooper 链接只校验域名，首期不读取正文。
+- 所有写操作都要求用户手填操作人。

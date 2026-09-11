@@ -59,6 +59,6 @@
 - `server/internal/pulse/sources.go` 的默认 RSS 仅有 OpenAI Blog、TechCrunch AI、Simon Willison、MIT Technology Review AI；指定中文站点尚未落地。
 - `web/src/App.tsx` 与 `web/src/components/Feed.tsx` 已有日报、精选、全部动态、图谱及来源/分类/搜索筛选。
 - `server/cmd/webserver/main.go` 没有工具、评测、发布或能力包领域接口。
-- [`../../../PROJECT_STATUS_AUDIT_2026-07-30.md`](../../../PROJECT_STATUS_AUDIT_2026-07-30.md) 记录现有测试通过，但生产可复现、CI、认证和健康检查仍有缺口。
+- 2026-07-30 的项目审计快照记录现有测试通过，但生产可复现、CI、认证和健康检查仍有缺口；原始审计文件当前不在本工作树内。
 
 因此，本轮不是补一个“工具列表”页面，而是要新增独立的工具领域模型和治理流程；在增加写操作前还要先补认证、审计与运行基线。

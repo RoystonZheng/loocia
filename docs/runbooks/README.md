@@ -24,13 +24,15 @@
 
 ## 项目运维摘录
 
-数据管线部署在 Melos 个人开发机（`ssh melos`），由 root crontab 驱动，共三条定时任务：
+数据管线部署在 Melos 个人开发机（`ssh melos`），由 root crontab 驱动，核心定时任务如下：
 
 - `pulse`（每 30 分钟）：抓源 + LLM 富化入库。
+- `discovertools`（跟随 `pulse`，每 30 分钟）：AI Tool weekly 配置发现 + GitHub Stars 快照。
 - `gendaily`（每小时 :10）：生成日报。
 - `hotpass`（每小时 :20）：热点聚类。
 
-生产数据库为 Melos 本机 PostgreSQL 的 `aihot` 库（勿与 `aihot_test` 混淆）。全站 24/7 常驻 Melos：`http://10.190.12.242:8899/`。
+生产数据库为 Melos 本机 PostgreSQL 的 `aihot` 库（勿与 `aihot_test` 混淆）。AI Tool 仍使用同库新表，定时发现需要在 Melos 环境文件中配置 `AI_TOOL_GITHUB_TOKEN`。全站 24/7 常驻 Melos：`http://10.190.12.242:8899/`。
+完整部署与排障手册见仓库根目录 [`deploy/README.md`](../../deploy/README.md)。
 
 ## 维护规则
 

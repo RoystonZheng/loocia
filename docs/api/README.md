@@ -17,6 +17,12 @@
 - 人类可读契约：本目录下的接口契约文档。
 - 前端消费契约需要记录字段如何落到界面、错误如何展示、mock 如何组织。
 
+## 接口索引
+
+| 文件 | 说明 |
+|---|---|
+| [`ai-cool-tools.md`](./ai-cool-tools.md) | 工具发现、手动添加、测评流转和团队工具列表接口 |
+
 ## 当前接口风格
 
 当前公共读取接口以 `GET + query` 为主，位于 `server/internal/publicapi`，例如 `/api/public/items`、`/api/public/daily`、`/api/public/hot-topics` 和 `/api/public/graph/*`。

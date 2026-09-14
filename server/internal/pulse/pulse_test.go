@@ -2,10 +2,12 @@ package pulse
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"aihot-server/internal/db"
 	"aihot-server/internal/ingest"
@@ -13,13 +15,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const pulseRSS = `<?xml version="1.0" encoding="UTF-8"?>
+func pulseRSS(now time.Time) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel><title>T</title>
   <item><title>Pulse Item One</title><link>https://ex.com/pulse-1</link>
-    <description>body one</description><pubDate>Mon, 06 Jul 2026 08:00:00 GMT</pubDate></item>
+    <description>body one</description><pubDate>%s</pubDate></item>
   <item><title>Pulse Item Two</title><link>https://ex.com/pulse-2</link>
-    <description>body two</description><pubDate>Mon, 06 Jul 2026 09:00:00 GMT</pubDate></item>
-</channel></rss>`
+    <description>body two</description><pubDate>%s</pubDate></item>
+</channel></rss>`, now.Add(-2*time.Hour).UTC().Format(time.RFC1123), now.Add(-time.Hour).UTC().Format(time.RFC1123))
+}
 
 type fakeLLM struct{ reply string }
 
@@ -48,9 +52,10 @@ func testPool(t *testing.T) *pgxpool.Pool {
 
 func TestRunIngestsAndEnriches(t *testing.T) {
 	pool := testPool(t)
+	rss := pulseRSS(time.Now().UTC())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/rss+xml")
-		_, _ = w.Write([]byte(pulseRSS))
+		_, _ = w.Write([]byte(rss))
 	}))
 	defer srv.Close()
 
@@ -92,9 +97,10 @@ func TestRunIngestsAndEnriches(t *testing.T) {
 
 func TestRunStopsWhenNoProgress(t *testing.T) {
 	pool := testPool(t)
+	rss := pulseRSS(time.Now().UTC())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/rss+xml")
-		_, _ = w.Write([]byte(pulseRSS))
+		_, _ = w.Write([]byte(rss))
 	}))
 	defer srv.Close()
 

@@ -12,6 +12,25 @@
 
 当前主链路是 `raw_items -> pipeline -> items`。工具发现不复用 `RawItem` 或 `Item`，因为工具需要去重、来源合并、状态流转和测评记录。
 
+## 信息源扩展模型
+
+`SourceConfig` 位于 `server/internal/pulse`，负责把来源配置翻译为 `ingest.Source`。旧格式 `{name,url}` 仍按 RSS 处理；新格式支持 `adapter`、`source_kind`、`source_role`、`enabled`、单轮上限、二手线索上限和超时。
+
+`RawItem` 新增 `SourceRole`，仅在 `raw_items` 和 enrichment 阶段使用，不进入公开 `items` DTO。
+
+| 字段 | 枚举 | 含义 |
+|---|---|---|
+| `source_kind` | `rss`、`html`、`mp`、`aihot` | 采集方式，用于来源筛选和部分处理分支 |
+| `source_role` | `official`、`professional`、`discovery` | 富化提示词的阅读价值判断口径 |
+
+来源角色规则：
+
+- `official`：官方博客、官网新闻或明确登记的官方公众号。官方身份不自动加分，活动、招聘、预告和空洞宣传仍低分。
+- `professional`：科技媒体、专家博客和普通公众号。更看重原创采访、实测、代码、数据、工程经验和独特分析。
+- `discovery`：社区、聚合和补漏来源。传闻、截图、单一反馈和二手摘要要压低，AIHOT 也属于该角色。
+
+精选规则只影响新处理内容：`selected = relevance >= 4 && score >= 3`，`ai_selected` 与该门槛同步。历史 `items.selected` 不批量回刷。
+
 ## 本次新增工具领域
 
 | 实体 | 说明 |
@@ -61,6 +80,8 @@ evaluating
 
 ## 关键规则
 
+- 资讯 raw 入队以稳定 URL hash 去重；AIHOT 有原文链接时用原文 URL，无原文链接时仅在二手线索上限内使用 `aihot:<id>` 派生稳定 ID。
+- `source_role` 不对外展示，前端只通过 `source_kind` 做来源筛选，通过 `source` 文案展示来源名。
 - GitHub 仓库以 `node_id` 唯一。
 - 重复命中时合并来源并刷新最近发现时间，不重复创建工具。
 - `included` 的一句话介绍以测评人确认值为准。

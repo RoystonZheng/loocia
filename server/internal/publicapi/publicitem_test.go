@@ -38,7 +38,7 @@ func TestToPublicExposesOnlyPublicFields(t *testing.T) {
 
 	b, _ := json.Marshal(p)
 	js := string(b)
-	for _, banned := range []string{"ai_relevance", "aiRelevance", "ai_selected", "aiSelected",
+	for _, banned := range []string{"ai_relevance", "aiRelevance", "ai_selected", "aiSelected", "source_role", "sourceRole",
 		"cluster", "duplicate", "present", "body", "timeline"} {
 		if contains(js, banned) {
 			t.Fatalf("internal field %q leaked into JSON: %s", banned, js)

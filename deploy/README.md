@@ -31,9 +31,13 @@ Mac 只负责交叉编译 + scp。
     ssh melos 'crontab -l | sed "/# aihot-begin/,/# aihot-end/d" | crontab -'
 
 ## 已知边界
-- 源清单默认 OpenAI Blog + Google AI Blog(内嵌);加源:上传 JSON 到
-  /root/aihot/etc/sources.json 并把 pulse 的 cron 行改成
-  `... pulse -sources /root/aihot/etc/sources.json`。arXiv 量大费 LLM,慎加。
+- 源清单内嵌默认覆盖 OpenAI、TechCrunch、Simon Willison、MIT Technology Review、
+  Anthropic、DeepMind、Cloudflare、NVIDIA、人人都是产品经理、极客公园、
+  Reddit LocalLLaMA 和 AIHOT；Reddit MachineLearning 默认 disabled。加源:
+  上传 JSON 到 /root/aihot/etc/sources.json，并在运行环境设置
+  `AIHOT_SOURCES_FILE=/root/aihot/etc/sources.json`；`aihot-cron.sh pulse`
+  在未显式传参时会自动补 `-sources "$AIHOT_SOURCES_FILE"`。手工传入
+  `pulse -sources ...` 仍优先。arXiv 量大费 LLM,慎加。
 - 失败条目留在 raw_items 未处理态,下轮 pulse 自动重试;毒条目不会死循环
   (无进展即停批)。
 - LLM key 轮换后无需改动(每次执行时从 .env 现读)。

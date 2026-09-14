@@ -149,6 +149,18 @@ func TestParseSourceKind(t *testing.T) {
 	if p.Since == nil || !p.Since.Equal(refNow.Add(-7*24*time.Hour)) {
 		t.Fatalf("rss should keep 7d window: %v", p.Since)
 	}
+	for _, kind := range []string{"html", "aihot"} {
+		p, err = parseListParams(vals("source_kind="+kind), refNow)
+		if err != nil {
+			t.Fatalf("source_kind=%s: %v", kind, err)
+		}
+		if p.SourceKind == nil || *p.SourceKind != kind {
+			t.Fatalf("SourceKind for %s: %v", kind, p.SourceKind)
+		}
+		if p.Since == nil || !p.Since.Equal(refNow.Add(-7*24*time.Hour)) {
+			t.Fatalf("%s should keep 7d window: %v", kind, p.Since)
+		}
+	}
 	// Invalid value → 400.
 	if _, err := parseListParams(vals("source_kind=email"), refNow); err == nil {
 		t.Fatal("invalid source_kind should 400")

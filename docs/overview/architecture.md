@@ -11,11 +11,34 @@ AI Cool 当前由 Go 后端、PostgreSQL 数据库、React 前端和定时任务
 | WebServer | `server/cmd/webserver/main.go` | 公网可运行 HTTP 入口 |
 | Nuwa HTTP | `server/common/server/httpserv/httpserv.go` | 内部 Nuwa 入口 |
 | DB | `server/internal/db` | PostgreSQL 连接池 |
-| Ingest | `server/internal/ingest` | 原始资讯采集 |
+| Ingest | `server/internal/ingest` | 原始资讯采集，包含 RSS/Atom、HTML、公众号语料和 AIHOT 补漏 adapter |
 | Pipeline | `server/internal/pipeline` | 内容富化、翻译和入库 |
 | Items | `server/internal/items` | 公开内容存储和查询 |
 | Public API | `server/internal/publicapi` | 前端 API handler |
 | Daily/Cluster/Terms | `server/internal/daily`、`cluster`、`terms` | 日报、热点和图谱数据 |
+
+## 信息源扩展链路
+
+```text
+pulse.LoadSources
+  -> ingest.Source adapter
+  -> RawStore(raw_items.source_kind/source_role)
+  -> pipeline.Enricher(prompt with source context)
+  -> items.Store(selected double gate)
+  -> /api/public/items?source_kind=...
+  -> Feed source chips
+```
+
+`server/internal/pulse/sources.go` 是来源配置工厂。它保留内置默认来源，也支持 `pulse -sources /path/sources.json`。配置错误会让 `pulse` 启动失败；单个来源运行时失败只进入本轮 source errors。
+
+`server/internal/ingest` 中的 adapter 共同输出 `RawItem`：
+
+- `RSSSource` 复用 `gofeed`，支持 role、kind、limit 和 timeout。
+- `AnthropicNewsSource` 只解析 Anthropic News 列表页链接、标题和时间，不递归抓全站。
+- `MPCorpusSource` 从 `AIHOT_MP_CORPUS_DIR` 读取本地 Markdown，默认 `professional`，可由 `AIHOT_MP_OFFICIAL_ACCOUNTS` 覆盖官方账号。
+- `AIHOTSource` 只读 `https://aihot.news/api/v1/items`，原文链接优先，二手线索受上限保护，不继承 AIHOT 分数和精选结论。
+
+公共 API 响应结构不变，只扩展 `source_kind` 查询枚举为 `rss/html/mp/aihot`。日报、热点和图谱仍消费 `items.selected`、category、score 等既有字段。
 
 ## 本次工具模块规划
 
@@ -43,6 +66,7 @@ AI Cool 当前由 Go 后端、PostgreSQL 数据库、React 前端和定时任务
 
 - GitHub REST API：工具发现和手动添加使用官方 API。
 - Cooper：仅保存用户填写的 Cooper 测评文档链接，不自动创建或读取正文。
+- AIHOT Public API：作为资讯补漏来源，只使用匿名只读 `/api/v1/items`，遵守缓存、限流和授权边界。
 - LLM：当前仅用于资讯富化和详情页重新翻译；工具发现首期不依赖 LLM 做最终测评结论。
 
 ## 核心链路

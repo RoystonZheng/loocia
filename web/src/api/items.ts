@@ -24,7 +24,7 @@ export interface ItemList {
 export interface ListQuery {
   mode?: 'selected' | 'all'
   category?: string
-  sourceKind?: 'mp' | 'rss'
+  sourceKind?: 'rss' | 'html' | 'mp' | 'aihot'
   q?: string
   take?: number
   cursor?: string

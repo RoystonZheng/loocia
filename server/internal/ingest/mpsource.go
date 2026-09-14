@@ -128,12 +128,39 @@ func firstRunes(s string, n int) string {
 // of .md files (one directory per 公众号). It is strictly read-only over the
 // corpus. Per-file errors are skipped so one bad file never aborts the walk.
 type MPCorpusSource struct {
-	root  string
-	label string
+	root             string
+	label            string
+	defaultRole      string
+	officialAccounts map[string]bool
 }
 
 func NewMPCorpusSource(root, label string) *MPCorpusSource {
-	return &MPCorpusSource{root: root, label: label}
+	return NewMPCorpusSourceWithOptions(root, label, MPCorpusSourceOptions{})
+}
+
+type MPCorpusSourceOptions struct {
+	DefaultRole      string
+	OfficialAccounts []string
+}
+
+func NewMPCorpusSourceWithOptions(root, label string, opts MPCorpusSourceOptions) *MPCorpusSource {
+	defaultRole := opts.DefaultRole
+	if defaultRole == "" {
+		defaultRole = SourceRoleProfessional
+	}
+	accounts := make(map[string]bool)
+	for _, account := range opts.OfficialAccounts {
+		account = strings.TrimSpace(account)
+		if account != "" {
+			accounts[account] = true
+		}
+	}
+	return &MPCorpusSource{
+		root:             root,
+		label:            label,
+		defaultRole:      defaultRole,
+		officialAccounts: accounts,
+	}
 }
 
 func (s *MPCorpusSource) Name() string { return s.label }
@@ -168,12 +195,16 @@ func (s *MPCorpusSource) toRaw(a mpArticle) RawItem {
 	r := RawItem{
 		ID:         RawID(a.URL),
 		Source:     a.MPName,
-		SourceKind: "mp",
+		SourceKind: SourceKindMP,
+		SourceRole: s.defaultRole,
 		URL:        a.URL,
 		Title:      a.Title,
 	}
 	if r.Source == "" {
 		r.Source = s.label
+	}
+	if s.officialAccounts[r.Source] {
+		r.SourceRole = SourceRoleOfficial
 	}
 	if t, err := time.Parse(time.RFC3339, a.PublishTime); err == nil {
 		r.PublishedAt = &t

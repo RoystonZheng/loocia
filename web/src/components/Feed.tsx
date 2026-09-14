@@ -6,10 +6,14 @@ import { HotTopics } from './HotTopics'
 import { categoryLabel, beijingParts } from '../format'
 
 const CATEGORIES = ['ai-models', 'ai-products', 'industry', 'paper', 'tip']
-const SOURCES: { key: 'mp' | 'rss' | undefined; label: string }[] = [
+type SourceKind = 'rss' | 'html' | 'mp' | 'aihot'
+
+const SOURCES: { key: SourceKind | undefined; label: string }[] = [
   { key: undefined, label: '全部来源' },
+  { key: 'rss', label: 'RSS/Atom' },
+  { key: 'html', label: '网页直采' },
   { key: 'mp', label: '公众号' },
-  { key: 'rss', label: '英文源' },
+  { key: 'aihot', label: 'AIHOT补漏' },
 ]
 const PAGE_SIZE = 20
 
@@ -22,7 +26,7 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
   const [q, setQ] = useState('')
   const [submittedQ, setSubmittedQ] = useState('')
   const [category, setCategory] = useState<string | undefined>(undefined)
-  const [sourceKind, setSourceKind] = useState<'mp' | 'rss' | undefined>(undefined)
+  const [sourceKind, setSourceKind] = useState<SourceKind | undefined>(undefined)
 
   const load = useCallback(
     async (reset: boolean, curCursor: string | null) => {

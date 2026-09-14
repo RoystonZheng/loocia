@@ -52,8 +52,14 @@ func TestShouldTranslate(t *testing.T) {
 	if !shouldTranslate("rss", "hi") {
 		t.Fatal("rss with body should translate")
 	}
+	if !shouldTranslate("html", "hi") {
+		t.Fatal("html with body should translate")
+	}
 	if shouldTranslate("mp", "hi") {
 		t.Fatal("mp should not translate")
+	}
+	if shouldTranslate("aihot", "hi") {
+		t.Fatal("aihot should not translate")
 	}
 	if shouldTranslate("rss", "") {
 		t.Fatal("empty body should not translate")
@@ -63,32 +69,32 @@ func TestShouldTranslate(t *testing.T) {
 	}
 }
 
-func TestToItemSelectionByScore(t *testing.T) {
+func TestToItemSelectionByRelevanceAndScore(t *testing.T) {
 	raw := ingest.RawItem{ID: "r1", URL: "https://x/1", Source: "S", Title: "Orig"}
 	cases := []struct {
 		name      string
+		relevance int
 		score     int
-		wantSel   bool
-		wantAISel bool
+		want      bool
 	}{
-		{"S is selected + strong", 5, true, true},
-		{"A is selected + strong", 4, true, true},
-		{"B is selected, not strong", 3, true, false},
-		{"C is not selected", 2, false, false},
-		{"D is not selected", 1, false, false},
+		{"passes at minimum thresholds", 4, 3, true},
+		{"passes above thresholds", 5, 5, true},
+		{"high score but low relevance", 3, 5, false},
+		{"high relevance but low score", 5, 2, false},
+		{"unrelated but high score", 1, 5, false},
+		{"relevant but score floor miss", 4, 1, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			e := Enrichment{TitleCN: "标题", SummaryCN: "摘要", Category: items.CategoryAIModels, Relevance: 4, Score: c.score}
+			e := Enrichment{TitleCN: "标题", SummaryCN: "摘要", Category: items.CategoryAIModels, Relevance: c.relevance, Score: c.score}
 			it := toItem(raw, e)
-			if it.Selected != c.wantSel {
-				t.Fatalf("Selected: got %v want %v (score=%d)", it.Selected, c.wantSel, c.score)
+			if it.Selected != c.want {
+				t.Fatalf("Selected: got %v want %v (relevance=%d score=%d)", it.Selected, c.want, c.relevance, c.score)
 			}
-			// ai_selected now records the "strong pick" signal (score>=4).
-			if it.AISelected == nil || *it.AISelected != c.wantAISel {
-				t.Fatalf("AISelected: got %v want %v (score=%d)", it.AISelected, c.wantAISel, c.score)
+			if it.AISelected == nil || *it.AISelected != c.want {
+				t.Fatalf("AISelected: got %v want %v (relevance=%d score=%d)", it.AISelected, c.want, c.relevance, c.score)
 			}
-			if it.AIRelevance == nil || *it.AIRelevance != 4 {
+			if it.AIRelevance == nil || *it.AIRelevance != c.relevance {
 				t.Fatalf("AIRelevance: %v", it.AIRelevance)
 			}
 		})
@@ -126,7 +132,7 @@ func TestProcessBatchTranslatesRSSBody(t *testing.T) {
 	}
 }
 
-func TestProcessBatchUsesFullArticleForRSS(t *testing.T) {
+func TestProcessBatchUsesFullArticleForRSSAndHTML(t *testing.T) {
 	pool := testPool(t)
 	raw, itemsStore := testStores(t, pool)
 	ctx := context.Background()
@@ -139,6 +145,15 @@ func TestProcessBatchUsesFullArticleForRSS(t *testing.T) {
 		URL: "https://ex.com/full-rss", Title: "T", RawContent: &short,
 	}
 	if _, err := raw.InsertRaw(ctx, rss); err != nil {
+		t.Fatal(err)
+	}
+
+	htmlBody := "short snippet"
+	html := ingest.RawItem{
+		ID: ingest.RawID("https://ex.com/full-html"), Source: "Src", SourceKind: "html",
+		URL: "https://ex.com/full-html", Title: "T", RawContent: &htmlBody,
+	}
+	if _, err := raw.InsertRaw(ctx, html); err != nil {
 		t.Fatal(err)
 	}
 
@@ -163,6 +178,14 @@ func TestProcessBatchUsesFullArticleForRSS(t *testing.T) {
 	}
 	if gotRSS.Body == nil || *gotRSS.Body != long {
 		t.Fatalf("rss body should be the full extracted article: %v", gotRSS.Body)
+	}
+
+	gotHTML, err := itemsStore.GetByID(ctx, html.ID)
+	if err != nil {
+		t.Fatalf("GetByID html: %v", err)
+	}
+	if gotHTML.Body == nil || *gotHTML.Body != long {
+		t.Fatalf("html body should be the full extracted article: %v", gotHTML.Body)
 	}
 
 	gotMP, err := itemsStore.GetByID(ctx, mp.ID)

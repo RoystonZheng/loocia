@@ -25,11 +25,12 @@ describe('fetchItems', () => {
 
   it('builds the query string from params (only set ones)', async () => {
     mockJson({ count: 0, hasNext: false, nextCursor: null, items: [] })
-    await fetchItems({ q: 'OpenAI', category: 'ai-models', take: 20, cursor: 'C1', mode: 'all' })
+    await fetchItems({ q: 'OpenAI', category: 'ai-models', sourceKind: 'aihot', take: 20, cursor: 'C1', mode: 'all' })
     const url = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
     expect(url).toContain('/api/public/items?')
     expect(url).toContain('q=OpenAI')
     expect(url).toContain('category=ai-models')
+    expect(url).toContain('source_kind=aihot')
     expect(url).toContain('take=20')
     expect(url).toContain('cursor=C1')
     expect(url).toContain('mode=all')

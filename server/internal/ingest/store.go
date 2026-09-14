@@ -28,11 +28,12 @@ func (s *RawStore) EnsureSchema(ctx context.Context) error {
 // InsertRaw inserts a raw item, ignoring conflicts on id (idempotent — never
 // overwrites an already-fetched row). Returns true if a new row was inserted.
 func (s *RawStore) InsertRaw(ctx context.Context, r RawItem) (bool, error) {
+	sourceRole := DefaultSourceRole(r.SourceRole)
 	tag, err := s.pool.Exec(ctx, `
-		INSERT INTO raw_items (id, source, source_kind, url, title, published_at, raw_content, image_url, video_url)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		INSERT INTO raw_items (id, source, source_kind, source_role, url, title, published_at, raw_content, image_url, video_url)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		ON CONFLICT (id) DO NOTHING`,
-		r.ID, r.Source, r.SourceKind, r.URL, r.Title, r.PublishedAt, r.RawContent, r.ImageURL, r.VideoURL)
+		r.ID, r.Source, r.SourceKind, sourceRole, r.URL, r.Title, r.PublishedAt, r.RawContent, r.ImageURL, r.VideoURL)
 	if err != nil {
 		return false, err
 	}
@@ -45,7 +46,7 @@ func (s *RawStore) ListUnprocessed(ctx context.Context, limit int) ([]RawItem, e
 		limit = 100
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, source, source_kind, url, title, published_at, raw_content, image_url, video_url
+		SELECT id, source, source_kind, source_role, url, title, published_at, raw_content, image_url, video_url
 		FROM raw_items
 		WHERE processed = false
 		ORDER BY fetched_at ASC
@@ -58,7 +59,7 @@ func (s *RawStore) ListUnprocessed(ctx context.Context, limit int) ([]RawItem, e
 	var out []RawItem
 	for rows.Next() {
 		var r RawItem
-		if err := rows.Scan(&r.ID, &r.Source, &r.SourceKind, &r.URL, &r.Title, &r.PublishedAt, &r.RawContent, &r.ImageURL, &r.VideoURL); err != nil {
+		if err := rows.Scan(&r.ID, &r.Source, &r.SourceKind, &r.SourceRole, &r.URL, &r.Title, &r.PublishedAt, &r.RawContent, &r.ImageURL, &r.VideoURL); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

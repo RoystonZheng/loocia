@@ -44,6 +44,10 @@ const enrichSystemPrompt = `你是 AI 资讯编辑。给定一条资讯的原始
     1 = 低：营销通稿、标题党无实质、活动/直播/招聘/预告等通知、与 AI 弱相关。
     规则：工程腿和行业腿平权，两者都能到 5；看实质内容而非标题措辞；
     旧闻/不新颖/人尽皆知只要深且有用不扣分；压低营销宣发通知、标题党、与 AI 弱相关。
+- 来源角色评分补充：
+    official = 官方来源。实质能力变化、技术文档、数据、政策或路线图可高分；活动、招聘、预告和空洞宣传仍低分。
+    professional = 专业来源。原创采访、实测、代码、数据、工程经验和独特分析可高分；搬运公告、旧闻改写和浅层观点低分。
+    discovery = 发现来源。社区线索需看是否有可验证增量；单一反馈、聚合摘要、传闻和截图爆料应压低。若正文指向清晰原文，只按本文可见证据评分。
 - "reason_cn": 一句话（不超过40字）说明这条为什么值得关注（点出关键看点，不要复述标题）
 
 重要：title_cn、summary_cn、reason_cn 的文本内容里绝对不要出现英文双引号 " ；需要引用词语或名称时，一律改用中文引号「」或书名号《》。字符串值内出现未转义的英文双引号会破坏 JSON。`
@@ -57,6 +61,29 @@ const maxPromptBodyRunes = 4000
 
 func buildPrompt(r ingest.RawItem) (system, user string) {
 	var b strings.Builder
+	if r.Source != "" {
+		b.WriteString("来源名称：")
+		b.WriteString(r.Source)
+		b.WriteString("\n")
+	}
+	if r.SourceKind != "" {
+		b.WriteString("来源类型：")
+		b.WriteString(r.SourceKind)
+		b.WriteString("\n")
+	}
+	b.WriteString("来源角色：")
+	b.WriteString(ingest.DefaultSourceRole(r.SourceRole))
+	b.WriteString("\n")
+	if r.URL != "" {
+		b.WriteString("URL：")
+		b.WriteString(r.URL)
+		b.WriteString("\n")
+	}
+	if r.PublishedAt != nil {
+		b.WriteString("发布时间：")
+		b.WriteString(r.PublishedAt.UTC().Format("2006-01-02T15:04:05Z07:00"))
+		b.WriteString("\n")
+	}
 	b.WriteString("原始标题：")
 	b.WriteString(r.Title)
 	if r.RawContent != nil && *r.RawContent != "" {

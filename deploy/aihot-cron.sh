@@ -26,6 +26,9 @@ if [[ "$UNIT" == "discovertools" && -z "${AI_TOOL_GITHUB_TOKEN:-}" ]]; then
   echo "AI_TOOL_GITHUB_TOKEN not set"
   exit 1
 fi
+if [[ "$UNIT" == "pulse" && $# -eq 0 && -n "${AIHOT_SOURCES_FILE:-}" ]]; then
+  set -- -sources "$AIHOT_SOURCES_FILE"
+fi
 
 LOG="/root/aihot/log/${UNIT}.log"
 {

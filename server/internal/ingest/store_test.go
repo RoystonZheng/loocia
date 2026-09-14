@@ -69,3 +69,39 @@ func TestListUnprocessedAndMarkProcessed(t *testing.T) {
 		t.Fatal("processed item still returned as unprocessed")
 	}
 }
+
+func TestInsertRawPersistsSourceRole(t *testing.T) {
+	s := newTestRawStore(t)
+	ctx := context.Background()
+	r := sampleRaw("https://ex.com/official", time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC))
+	r.SourceRole = SourceRoleOfficial
+
+	if _, err := s.InsertRaw(ctx, r); err != nil {
+		t.Fatalf("InsertRaw: %v", err)
+	}
+	un, err := s.ListUnprocessed(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListUnprocessed: %v", err)
+	}
+	if len(un) != 1 || un[0].SourceRole != SourceRoleOfficial {
+		t.Fatalf("source role not persisted: %+v", un)
+	}
+}
+
+func TestInsertRawDefaultsEmptySourceRole(t *testing.T) {
+	s := newTestRawStore(t)
+	ctx := context.Background()
+	r := sampleRaw("https://ex.com/default-role", time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC))
+	r.SourceRole = ""
+
+	if _, err := s.InsertRaw(ctx, r); err != nil {
+		t.Fatalf("InsertRaw: %v", err)
+	}
+	un, err := s.ListUnprocessed(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListUnprocessed: %v", err)
+	}
+	if len(un) != 1 || un[0].SourceRole != SourceRoleDiscovery {
+		t.Fatalf("empty source role should default to discovery: %+v", un)
+	}
+}

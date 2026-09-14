@@ -82,6 +82,15 @@ paths:
             | `industry` | 行业动态 |
             | `paper` | 论文研究 |
             | `tip` | 技巧与观点 |
+        - name: source_kind
+          in: query
+          schema:
+            type: string
+            enum: ["rss", "html", "mp", "aihot"]
+          description: |
+            可选来源类型筛选。`rss` = RSS/Atom，`html` = 网页直采，
+            `mp` = 公众号语料，`aihot` = AIHOT 补漏候选。未知值返回 400。
+            `mp` 浏览历史语料时不加默认 7 天窗口；其它来源类型仍受默认窗口约束。
         - name: since
           in: query
           schema:
@@ -155,7 +164,7 @@ paths:
                 type: string
         "400":
           description: |
-            参数不合法（mode / category / since / take 越界、cursor 字符长度超限等）。
+            参数不合法（mode / category / source_kind / since / take 越界、cursor 字符长度超限等）。
             响应体 `{ "error": "<原因>" }`。
         "429":
           description: |

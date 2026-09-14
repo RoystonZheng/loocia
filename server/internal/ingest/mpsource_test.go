@@ -123,6 +123,9 @@ publish_time: '2026-07-01T00:00:00+08:00'
 	if it.SourceKind != "mp" {
 		t.Fatalf("source_kind: %q", it.SourceKind)
 	}
+	if it.SourceRole != SourceRoleProfessional {
+		t.Fatalf("source_role: %q", it.SourceRole)
+	}
 	if it.Source != "腾讯云开发者" {
 		t.Fatalf("source: %q", it.Source)
 	}
@@ -137,6 +140,26 @@ publish_time: '2026-07-01T00:00:00+08:00'
 	}
 	if it.ImageURL == nil || *it.ImageURL != "https://mmbiz.qpic.cn/sz_mmbiz_jpg/cover/0?wx_fmt=jpeg&from=appmsg" {
 		t.Fatalf("image should come from the first Markdown image: %v", it.ImageURL)
+	}
+}
+
+func TestMPCorpusSourceOfficialAccountOverride(t *testing.T) {
+	root := t.TempDir()
+	acct := filepath.Join(root, "腾讯云开发者")
+	writeMP(t, acct, "a.md", sampleMP)
+
+	src := NewMPCorpusSourceWithOptions(root, "WeChat MP", MPCorpusSourceOptions{
+		OfficialAccounts: []string{" 腾讯云开发者 "},
+	})
+	items, err := src.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("want 1 item, got %d", len(items))
+	}
+	if items[0].SourceRole != SourceRoleOfficial {
+		t.Fatalf("official account role: %q", items[0].SourceRole)
 	}
 }
 

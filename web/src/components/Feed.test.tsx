@@ -79,6 +79,26 @@ describe('Feed', () => {
     expect(mpUrl).toContain('source_kind=mp')
   })
 
+  it('supports html and aihot source filters', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => page(['a'], null) })
+      .mockResolvedValueOnce({ ok: true, json: async () => page(['html1'], null) })
+      .mockResolvedValueOnce({ ok: true, json: async () => page(['aihot1'], null) })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<Feed mode="all" />)
+    await waitFor(() => expect(screen.getByText('t-a')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '网页直采' }))
+    await waitFor(() => expect(screen.getByText('t-html1')).toBeInTheDocument())
+    expect(fetchMock.mock.calls[1][0] as string).toContain('source_kind=html')
+
+    fireEvent.click(screen.getByRole('button', { name: 'AIHOT补漏' }))
+    await waitFor(() => expect(screen.getByText('t-aihot1')).toBeInTheDocument())
+    expect(screen.queryByText('t-html1')).toBeNull()
+    expect(fetchMock.mock.calls[2][0] as string).toContain('source_kind=aihot')
+  })
+
   it('shows an error message when the fetch fails', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 }) as unknown as typeof fetch
     render(<Feed mode="all" />)

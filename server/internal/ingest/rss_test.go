@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -134,6 +135,19 @@ func TestParseFeedMapsItems(t *testing.T) {
 	}
 }
 
+func TestParseFeedWithOptionsCarriesSourceRoleAndLimit(t *testing.T) {
+	items, err := parseFeedWithOptions([]byte(sampleRSS), "Example AI Blog", SourceKindRSS, SourceRoleOfficial, 1)
+	if err != nil {
+		t.Fatalf("parseFeedWithOptions: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("want max 1 item, got %d", len(items))
+	}
+	if items[0].SourceRole != SourceRoleOfficial {
+		t.Fatalf("source role: %q", items[0].SourceRole)
+	}
+}
+
 func TestRSSSourceFetch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/rss+xml")
@@ -151,5 +165,48 @@ func TestRSSSourceFetch(t *testing.T) {
 	}
 	if len(items) != 2 {
 		t.Fatalf("want 2 items from Fetch, got %d", len(items))
+	}
+}
+
+func TestRSSSourceFetchWithOptions(t *testing.T) {
+	var userAgent string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userAgent = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write([]byte(sampleRSS))
+	}))
+	defer srv.Close()
+
+	src := NewRSSSourceWithOptions("Example AI Blog", srv.URL, RSSSourceOptions{
+		SourceKind:     SourceKindRSS,
+		SourceRole:     SourceRoleProfessional,
+		MaxItemsPerRun: 1,
+		Timeout:        time.Second,
+	})
+	items, err := src.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("want limited item count, got %d", len(items))
+	}
+	if items[0].SourceRole != SourceRoleProfessional {
+		t.Fatalf("source role: %q", items[0].SourceRole)
+	}
+	if userAgent != "aihot-ingest/0.1" {
+		t.Fatalf("user-agent: %q", userAgent)
+	}
+}
+
+func TestRSSSourceFetchReportsRetryAfter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "120")
+		http.Error(w, "slow down", http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	_, err := NewRSSSource("Limited", srv.URL).Fetch(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "retry-after 120") {
+		t.Fatalf("expected retry-after error, got %v", err)
 	}
 }

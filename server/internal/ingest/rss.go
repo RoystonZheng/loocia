@@ -22,6 +22,10 @@ var videoSrcRe = regexp.MustCompile(`(?i)<(?:video|iframe|source)[^>]+src=["']([
 // parseFeed turns raw RSS/Atom bytes into RawItems. Items without a link are
 // skipped (no stable id derivable).
 func parseFeed(data []byte, sourceName, sourceKind string) ([]RawItem, error) {
+	return parseFeedWithOptions(data, sourceName, sourceKind, SourceRoleDiscovery, 0)
+}
+
+func parseFeedWithOptions(data []byte, sourceName, sourceKind, sourceRole string, maxItems int) ([]RawItem, error) {
 	feed, err := gofeed.NewParser().ParseString(string(data))
 	if err != nil {
 		return nil, fmt.Errorf("parse feed %q: %w", sourceName, err)
@@ -35,6 +39,7 @@ func parseFeed(data []byte, sourceName, sourceKind string) ([]RawItem, error) {
 			ID:          RawID(it.Link),
 			Source:      sourceName,
 			SourceKind:  sourceKind,
+			SourceRole:  DefaultSourceRole(sourceRole),
 			URL:         it.Link,
 			Title:       it.Title,
 			PublishedAt: it.PublishedParsed,
@@ -49,6 +54,9 @@ func parseFeed(data []byte, sourceName, sourceKind string) ([]RawItem, error) {
 			r.VideoURL = &vid
 		}
 		out = append(out, r)
+		if maxItems > 0 && len(out) >= maxItems {
+			break
+		}
 	}
 	return out, nil
 }
@@ -104,13 +112,42 @@ func firstNonEmpty(vals ...string) string {
 
 // RSSSource fetches and parses one RSS/Atom feed.
 type RSSSource struct {
-	name    string
-	feedURL string
-	client  *http.Client
+	name       string
+	feedURL    string
+	sourceKind string
+	sourceRole string
+	maxItems   int
+	client     *http.Client
 }
 
 func NewRSSSource(name, feedURL string) *RSSSource {
-	return &RSSSource{name: name, feedURL: feedURL, client: &http.Client{Timeout: 30 * time.Second}}
+	return NewRSSSourceWithOptions(name, feedURL, RSSSourceOptions{})
+}
+
+type RSSSourceOptions struct {
+	SourceKind     string
+	SourceRole     string
+	MaxItemsPerRun int
+	Timeout        time.Duration
+}
+
+func NewRSSSourceWithOptions(name, feedURL string, opts RSSSourceOptions) *RSSSource {
+	sourceKind := opts.SourceKind
+	if sourceKind == "" {
+		sourceKind = SourceKindRSS
+	}
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	return &RSSSource{
+		name:       name,
+		feedURL:    feedURL,
+		sourceKind: sourceKind,
+		sourceRole: DefaultSourceRole(opts.SourceRole),
+		maxItems:   opts.MaxItemsPerRun,
+		client:     &http.Client{Timeout: timeout},
+	}
 }
 
 func (r *RSSSource) Name() string { return r.name }
@@ -127,11 +164,14 @@ func (r *RSSSource) Fetch(ctx context.Context) ([]RawItem, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+			return nil, fmt.Errorf("fetch %q: status %d retry-after %s", r.name, resp.StatusCode, retryAfter)
+		}
 		return nil, fmt.Errorf("fetch %q: status %d", r.name, resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read %q body: %w", r.name, err)
 	}
-	return parseFeed(body, r.name, "rss")
+	return parseFeedWithOptions(body, r.name, r.sourceKind, r.sourceRole, r.maxItems)
 }

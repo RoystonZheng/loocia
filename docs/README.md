@@ -136,3 +136,4 @@ AI 在新增/调整文档时维护本节。`overview/` 五篇是固定起点；�
 | [`design/ai-cool-tool-discovery-prd.md`](./design/ai-cool-tool-discovery-prd.md) | AI Cool 工具发现、测评记录和团队工具列表的开发用 PRD |
 | [`design/ai-cool-tool-discovery-technical-solution.md`](./design/ai-cool-tool-discovery-technical-solution.md) | AI Cool 工具发现模块的轻量技术方案 |
 | [`design/prototypes/ai-cool-2.0-tools-prototype.html`](./design/prototypes/ai-cool-2.0-tools-prototype.html) | 工具雷达与评测闭环的本地交互原型 |
+| [`api/items.md`](./api/items.md) | 资讯列表接口和 Feed 来源筛选消费契约 |

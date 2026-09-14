@@ -68,9 +68,14 @@ func (p *Processor) WithTermExtractor(x TermExtractor, sink TermsSink) *Processo
 }
 
 // shouldTranslate reports whether an item's body should be machine-translated:
-// English (rss) sources with a non-empty body. MP bodies are already Chinese.
+// English RSS/HTML sources with a non-empty body. MP bodies are already Chinese;
+// AIHOT summaries are only a supplement and should not trigger full-body work.
 func shouldTranslate(sourceKind, body string) bool {
-	return sourceKind == "rss" && strings.TrimSpace(body) != ""
+	return sourceSupportsPageArticle(sourceKind) && strings.TrimSpace(body) != ""
+}
+
+func sourceSupportsPageArticle(sourceKind string) bool {
+	return sourceKind == ingest.SourceKindRSS || sourceKind == ingest.SourceKindHTML
 }
 
 // betterBody reports whether an extracted article should replace the current
@@ -132,7 +137,7 @@ func (p *Processor) processOne(ctx context.Context, r ingest.RawItem) error {
 		if it.VideoURL == nil {
 			it.VideoURL = vid
 		}
-		if r.SourceKind == "rss" && article != nil && betterBody(*article, it.Body) {
+		if sourceSupportsPageArticle(r.SourceKind) && article != nil && betterBody(*article, it.Body) {
 			it.Body = article
 		}
 	}
@@ -175,10 +180,8 @@ func toItem(r ingest.RawItem, e Enrichment) items.Item {
 	category := e.Category
 	relevance := e.Relevance
 	score := e.Score
-	// 精选门槛 = B 档及以上 (score>=3). ai_selected now records the stronger
-	// "would I feature this" signal (A/S, score>=4) for analytics.
-	selected := score >= 3
-	aiSelected := score >= 4
+	selected := relevance >= 4 && score >= 3
+	aiSelected := selected
 	summary := e.SummaryCN
 
 	it := items.Item{

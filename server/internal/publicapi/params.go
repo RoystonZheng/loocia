@@ -28,6 +28,13 @@ var apiCategories = map[string]bool{
 	items.CategoryTip:        true,
 }
 
+var apiSourceKinds = map[string]bool{
+	"rss":   true,
+	"html":  true,
+	"mp":    true,
+	"aihot": true,
+}
+
 // parseListParams validates the query against the openapi contract and returns
 // the store-level ListParams. `now` is injected for testability. Returns
 // errBadRequest on any contract violation (→ 400).
@@ -52,9 +59,9 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		p.Category = &cc
 	}
 
-	// source_kind filter: mp (公众号) | rss (英文源). Any other value → 400.
+	// source_kind filter: rss/html/mp/aihot. Any other value → 400.
 	if sk := q.Get("source_kind"); sk != "" {
-		if sk != "mp" && sk != "rss" {
+		if !apiSourceKinds[sk] {
 			return p, errBadRequest
 		}
 		skk := sk

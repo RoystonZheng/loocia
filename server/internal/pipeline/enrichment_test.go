@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"aihot-server/internal/ingest"
 )
@@ -67,13 +68,40 @@ func TestParseEnrichmentClampsScoreAndRelevance(t *testing.T) {
 
 func TestBuildPromptIncludesTitleAndBody(t *testing.T) {
 	body := "some body text"
-	r := ingest.RawItem{Title: "Original Title", RawContent: &body}
+	r := ingest.RawItem{Title: "Original Title", RawContent: &body, SourceRole: ingest.SourceRoleDiscovery}
 	sys, user := buildPrompt(r)
 	if !strings.Contains(sys, "ai-models") {
 		t.Fatal("system prompt should enumerate the category slugs")
 	}
 	if !strings.Contains(user, "Original Title") || !strings.Contains(user, "some body text") {
 		t.Fatalf("user prompt missing title/body: %q", user)
+	}
+}
+
+func TestBuildPromptIncludesSourceContext(t *testing.T) {
+	body := "some body text"
+	pub := time.Date(2026, 9, 12, 8, 30, 0, 0, time.UTC)
+	r := ingest.RawItem{
+		Title:       "Original Title",
+		Source:      "Reddit LocalLLaMA",
+		SourceKind:  ingest.SourceKindRSS,
+		SourceRole:  ingest.SourceRoleDiscovery,
+		URL:         "https://reddit.example/item",
+		PublishedAt: &pub,
+		RawContent:  &body,
+	}
+	_, user := buildPrompt(r)
+	for _, want := range []string{
+		"来源名称：Reddit LocalLLaMA",
+		"来源类型：rss",
+		"来源角色：discovery",
+		"URL：https://reddit.example/item",
+		"发布时间：2026-09-12T08:30:00Z",
+		"原始标题：Original Title",
+	} {
+		if !strings.Contains(user, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, user)
+		}
 	}
 }
 
@@ -129,6 +157,14 @@ func TestSystemPromptHasScoreTiers(t *testing.T) {
 	}
 	if strings.Contains(enrichSystemPrompt, "selected") {
 		t.Fatal("prompt should no longer ask for a selected field")
+	}
+}
+
+func TestSystemPromptHasSourceRoleRules(t *testing.T) {
+	for _, kw := range []string{"official = 官方来源", "professional = 专业来源", "discovery = 发现来源", "可验证增量"} {
+		if !strings.Contains(enrichSystemPrompt, kw) {
+			t.Fatalf("system prompt missing source-role rule %q", kw)
+		}
 	}
 }
 

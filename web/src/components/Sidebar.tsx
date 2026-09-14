@@ -1,33 +1,55 @@
-import type { Theme } from '../theme'
-
 export type View = 'selected' | 'all' | 'daily' | 'graph'
+  | 'tools-configs' | 'tools-discovered' | 'tools-evaluating' | 'tools-team'
 
-const NAV: { view: View; label: string; icon: string }[] = [
-  { view: 'daily', label: 'AI 日报', icon: '▤' },
-  { view: 'selected', label: '精选', icon: '✦' },
-  { view: 'all', label: '全部 AI 动态', icon: '≣' },
-  { view: 'graph', label: '图谱', icon: '❖' },
-]
+export interface SidebarCounts {
+  configs?: number
+  discovered?: number
+  evaluating?: number
+  team?: number
+}
 
-const THEMES: { key: Theme; glyph: string; title: string }[] = [
-  { key: 'dark', glyph: '☾', title: '深色' },
-  { key: 'system', glyph: '▢', title: '跟随系统' },
-  { key: 'light', glyph: '☀', title: '浅色' },
+type BadgeKey = keyof SidebarCounts
+
+const NAV_GROUPS: {
+  title: string
+  items: { view: View; label: string; icon: string; badge?: BadgeKey }[]
+}[] = [
+  {
+    title: '内容',
+    items: [
+      { view: 'daily', label: 'AI 日报', icon: '▤' },
+      { view: 'selected', label: '精选资讯', icon: '✦' },
+      { view: 'graph', label: '话题图谱', icon: '◇' },
+    ],
+  },
+  {
+    title: '工具',
+    items: [
+      { view: 'tools-discovered', label: '已发现工具', icon: '◎', badge: 'discovered' },
+      { view: 'tools-evaluating', label: '测评中', icon: '▣', badge: 'evaluating' },
+      { view: 'tools-team', label: '团队工具', icon: '⌁', badge: 'team' },
+    ],
+  },
+  {
+    title: '设置',
+    items: [
+      { view: 'tools-configs', label: '发现配置', icon: '☷', badge: 'configs' },
+    ],
+  },
 ]
 
 export function Sidebar({
-  view, onView, theme, onTheme,
+  view, onView, counts = {},
 }: {
   view: View
   onView: (v: View) => void
-  theme: Theme
-  onTheme: (t: Theme) => void
+  counts?: SidebarCounts
 }) {
   return (
     <aside className="sidebar">
       <div className="sb-logo">
         <span className="sb-logo-ai">AI</span>
-        <svg className="sb-logo-mark" width="21" height="21" viewBox="0 0 20 20" aria-hidden="true">
+        <svg className="sb-logo-mark" width="18" height="18" viewBox="0 0 20 20" aria-hidden="true">
           <defs>
             <linearGradient id="sbLogoMark" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stopColor="#5ab6ff" />
@@ -37,35 +59,34 @@ export function Sidebar({
           <path d="M10 1.5C10 6 10 6 14.2 8 10 10 10 10 10 18.5 10 10 10 10 5.8 8 10 6 10 6 10 1.5Z" fill="url(#sbLogoMark)" />
         </svg>
         <span className="sb-logo-hot">Cool</span>
+        <small>2.0</small>
       </div>
 
-      <nav className="sb-nav">
-        <div className="sb-group">内容</div>
-        {NAV.map((n) => (
-          <button
-            key={n.view}
-            className={`sb-item${view === n.view ? ' active' : ''}`}
-            onClick={() => onView(n.view)}
-          >
-            <span className="sb-icon" aria-hidden>{n.icon}</span>
-            {n.label}
-          </button>
+      <nav className="sb-nav" aria-label="主导航">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.title} className="sb-nav-group">
+            <div className="sb-group">{group.title}</div>
+            {group.items.map((item) => {
+              const badge = item.badge ? counts[item.badge] : undefined
+              return (
+                <button
+                  key={item.view}
+                  className={`sb-item${view === item.view ? ' active' : ''}`}
+                  onClick={() => onView(item.view)}
+                >
+                  <span className="sb-icon" aria-hidden>{item.icon}</span>
+                  <span>{item.label}</span>
+                  {badge != null && <span className="sb-badge" aria-hidden>{badge}</span>}
+                </button>
+              )
+            })}
+          </div>
         ))}
       </nav>
 
-      <div className="sb-theme" role="group" aria-label="主题">
-        {THEMES.map((t) => (
-          <button
-            key={t.key}
-            className={`sb-theme-btn${theme === t.key ? ' active' : ''}`}
-            title={t.title}
-            aria-label={t.title}
-            aria-pressed={theme === t.key}
-            onClick={() => onTheme(t.key)}
-          >
-            {t.glyph}
-          </button>
-        ))}
+      <div className="sb-foot">
+        <strong>AI 小组</strong>
+        <span>内部最佳实践</span>
       </div>
     </aside>
   )

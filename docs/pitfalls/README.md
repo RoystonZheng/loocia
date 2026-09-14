@@ -21,3 +21,11 @@
 **原因：** 新加坡服务器请求 `mp.weixin.qq.com` 时可能只得到 HTTP 200 的验证页面，其中没有 `og:image`。国内抓取链生成的 Markdown 已包含封面图，但旧的 `MPCorpusSource` 只解析标题、链接、时间和正文，没有把首张图片带入 `image_url`。
 
 **规避：** 公众号入库优先读取 Markdown frontmatter 的 `image_url` / `pic_url`，缺失时使用正文第一张 HTTP(S) Markdown 图片。不要把海外服务器直抓微信 OG 元数据作为主链路；历史缺图只运行 `backfillimages -og-limit 0` 的 feed pass，避免无效访问微信页面。
+
+## 工具介绍不能只靠 hover 同步翻译
+
+**症状：** 工具列表展示英文 GitHub 描述，鼠标放到介绍上才开始加载中文；列表下方行的完整介绍有时不出现，或者中文简介长时间不回来。
+
+**原因：** 前端按 hover 单条触发 `/api/tools/summaries/url-key`，缺少当前页预取和请求去重；后端无缓存时同步等待摘要生成器，外部模型慢、超时或未配置会直接影响页面展示。表格容器的 overflow 也会裁剪行内伪元素 tooltip。
+
+**规避：** 列表加载后对当前页缺中文的工具做有限并发预取，用请求集合去重；摘要接口必须有短超时和本地中文兜底，并写回 `temporary_summary`；完整介绍浮层挂到页面 body，避免被表格裁剪。

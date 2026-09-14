@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"aihot-server/common/handlers/conf"
@@ -21,6 +22,7 @@ import (
 	"aihot-server/internal/pipeline"
 	"aihot-server/internal/publicapi"
 	"aihot-server/internal/terms"
+	"aihot-server/internal/tools"
 	"aihot-server/internal/version"
 
 	httpTrace "aihot-server/middleware/http-trace"
@@ -105,6 +107,22 @@ func Run() error {
 	svr.AddHTTPHandle("/api/public/version", version.NewHandler())
 	svr.AddHTTPHandle("/healthz", health.NewHandler(healthPinger(pool, poolErr)))
 	svr.AddHTTPHandle("/api/public/items", publicapi.NewItemsHandler(itemsStore, time.Now))
+
+	// AI Tool discovery APIs.
+	var toolStore publicapi.ToolStore
+	var toolsStore *tools.Store
+	if pool != nil {
+		toolsStore = tools.New(pool)
+		toolStore = toolsStore
+		if err := toolsStore.EnsureSchema(context.Background()); err != nil {
+			fmt.Printf("[ai tool] tools EnsureSchema failed: %v\n", err)
+		}
+	}
+	toolHandler := publicapi.NewToolAPIHandler(toolStore, newToolDiscoverer(toolsStore)).
+		WithSummaryGenerator(newToolSummaryGenerator())
+	svr.AddHTTPHandle("/api/tools", toolHandler)
+	svr.AddHTTPHandle("/api/tools/", toolHandler)
+
 	// SSR 详情页：GET /items/{id} 直出 HTML（noindex），复用同一个 itemsStore。
 	// 若有 LLM key，则同时启用 POST /items/{id}/retranslate（auto-std 重译）。
 	detailHandler := detailpage.NewHandler(itemsStore)
@@ -152,4 +170,30 @@ func Run() error {
 	svr.AddHTTPHandle("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./public"))))
 
 	return svr.HttpRun()
+}
+
+func newToolDiscoverer(store *tools.Store) *tools.Discoverer {
+	client := tools.NewHTTPGitHubClient(os.Getenv("AI_TOOL_GITHUB_TOKEN"))
+	if baseURL := os.Getenv("AI_TOOL_GITHUB_BASE_URL"); baseURL != "" {
+		client.BaseURL = baseURL
+	}
+	discoverer := tools.NewDiscoverer(store, client)
+	if raw := os.Getenv("AI_TOOL_GITHUB_MAX_PAGES"); raw != "" {
+		maxPages, err := strconv.Atoi(raw)
+		if err != nil || maxPages <= 0 {
+			fmt.Printf("[ai tool] AI_TOOL_GITHUB_MAX_PAGES ignored: must be a positive integer\n")
+		} else {
+			discoverer.MaxPages = maxPages
+		}
+	}
+	return discoverer
+}
+
+func newToolSummaryGenerator() publicapi.ToolSummaryGenerator {
+	client, err := llm.NewTranslateClientFromEnv()
+	if err != nil {
+		fmt.Printf("[ai tool] Chinese tool summary disabled: %v\n", err)
+		return nil
+	}
+	return publicapi.NewLLMToolSummaryGenerator(client)
 }

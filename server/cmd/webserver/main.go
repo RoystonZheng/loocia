@@ -5,10 +5,11 @@
 // no internal-network dependency.
 //
 // Config (all via env, same names the cmd/* jobs already use):
-//   AIHOT_DATABASE_URL   postgres DSN (required for live data; server still
-//                        boots without it and reports /healthz down)
-//   AIHOT_HTTP_ADDR      listen address, default ":8991"
-//   AIHOT_LLM_*          optional; enables POST /items/{id}/retranslate
+//
+//	AIHOT_DATABASE_URL   postgres DSN (required for live data; server still
+//	                     boots without it and reports /healthz down)
+//	AIHOT_HTTP_ADDR      listen address, default ":8991"
+//	AIHOT_LLM_*          optional; enables POST /items/{id}/retranslate
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -32,6 +34,7 @@ import (
 	"aihot-server/internal/pipeline"
 	"aihot-server/internal/publicapi"
 	"aihot-server/internal/terms"
+	"aihot-server/internal/tools"
 	"aihot-server/internal/version"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -94,6 +97,19 @@ func buildMux() http.Handler {
 
 	mux.Handle("/api/public/items", publicapi.NewItemsHandler(itemsStore, time.Now))
 
+	// AI Tool discovery APIs.
+	var toolStore publicapi.ToolStore
+	var toolsStore *tools.Store
+	if pool != nil {
+		toolsStore = tools.New(pool)
+		toolStore = toolsStore
+		ensureToolSchema(toolsStore)
+	}
+	toolHandler := publicapi.NewToolAPIHandler(toolStore, newToolDiscoverer(toolsStore)).
+		WithSummaryGenerator(newToolSummaryGenerator())
+	mux.Handle("/api/tools", toolHandler)
+	mux.Handle("/api/tools/", toolHandler)
+
 	// SSR detail page GET /items/{id}; POST /items/{id}/retranslate when an LLM
 	// key is configured.
 	detailHandler := detailpage.NewHandler(itemsStore)
@@ -136,6 +152,49 @@ func ensure(name string, pool *pgxpool.Pool, fn func(context.Context) error) {
 	if err := fn(context.Background()); err != nil {
 		log.Printf("[aihot] %s EnsureSchema failed: %v", name, err)
 	}
+}
+
+func ensureToolSchema(store *tools.Store) {
+	if store == nil {
+		return
+	}
+	if err := store.EnsureSchema(context.Background()); err != nil {
+		log.Printf("[ai tool] tools EnsureSchema failed: %v", err)
+	}
+}
+
+func newToolDiscoverer(store *tools.Store) *tools.Discoverer {
+	client := tools.NewHTTPGitHubClient(os.Getenv("AI_TOOL_GITHUB_TOKEN"))
+	if baseURL := os.Getenv("AI_TOOL_GITHUB_BASE_URL"); baseURL != "" {
+		client.BaseURL = baseURL
+	}
+	discoverer := tools.NewDiscoverer(store, client)
+	if raw := os.Getenv("AI_TOOL_GITHUB_MAX_PAGES"); raw != "" {
+		maxPages, err := strconv.Atoi(raw)
+		if err != nil || maxPages <= 0 {
+			log.Printf("[ai tool] AI_TOOL_GITHUB_MAX_PAGES ignored: must be a positive integer")
+		} else {
+			discoverer.MaxPages = maxPages
+		}
+	}
+	if raw := os.Getenv("AI_TOOL_GITHUB_REQUEST_INTERVAL_MS"); raw != "" {
+		ms, err := strconv.Atoi(raw)
+		if err != nil || ms < 0 {
+			log.Printf("[ai tool] AI_TOOL_GITHUB_REQUEST_INTERVAL_MS ignored: must be a non-negative integer")
+		} else {
+			discoverer.RequestInterval = time.Duration(ms) * time.Millisecond
+		}
+	}
+	return discoverer
+}
+
+func newToolSummaryGenerator() publicapi.ToolSummaryGenerator {
+	client, err := llm.NewTranslateClientFromEnv()
+	if err != nil {
+		log.Printf("[ai tool] Chinese tool summary disabled: %v", err)
+		return nil
+	}
+	return publicapi.NewLLMToolSummaryGenerator(client)
 }
 
 func main() {

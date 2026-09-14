@@ -8,8 +8,8 @@ mkdir -p "$OUT"
 
 echo "== go binaries (linux/amd64 static) =="
 cd "$ROOT/server"
-export GOTOOLCHAIN=go1.25.5 GOSUMDB=sum.golang.org CGO_ENABLED=0 GOOS=linux GOARCH=amd64
-for cmd in pulse gendaily hotpass; do
+export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.25.5}" GOSUMDB=sum.golang.org CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+for cmd in pulse gendaily hotpass discovertools; do
   echo "  building $cmd..."
   go build -o "$OUT/$cmd" "./cmd/$cmd"
 done

@@ -1,6 +1,7 @@
-/// <reference types="vitest/config" />
-import { defineConfig } from 'vite'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+
+const apiProxyTarget = process.env.AI_TOOL_WEB_API_PROXY ?? 'http://localhost:8991'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -12,15 +13,16 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // Go server listens on :8991 (server/conf/app.toml -> [rpc] http_addr)
-      '/api': 'http://localhost:8991',
+      // Go server listens on :8991 by default (server/conf/app.toml -> [rpc] http_addr).
+      '/api': apiProxyTarget,
       // SSR 详情页 /items/{id} full-navigation 转给 Go（镜像生产反代）
-      '/items': 'http://localhost:8991',
+      '/items': apiProxyTarget,
     },
   },
   test: {
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
 })

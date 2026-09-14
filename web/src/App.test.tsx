@@ -47,7 +47,7 @@ it('renders the daily home with the word cloud by default, and switches views', 
   expect(screen.queryByText('标题A')).toBeNull()
 
   // 精选 → feed + hot-topics strip
-  fireEvent.click(screen.getByRole('button', { name: '精选' }))
+  fireEvent.click(screen.getByRole('button', { name: '精选资讯' }))
   await waitFor(() => expect(screen.getByText('标题A')).toBeInTheDocument())
   expect(screen.getByText(/当前热点/)).toBeInTheDocument()
   expect(screen.getByText('热点一')).toBeInTheDocument()
@@ -62,7 +62,7 @@ it('switches to the standalone graph view', async () => {
   mockAll()
   render(<App />)
   await waitFor(() => expect(screen.getByText('日报导语')).toBeInTheDocument())
-  fireEvent.click(screen.getByRole('button', { name: '图谱' }))
+  fireEvent.click(screen.getByRole('button', { name: '话题图谱' }))
   // the graph page has its own subtitle, distinct from the home hero
   await waitFor(() => expect(screen.getByText(/词云看热度/)).toBeInTheDocument())
   expect(screen.queryByText('日报导语')).toBeNull()

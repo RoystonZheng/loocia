@@ -7,6 +7,7 @@
 | 文件 | 内容 | 什么时候读取 |
 |---|---|---|
 | [`ai-cool-2.0-product-design.md`](./ai-cool-2.0-product-design.md) | AI Cool 2.0 资讯、工具雷达、评测、工具箱与后续能力库的产品设计 | 回顾 AI Cool 2.0 总体方向时 |
+| [`ai-cool-source-expansion-prd.md`](./ai-cool-source-expansion-prd.md) | AI Cool 信息源扩展、来源角色、AIHOT 补漏和精选规则调整的开发用 PRD | 开发本次第四部分信息源扩展时 |
 | [`ai-cool-tool-discovery-prd.md`](./ai-cool-tool-discovery-prd.md) | AI Cool 工具发现、测评记录和团队工具列表的开发用 PRD | 开发本次工具发现闭环时 |
 | [`ai-cool-tool-discovery-technical-solution.md`](./ai-cool-tool-discovery-technical-solution.md) | AI Cool 工具发现模块的轻量技术方案 | 评审本次工具发现实现方案时 |
 | [`ai-cool-2.0-product-technical-plan/README.md`](./ai-cool-2.0-product-technical-plan/README.md) | AI Cool 2.0 历史技术方案和原型，部分口径已被工具发现 PRD 覆盖 | 追溯旧方案和原型材料时 |

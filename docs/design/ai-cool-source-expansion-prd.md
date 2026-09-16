@@ -183,7 +183,8 @@ AIHOT 当前公开说明和 OpenAPI 校验结果：`https://aihot.news/openapi-v
     "source_kind": "rss",
     "source_role": "official",
     "enabled": true,
-    "max_items_per_run": 50
+    "max_items_per_run": 50,
+    "rate_limit": "10/m"
   },
   {
     "name": "Anthropic News",
@@ -214,6 +215,7 @@ AIHOT 当前公开说明和 OpenAPI 校验结果：`https://aihot.news/openapi-v
 - 内置默认来源必须显式带角色，不走 `discovery` 默认值。
 - 配置项 `enabled=false` 时跳过该来源，不报错。
 - `max_items_per_run` 控制单来源入队上限，避免高流量来源吞掉 LLM 调用额度。
+- `rate_limit` 控制单来源抓取前的最小等待时间，支持 `250ms`、`2s` 等 duration，或 `10/m`、`1/5s` 等 `count/window` 格式。
 - Reddit 和 AIHOT 遇到 429/503 时按响应头或默认退避，不做无界重试。
 
 ## 5. 后端方案
@@ -271,7 +273,7 @@ ALTER TABLE raw_items ADD COLUMN IF NOT EXISTS source_role TEXT NOT NULL DEFAULT
 
 - `source_role` 只在 raw 阶段和富化阶段使用，不进入 `items` 公共 DTO。
 - 插入冲突仍 `DO NOTHING`，避免历史 raw 被重复来源覆盖。
-- 如果 AIHOT 条目有 `links.original`，使用 normalized original URL 生成 `RawID`。
+- 如果 AIHOT 条目有 `links.original`，使用 normalized original URL 生成 `RawID`；规范化会处理大小写、默认端口、fragment、常见追踪参数、query 顺序和路径中的 `.`/`..`。
 - 如果 AIHOT 条目没有原文链接但允许作为少量二手线索保留，使用 `aihot:<id>` 生成稳定 ID，`Source` 写为 `AIHOT · 二手线索`。
 
 ### 5.3 来源适配器

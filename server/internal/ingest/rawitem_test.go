@@ -18,6 +18,31 @@ func TestRawIDStableAndURLUnique(t *testing.T) {
 	}
 }
 
+func TestCanonicalURLNormalizesCommonArticleVariants(t *testing.T) {
+	got := CanonicalURL(" https://EXAMPLE.com:443/a/./b/?z=2&utm_source=news&x=1#section ")
+	want := "https://example.com/a/b/?x=1&z=2"
+	if got != want {
+		t.Fatalf("canonical URL: got %q want %q", got, want)
+	}
+
+	if RawID("https://example.com/article?utm_campaign=a#comments") != RawID("https://EXAMPLE.com:443/article") {
+		t.Fatal("article variants should produce one raw id")
+	}
+	if RawID("https://example.com/article?id=1") == RawID("https://example.com/article?id=2") {
+		t.Fatal("business query params must remain distinct")
+	}
+}
+
+func TestCanonicalURLKeepsStableNonURLSeeds(t *testing.T) {
+	seed := "aihot:b1"
+	if got := CanonicalURL(seed); got != seed {
+		t.Fatalf("non-URL seed changed: got %q want %q", got, seed)
+	}
+	if RawID(seed) != RawID("aihot:b1") {
+		t.Fatal("non-URL seed should stay stable")
+	}
+}
+
 func TestDefaultSourceRole(t *testing.T) {
 	if got := DefaultSourceRole(""); got != SourceRoleDiscovery {
 		t.Fatalf("empty role should default to discovery, got %q", got)

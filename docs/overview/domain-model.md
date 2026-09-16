@@ -14,7 +14,7 @@
 
 ## 信息源扩展模型
 
-`SourceConfig` 位于 `server/internal/pulse`，负责把来源配置翻译为 `ingest.Source`。旧格式 `{name,url}` 仍按 RSS 处理；新格式支持 `adapter`、`source_kind`、`source_role`、`enabled`、单轮上限、二手线索上限和超时。
+`SourceConfig` 位于 `server/internal/pulse`，负责把来源配置翻译为 `ingest.Source`。旧格式 `{name,url}` 仍按 RSS 处理；新格式支持 `adapter`、`source_kind`、`source_role`、`enabled`、单轮上限、二手线索上限、超时和 `rate_limit`。
 
 `RawItem` 新增 `SourceRole`，仅在 `raw_items` 和 enrichment 阶段使用，不进入公开 `items` DTO。
 
@@ -80,7 +80,8 @@ evaluating
 
 ## 关键规则
 
-- 资讯 raw 入队以稳定 URL hash 去重；AIHOT 有原文链接时用原文 URL，无原文链接时仅在二手线索上限内使用 `aihot:<id>` 派生稳定 ID。
+- 资讯 raw 入队以规范化 URL hash 去重：scheme/host 小写，去掉默认端口、fragment、常见追踪参数，排序 query，并清理路径中的 `.`/`..`；AIHOT 有原文链接时用原文 URL，无原文链接时仅在二手线索上限内使用 `aihot:<id>` 派生稳定 ID。
+- `rate_limit` 支持 Go duration（如 `250ms`、`2s`）或 `count/window`（如 `10/m`），加载来源时会包裹为单来源抓取前的最小等待时间。
 - `source_role` 不对外展示，前端只通过 `source_kind` 做来源筛选，通过 `source` 文案展示来源名。
 - GitHub 仓库以 `node_id` 唯一。
 - 重复命中时合并来源并刷新最近发现时间，不重复创建工具。

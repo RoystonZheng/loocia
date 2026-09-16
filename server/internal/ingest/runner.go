@@ -28,6 +28,38 @@ func NewRunner(store *RawStore, sources ...Source) *Runner {
 	return &Runner{store: store, sources: sources}
 }
 
+// RateLimitedSource waits before fetching from a wrapped source. It is used for
+// sources with explicit rate_limit config and keeps Runner source-agnostic.
+type RateLimitedSource struct {
+	Source Source
+	Delay  time.Duration
+}
+
+func NewRateLimitedSource(source Source, delay time.Duration) Source {
+	if delay <= 0 {
+		return source
+	}
+	return &RateLimitedSource{Source: source, Delay: delay}
+}
+
+func (s *RateLimitedSource) Name() string {
+	return s.Source.Name()
+}
+
+func (s *RateLimitedSource) Fetch(ctx context.Context) ([]RawItem, error) {
+	if s.Delay <= 0 {
+		return s.Source.Fetch(ctx)
+	}
+	timer := time.NewTimer(s.Delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return s.Source.Fetch(ctx)
+	}
+}
+
 // RunOnce fetches every source once and inserts its items. A single source's
 // failure is collected into Result.Errors and does not abort the others; the
 // method returns a top-level error only on an unexpected store failure.

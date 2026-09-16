@@ -1,9 +1,11 @@
 package pulse
 
 import (
+	"aihot-server/internal/ingest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadSourcesDefaults(t *testing.T) {
@@ -131,6 +133,48 @@ func TestNormalizeSourceConfigCompatibilityDefaults(t *testing.T) {
 	}
 	if n.adapter != adapterRSS || n.sourceKind != "rss" || n.sourceRole != "discovery" || !n.enabled {
 		t.Fatalf("old config defaults: %+v", n)
+	}
+}
+
+func TestNormalizeSourceConfigRateLimit(t *testing.T) {
+	n, err := normalizeSourceConfig(SourceConfig{Name: "Limited", URL: "https://limited.example/rss", RateLimit: "10/m"}, 0)
+	if err != nil {
+		t.Fatalf("normalize count/window rate limit: %v", err)
+	}
+	if n.rateLimit != 6*time.Second {
+		t.Fatalf("count/window rate limit: got %s want 6s", n.rateLimit)
+	}
+
+	n, err = normalizeSourceConfig(SourceConfig{Name: "Limited", URL: "https://limited.example/rss", RateLimit: "250ms"}, 0)
+	if err != nil {
+		t.Fatalf("normalize duration rate limit: %v", err)
+	}
+	if n.rateLimit != 250*time.Millisecond {
+		t.Fatalf("duration rate limit: got %s want 250ms", n.rateLimit)
+	}
+
+	if _, err := normalizeSourceConfig(SourceConfig{Name: "Bad", URL: "https://bad.example/rss", RateLimit: "soon"}, 0); err == nil {
+		t.Fatal("invalid rate_limit should error")
+	}
+}
+
+func TestBuildSourceWrapsRateLimitedSource(t *testing.T) {
+	src, enabled, err := buildSource(SourceConfig{Name: "Limited", URL: "https://limited.example/rss", RateLimit: "20ms"}, 0)
+	if err != nil {
+		t.Fatalf("buildSource: %v", err)
+	}
+	if !enabled {
+		t.Fatal("source should be enabled")
+	}
+	limited, ok := src.(*ingest.RateLimitedSource)
+	if !ok {
+		t.Fatalf("source should be rate limited, got %T", src)
+	}
+	if limited.Delay != 20*time.Millisecond {
+		t.Fatalf("delay: got %s want 20ms", limited.Delay)
+	}
+	if limited.Name() != "Limited" {
+		t.Fatalf("name should delegate to wrapped source, got %q", limited.Name())
 	}
 }
 

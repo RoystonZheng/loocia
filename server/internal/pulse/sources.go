@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,6 +110,7 @@ type normalizedSourceConfig struct {
 	maxItems     int
 	maxSecondary int
 	timeout      time.Duration
+	rateLimit    time.Duration
 	window       string
 }
 
@@ -120,37 +122,39 @@ func buildSource(c SourceConfig, index int) (ingest.Source, bool, error) {
 	if !n.enabled {
 		return nil, false, nil
 	}
+	var src ingest.Source
 	switch n.adapter {
 	case adapterRSS:
-		return ingest.NewRSSSourceWithOptions(n.Name, n.URL, ingest.RSSSourceOptions{
+		src = ingest.NewRSSSourceWithOptions(n.Name, n.URL, ingest.RSSSourceOptions{
 			SourceKind:     n.sourceKind,
 			SourceRole:     n.sourceRole,
 			MaxItemsPerRun: n.maxItems,
 			Timeout:        n.timeout,
-		}), true, nil
+		})
 	case adapterAnthropicHTML:
-		return ingest.NewAnthropicNewsSource(n.Name, n.URL, ingest.HTMLSourceOptions{
+		src = ingest.NewAnthropicNewsSource(n.Name, n.URL, ingest.HTMLSourceOptions{
 			SourceKind:     n.sourceKind,
 			SourceRole:     n.sourceRole,
 			MaxItemsPerRun: n.maxItems,
 			Timeout:        n.timeout,
-		}), true, nil
+		})
 	case adapterAIHOTV1Items:
-		return ingest.NewAIHOTSource(n.Name, n.URL, ingest.AIHOTSourceOptions{
+		src = ingest.NewAIHOTSource(n.Name, n.URL, ingest.AIHOTSourceOptions{
 			SourceRole:         n.sourceRole,
 			MaxItemsPerRun:     n.maxItems,
 			MaxSecondaryPerRun: n.maxSecondary,
 			Window:             n.window,
 			Timeout:            n.timeout,
-		}), true, nil
+		})
 	case adapterMPCorpus:
-		return ingest.NewMPCorpusSourceWithOptions(n.URL, n.Name, ingest.MPCorpusSourceOptions{
+		src = ingest.NewMPCorpusSourceWithOptions(n.URL, n.Name, ingest.MPCorpusSourceOptions{
 			DefaultRole:      n.sourceRole,
 			OfficialAccounts: parseCSV(os.Getenv("AIHOT_MP_OFFICIAL_ACCOUNTS")),
-		}), true, nil
+		})
 	default:
 		return nil, false, fmt.Errorf("source %d: unknown adapter %q", index, n.adapter)
 	}
+	return ingest.NewRateLimitedSource(src, n.rateLimit), true, nil
 }
 
 func normalizeSourceConfig(c SourceConfig, index int) (normalizedSourceConfig, error) {
@@ -211,6 +215,10 @@ func normalizeSourceConfig(c SourceConfig, index int) (normalizedSourceConfig, e
 	if c.TimeoutSeconds > 0 {
 		timeout = time.Duration(c.TimeoutSeconds) * time.Second
 	}
+	rateLimit, err := parseRateLimit(c.RateLimit)
+	if err != nil {
+		return normalizedSourceConfig{}, fmt.Errorf("source %d: invalid rate_limit %q: %w", index, c.RateLimit, err)
+	}
 	return normalizedSourceConfig{
 		SourceConfig: c,
 		adapter:      adapter,
@@ -220,8 +228,56 @@ func normalizeSourceConfig(c SourceConfig, index int) (normalizedSourceConfig, e
 		maxItems:     maxItems,
 		maxSecondary: maxSecondary,
 		timeout:      timeout,
+		rateLimit:    rateLimit,
 		window:       window,
 	}, nil
+}
+
+func parseRateLimit(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	if duration, err := time.ParseDuration(value); err == nil {
+		if duration < 0 {
+			return 0, fmt.Errorf("duration must be non-negative")
+		}
+		return duration, nil
+	}
+
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("expected duration or count/window")
+	}
+	count, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil || count <= 0 {
+		return 0, fmt.Errorf("count must be positive")
+	}
+	window, err := parseRateLimitWindow(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return 0, err
+	}
+	delay := time.Duration(float64(window) / count)
+	if delay <= 0 {
+		return time.Nanosecond, nil
+	}
+	return delay, nil
+}
+
+func parseRateLimitWindow(value string) (time.Duration, error) {
+	switch strings.ToLower(value) {
+	case "s", "sec", "second", "seconds":
+		return time.Second, nil
+	case "m", "min", "minute", "minutes":
+		return time.Minute, nil
+	case "h", "hr", "hour", "hours":
+		return time.Hour, nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration <= 0 {
+		return 0, fmt.Errorf("window must be positive duration")
+	}
+	return duration, nil
 }
 
 func defaultKindForAdapter(adapter string) string {

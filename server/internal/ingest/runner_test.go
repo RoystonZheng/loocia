@@ -92,3 +92,27 @@ func TestRunOnceMaxAgeSkipsOldItems(t *testing.T) {
 		t.Fatalf("only fresh should be queued: %+v", un)
 	}
 }
+
+func TestRateLimitedSourceWaitsBeforeFetch(t *testing.T) {
+	delay := 20 * time.Millisecond
+	src := NewRateLimitedSource(fakeSource{name: "limited"}, delay)
+
+	started := time.Now()
+	if _, err := src.Fetch(context.Background()); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed < delay {
+		t.Fatalf("Fetch returned before delay elapsed: got %s want >= %s", elapsed, delay)
+	}
+}
+
+func TestRateLimitedSourceHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	src := NewRateLimitedSource(fakeSource{name: "limited"}, time.Hour)
+	_, err := src.Fetch(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Fetch should return context cancellation, got %v", err)
+	}
+}

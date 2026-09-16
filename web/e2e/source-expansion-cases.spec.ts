@@ -31,6 +31,7 @@ test.describe('AI Cool 第四部分：信息源扩展 Playwright 验收', () => 
 
     const result = await runCommand('go', [
       'test',
+      '-p=1',
       './internal/pulse',
       './internal/ingest',
       './internal/pipeline',

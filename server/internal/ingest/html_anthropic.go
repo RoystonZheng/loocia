@@ -43,7 +43,7 @@ func NewAnthropicNewsSource(name, pageURL string, opts HTMLSourceOptions) *Anthr
 		sourceKind: sourceKind,
 		sourceRole: DefaultSourceRole(opts.SourceRole),
 		maxItems:   opts.MaxItemsPerRun,
-		client:     &http.Client{Timeout: timeout},
+		client:     newSourceHTTPClient(timeout),
 	}
 }
 
@@ -98,7 +98,12 @@ func parseAnthropicNewsHTML(data []byte, pageURL, sourceName, sourceKind, source
 		if seen[link] {
 			return
 		}
-		title := strings.Join(strings.Fields(a.Text()), " ")
+		titleNode := a.Find(`[class*="__title"], h1, h2, h3`).First()
+		titleText := a.Text()
+		if titleNode.Length() > 0 {
+			titleText = titleNode.Text()
+		}
+		title := strings.Join(strings.Fields(titleText), " ")
 		if title == "" {
 			return
 		}
@@ -127,24 +132,37 @@ func closestTime(s *goquery.Selection) *time.Time {
 	if container.Length() == 0 {
 		container = s.Parent()
 	}
-	if datetime, ok := container.Find("time").First().Attr("datetime"); ok {
+	timeNode := container.Find("time").First()
+	if timeNode.Length() == 0 {
+		return nil
+	}
+	if datetime, ok := timeNode.Attr("datetime"); ok {
 		if ts := parseOptionalTime(datetime); ts != nil {
 			return ts
 		}
+	}
+	// Anthropic's current page renders dates as text-only <time> elements
+	// (for example, "Sep 17, 2026") without a datetime attribute.
+	if ts := parseOptionalTime(timeNode.Text()); ts != nil {
+		return ts
 	}
 	return nil
 }
 
 func parseOptionalTime(value string) *time.Time {
-	value = strings.TrimSpace(value)
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
 	if value == "" {
 		return nil
 	}
-	if t, err := time.Parse(time.RFC3339, value); err == nil {
-		return &t
-	}
-	if t, err := time.Parse("2006-01-02", value); err == nil {
-		return &t
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02",
+		"Jan 2, 2006",
+		"January 2, 2006",
+	} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return &t
+		}
 	}
 	return nil
 }

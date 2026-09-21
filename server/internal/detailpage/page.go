@@ -162,27 +162,36 @@ window.__setTheme=function(t){try{localStorage.setItem(K,t);}catch(e){}ap(t);mk(
 window.__goBack=function(){if(document.referrer&&history.length>1){history.back();return false;}return true;};
 window.__toggleOrig=function(){var cn=document.getElementById('orig-cn'),en=document.getElementById('orig-en'),b=document.getElementById('tr-toggle');if(!cn||!en||!b)return;var showEn=en.style.display==='none';en.style.display=showEn?'':'none';cn.style.display=showEn?'none':'';b.textContent=showEn?'看中文翻译':'看英文原文';};
 window.__retranslate=function(id){var bs=document.querySelectorAll('.tr-retry-btn');bs.forEach(function(b){b.disabled=true;b.textContent='翻译中…';});fetch('/items/'+id+'/retranslate',{method:'POST'}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok){location.reload();}else{bs.forEach(function(b){b.disabled=false;b.textContent='重试仍失败';});}}).catch(function(){bs.forEach(function(b){b.disabled=false;b.textContent='重试失败';});});};
-ap(rd());document.addEventListener('DOMContentLoaded',function(){mk(rd());});})();
+function fillSidebarCount(key,path){fetch(path).then(function(r){return r.ok?r.json():null;}).then(function(body){var count=body&&body.errno===0&&body.data?body.data.count:null;var el=document.querySelector('[data-sidebar-count="'+key+'"]');if(el&&typeof count==='number'){el.textContent=String(count);el.hidden=false;}}).catch(function(){});}
+ap(rd());document.addEventListener('DOMContentLoaded',function(){mk(rd());fillSidebarCount('discovered','/api/tools/items?status=discovered&take=1');fillSidebarCount('team','/api/tools/items?status=included&take=1');fillSidebarCount('configs','/api/tools/configs');});})();
 </script>
 <style>
-:root{color-scheme:light dark;--bg:#f5f6f8;--card:#fff;--text:#1a1c20;--text-2:#5a6069;--muted:#8b929c;--border:#e6e8ec;--sidebar:#fff;--accent:#2f6bff;--accent-2:#1e5ae6;--accent-soft:#eaf0ff;--gold:#b8860b;--gold-soft:#fdf3d7;--chip:#eef0f4;}
-:root[data-theme="dark"]{--bg:#0f1115;--card:#16181d;--text:#e6e8eb;--text-2:#b3b8bf;--muted:#7c828b;--border:#24272e;--sidebar:#121419;--accent:#5b8cff;--accent-2:#7aa0ff;--accent-soft:#17233f;--gold:#e6b84d;--gold-soft:#2a2412;--chip:#1c1f25;}
-@media (prefers-color-scheme:dark){:root:not([data-theme]){--bg:#0f1115;--card:#16181d;--text:#e6e8eb;--text-2:#b3b8bf;--muted:#7c828b;--border:#24272e;--sidebar:#121419;--accent:#5b8cff;--accent-2:#7aa0ff;--accent-soft:#17233f;--gold:#e6b84d;--gold-soft:#2a2412;--chip:#1c1f25;}}
+@font-face{font-family:'Orbitron';font-weight:700;font-display:swap;src:url(data:font/woff2;base64,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) format('woff2');}
+:root{color-scheme:light dark;--bg:#fff;--bg-soft:#f6f7f9;--sidebar:#f3f4f6;--text:#111827;--text-2:#4b5563;--muted:#8a94a3;--border:#dde1e6;--border-2:#cfd5de;--card:#fff;--accent:#285ee8;--accent-2:#1d4ed8;--accent-soft:#e8efff;--dot:#3b9dff;--chip:#f2f3f5;--gold:#f0a500;--gold-soft:#fff8e8;--sans:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,"Segoe UI",Roboto,sans-serif;}
+:root[data-theme="dark"]{--bg:#0f1115;--bg-soft:#14161b;--sidebar:#121419;--text:#e6e8eb;--text-2:#b3b8bf;--muted:#7c828b;--border:#24272e;--border-2:#2b2f37;--card:#16181d;--accent:#5b8cff;--accent-2:#7aa0ff;--accent-soft:#17233f;--dot:#4aa8ff;--chip:#1c1f25;--gold:#e0a83a;--gold-soft:#241f14;}
+@media (prefers-color-scheme:dark){:root:not([data-theme]){--bg:#0f1115;--bg-soft:#14161b;--sidebar:#121419;--text:#e6e8eb;--text-2:#b3b8bf;--muted:#7c828b;--border:#24272e;--border-2:#2b2f37;--card:#16181d;--accent:#5b8cff;--accent-2:#7aa0ff;--accent-soft:#17233f;--dot:#4aa8ff;--chip:#1c1f25;--gold:#e0a83a;--gold-soft:#241f14;}}
 *{box-sizing:border-box;}
-body{margin:0;font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg);}
-a{color:var(--accent);}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+a{color:inherit;text-decoration:none;}
 .shell{display:flex;min-height:100vh;}
-.sidebar{width:220px;flex-shrink:0;background:var(--sidebar);border-right:1px solid var(--border);padding:22px 16px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;}
-.logo{display:flex;align-items:center;gap:2px;font-weight:800;font-size:20px;letter-spacing:.5px;margin:4px 6px 26px;}
-.logo .dot{color:var(--accent);}
-.nav-label{font-size:12px;color:var(--muted);margin:0 8px 8px;}
-.nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;text-decoration:none;color:var(--text-2);font-size:14px;font-weight:600;}
-.nav a:hover{background:var(--chip);color:var(--text);}
-.theme{margin-top:auto;display:flex;gap:6px;padding:6px;}
-.theme button{flex:1;padding:7px 0;border:1px solid var(--border);background:var(--card);border-radius:8px;color:var(--text-2);cursor:pointer;font-size:14px;}
-.theme button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);}
-.main{flex:1;min-width:0;display:flex;justify-content:center;padding:34px 28px 80px;}
-.article{width:100%;max-width:720px;}
+.main{flex:1;min-width:0;max-width:1180px;padding:28px 40px 60px;background:var(--bg-soft);}
+.sidebar{width:216px;flex-shrink:0;background:var(--sidebar);border-right:1px solid var(--border);padding:18px 14px;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;height:100vh;}
+.sb-logo{display:flex;align-items:center;gap:5px;font-family:'Orbitron',var(--sans);font-weight:700;font-size:22px;letter-spacing:.2px;padding:14px 14px;border:1px solid var(--border);border-radius:7px;background:var(--card);box-shadow:0 1px 0 rgba(17,24,39,.02);}
+.sb-logo-hot{color:var(--accent);}
+.sb-logo-mark{flex-shrink:0;display:block;}
+.sb-logo small{margin-left:auto;color:var(--muted);font-family:var(--sans);font-size:10px;font-weight:700;letter-spacing:0;}
+.sb-nav{display:flex;flex-direction:column;gap:14px;flex:1;}
+.sb-nav-group{display:flex;flex-direction:column;gap:3px;}
+.sb-group{font-size:12px;color:#6b7280;padding:0 10px 5px;letter-spacing:0;}
+.sb-item{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;background:transparent;cursor:pointer;line-height:normal;border-radius:7px;color:var(--text-2);font-size:14px;text-align:left;text-decoration:none;}
+.sb-item:hover{background:#eaedf2;color:var(--text);}
+.sb-item.active{background:var(--accent-soft);color:var(--accent-2);font-weight:700;}
+.sb-icon{width:18px;text-align:center;color:inherit;opacity:.75;}
+.sb-badge{min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:999px;background:var(--card);color:#6b7280;font-size:11px;font-weight:700;padding:0 6px;}
+.sb-foot{border-top:1px solid var(--border);padding:12px 10px 0;display:flex;flex-direction:column;gap:1px;font-size:12px;color:var(--muted);}
+.sb-foot strong{color:var(--text-2);font-size:12px;}
+.article{width:100%;max-width:820px;margin:0 auto;}
+@media (max-width:900px){.main{padding:20px 16px 40px;}}
 .topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
 .src{font-weight:700;font-size:14px;color:var(--text-2);}
 .badge-sel{font-size:12px;font-weight:700;color:var(--gold);background:var(--gold-soft);border-radius:999px;padding:2px 10px;}
@@ -234,15 +243,16 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
 .tag{font-size:12px;color:var(--text-2);background:var(--chip);border-radius:6px;padding:4px 10px;}
 .readmore{display:inline-block;padding:10px 18px;background:var(--accent);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;}
 .note{margin-top:26px;font-size:.8rem;color:var(--muted);}
-@media (max-width:720px){
+@media (max-width:600px){
 .shell{flex-direction:column;}
-.sidebar{display:flex;width:auto;height:auto;position:sticky;top:0;z-index:20;flex-direction:row;align-items:center;gap:8px;border-right:none;border-bottom:1px solid var(--border);padding:8px 12px;overflow-x:auto;}
-.logo{margin:0 8px 0 0;font-size:17px;}
-.nav-label{display:none;}
-.nav{display:flex;flex-direction:row;gap:2px;}
-.nav a{padding:7px 10px;white-space:nowrap;}
-.theme{margin:0 0 0 auto;padding:0;}
-.main{padding:18px 14px 48px;}
+.sidebar{width:auto;height:auto;position:sticky;top:0;z-index:20;flex-direction:row;align-items:center;gap:6px;border-right:none;border-bottom:1px solid var(--border);padding:8px 12px;overflow-x:auto;}
+.sb-logo{margin:0 8px 0 0;padding:6px 8px;font-size:16px;border:0;}
+.sb-logo small,.sb-foot{display:none;}
+.sb-nav{flex-direction:row;flex:1;gap:2px;}
+.sb-nav-group{flex-direction:row;gap:2px;}
+.sb-group{display:none;}
+.sb-item{display:inline-flex;padding:7px 10px;white-space:nowrap;}
+.main{padding:16px 14px 40px;}
 .article{max-width:100%;}
 }
 </style>
@@ -250,18 +260,42 @@ h1{font-size:1.75rem;line-height:1.3;margin:0 0 8px;}
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <div class="logo">AI<span class="dot">◉</span>Cool</div>
-    <div class="nav-label">内容</div>
-    <nav class="nav">
-      <a href="/">▤ AI 日报</a>
-      <a href="/#selected">✦ 精选</a>
-      <a href="/#all">≣ 全部 AI 动态</a>
-      <a href="/#graph">❖ 图谱</a>
+    <div class="sb-logo">
+      <span class="sb-logo-ai">AI</span>
+      <svg class="sb-logo-mark" width="18" height="18" viewBox="0 0 20 20" aria-hidden="true">
+        <defs>
+          <linearGradient id="sbLogoMark" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#5ab6ff" />
+            <stop offset="1" stop-color="#2f6bff" />
+          </linearGradient>
+        </defs>
+        <path d="M10 1.5C10 6 10 6 14.2 8 10 10 10 10 10 18.5 10 10 10 10 5.8 8 10 6 10 6 10 1.5Z" fill="url(#sbLogoMark)" />
+      </svg>
+      <span class="sb-logo-hot">Cool</span>
+      <small>2.0</small>
+    </div>
+
+    <nav class="sb-nav" aria-label="主导航">
+      <div class="sb-nav-group">
+        <div class="sb-group">内容</div>
+        <a class="sb-item" href="/"><span class="sb-icon" aria-hidden="true">▤</span><span>AI 日报</span></a>
+        <a class="sb-item active" href="/#all"><span class="sb-icon" aria-hidden="true">≣</span><span>AI 动态</span></a>
+        <a class="sb-item" href="/#graph"><span class="sb-icon" aria-hidden="true">◇</span><span>话题图谱</span></a>
+      </div>
+      <div class="sb-nav-group">
+        <div class="sb-group">工具</div>
+        <a class="sb-item" href="/#tools-discovered"><span class="sb-icon" aria-hidden="true">◎</span><span>工具百宝箱</span><span class="sb-badge" data-sidebar-count="discovered" hidden aria-hidden="true"></span></a>
+        <a class="sb-item" href="/#tools-team"><span class="sb-icon" aria-hidden="true">⌁</span><span>团队工具</span><span class="sb-badge" data-sidebar-count="team" hidden aria-hidden="true"></span></a>
+      </div>
+      <div class="sb-nav-group">
+        <div class="sb-group">设置</div>
+        <a class="sb-item" href="/#tools-configs"><span class="sb-icon" aria-hidden="true">☷</span><span>发现配置</span><span class="sb-badge" data-sidebar-count="configs" hidden aria-hidden="true"></span></a>
+      </div>
     </nav>
-    <div class="theme" role="group" aria-label="主题">
-      <button id="th-dark" title="深色" onclick="__setTheme('dark')">☾</button>
-      <button id="th-system" title="跟随系统" onclick="__setTheme('system')">▢</button>
-      <button id="th-light" title="浅色" onclick="__setTheme('light')">☀</button>
+
+    <div class="sb-foot">
+      <strong>AI 小组</strong>
+      <span>内部最佳实践</span>
     </div>
   </aside>
   <main class="main">

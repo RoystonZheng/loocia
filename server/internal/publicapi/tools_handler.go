@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,8 @@ import (
 const toolAPIPrefix = "/api/tools"
 
 type ToolStore interface {
+	GetRuntimeSettings(ctx context.Context) (tools.ToolRuntimeSettings, error)
+	UpsertRuntimeSettings(ctx context.Context, settings tools.ToolRuntimeSettings) error
 	ListConfigs(ctx context.Context) ([]tools.DiscoveryConfig, error)
 	GetConfig(ctx context.Context, id string) (tools.DiscoveryConfig, error)
 	UpsertConfig(ctx context.Context, cfg tools.DiscoveryConfig) error
@@ -28,6 +32,7 @@ type ToolStore interface {
 	SoftDeleteConfig(ctx context.Context, id, actor string) error
 	GetTool(ctx context.Context, toolID string) (tools.Tool, error)
 	UpdateTemporarySummary(ctx context.Context, toolID, summary, source string) error
+	UpdateToolPurposeTags(ctx context.Context, toolID string, purposeTags []string, manuallySet bool) error
 	ListTools(ctx context.Context, p tools.ListToolsParams) ([]tools.ToolListItem, error)
 	ToolStats(ctx context.Context, p tools.ListToolsParams) (tools.ToolListStats, error)
 	StartEvaluation(ctx context.Context, toolID, evaluator, cooperURL, actor string) (tools.Evaluation, error)
@@ -45,8 +50,8 @@ type ToolDiscoverer interface {
 	RequestConfigPause(ctx context.Context, configID, actor string) (tools.RunResult, error)
 	ResumeConfigRun(ctx context.Context, configID, actor string) (tools.RunResult, error)
 	PreviewManualAdd(ctx context.Context, repoURL string) (tools.GitHubRepo, error)
-	ManualAdd(ctx context.Context, repoURL, actor string) (tools.ManualAddResult, error)
-	ImportTeamTool(ctx context.Context, repoURL, operator, finalSummary, cooperURL string) (tools.ManualAddResult, error)
+	ManualAdd(ctx context.Context, repoURL, actor string, purposeTags ...[]string) (tools.ManualAddResult, error)
+	ImportTeamTool(ctx context.Context, repoURL, operator, finalSummary, cooperURL string, purposeTags ...[]string) (tools.ManualAddResult, error)
 }
 
 type ToolAPIHandler struct {
@@ -69,6 +74,12 @@ func (h *ToolAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path = strings.Trim(path, "/")
 
 	switch {
+	case path == "settings" && r.Method == http.MethodGet:
+		h.handleGetSettings(w, r)
+	case path == "settings" && r.Method == http.MethodPost:
+		h.handleSaveSettings(w, r)
+	case path == "settings/check-github" && r.Method == http.MethodPost:
+		h.handleCheckGitHubSettings(w, r)
 	case path == "configs" && r.Method == http.MethodGet:
 		h.handleListConfigs(w, r)
 	case path == "configs" && r.Method == http.MethodPost:
@@ -87,6 +98,8 @@ func (h *ToolAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleListTools(w, r)
 	case path == "summaries/url-key" && r.Method == http.MethodPost:
 		h.handleToolSummaryByURLKey(w, r)
+	case path == "purpose-tags" && r.Method == http.MethodPost:
+		h.handleUpdatePurposeTags(w, r)
 	case path == "manual/preview" && r.Method == http.MethodPost:
 		h.handleManualPreview(w, r)
 	case path == "manual/add" && r.Method == http.MethodPost:
@@ -191,6 +204,62 @@ type configListEnvelope struct {
 	Items         []configJSON `json:"items"`
 }
 
+type runtimeSettingsJSON struct {
+	GitHubTokenCount           int                `json:"githubTokenCount"`
+	GitHubTokens               []tokenPreviewJSON `json:"githubTokens"`
+	DefaultGitHubTokenCount    int                `json:"defaultGitHubTokenCount"`
+	DefaultGitHubTokens        []tokenPreviewJSON `json:"defaultGitHubTokens"`
+	GitHubBaseURL              string             `json:"githubBaseUrl"`
+	GitHubTokenStrategy        string             `json:"githubTokenStrategy"`
+	GitHubActiveTokenIndex     int                `json:"githubActiveTokenIndex"`
+	IncludeDefaultGitHubTokens bool               `json:"includeDefaultGitHubTokens"`
+	GitHubMaxPages             int                `json:"githubMaxPages"`
+	GitHubPerPage              int                `json:"githubPerPage"`
+	GitHubRequestIntervalMS    int                `json:"githubRequestIntervalMs"`
+	StarSnapshotLimit          int                `json:"starSnapshotLimit"`
+	UpdatedBy                  string             `json:"updatedBy,omitempty"`
+	UpdatedAt                  *time.Time         `json:"updatedAt,omitempty"`
+}
+
+type tokenPreviewJSON struct {
+	Index  int    `json:"index"`
+	Masked string `json:"masked"`
+	Last4  string `json:"last4"`
+	Source string `json:"source,omitempty"`
+}
+
+type saveRuntimeSettingsRequest struct {
+	GitHubTokens               *[]string `json:"githubTokens"`
+	ClearGitHubTokens          bool      `json:"clearGitHubTokens"`
+	GitHubBaseURL              *string   `json:"githubBaseUrl"`
+	GitHubTokenStrategy        *string   `json:"githubTokenStrategy"`
+	GitHubActiveTokenIndex     *int      `json:"githubActiveTokenIndex"`
+	IncludeDefaultGitHubTokens *bool     `json:"includeDefaultGitHubTokens"`
+	GitHubMaxPages             *int      `json:"githubMaxPages"`
+	GitHubPerPage              *int      `json:"githubPerPage"`
+	GitHubRequestIntervalMS    *int      `json:"githubRequestIntervalMs"`
+	StarSnapshotLimit          *int      `json:"starSnapshotLimit"`
+	Actor                      string    `json:"actor"`
+}
+
+type checkGitHubSettingsRequest struct {
+	GitHubTokens               *[]string `json:"githubTokens"`
+	GitHubBaseURL              *string   `json:"githubBaseUrl"`
+	IncludeDefaultGitHubTokens *bool     `json:"includeDefaultGitHubTokens"`
+}
+
+type githubTokenCheckJSON struct {
+	Index     int        `json:"index"`
+	Masked    string     `json:"masked"`
+	Last4     string     `json:"last4"`
+	Source    string     `json:"source"`
+	OK        bool       `json:"ok"`
+	Limit     int        `json:"limit,omitempty"`
+	Remaining int        `json:"remaining,omitempty"`
+	ResetAt   *time.Time `json:"resetAt,omitempty"`
+	Error     string     `json:"error,omitempty"`
+}
+
 type configJSON struct {
 	ID                 string           `json:"id"`
 	Name               string           `json:"name"`
@@ -209,6 +278,191 @@ type configJSON struct {
 	UpdatedBy          string           `json:"updatedBy"`
 	CreatedAt          time.Time        `json:"createdAt"`
 	UpdatedAt          time.Time        `json:"updatedAt"`
+}
+
+func (h *ToolAPIHandler) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	settings, err := h.store.GetRuntimeSettings(r.Context())
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	writeToolOK(w, map[string]any{"settings": toRuntimeSettingsJSON(settings)})
+}
+
+func (h *ToolAPIHandler) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req saveRuntimeSettingsRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	actor, err := requireToolText(req.Actor, "actor", 80)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	settings, err := h.store.GetRuntimeSettings(r.Context())
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	if settings.ID == "" {
+		settings.ID = "default"
+	}
+	if req.ClearGitHubTokens {
+		settings.GitHubTokens = []string{}
+	}
+	if req.GitHubTokens != nil {
+		tokens, err := normalizeRuntimeGitHubTokens(*req.GitHubTokens)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubTokens = tokens
+	}
+	if req.GitHubBaseURL != nil {
+		baseURL, err := normalizeRuntimeGitHubBaseURL(*req.GitHubBaseURL)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubBaseURL = baseURL
+	}
+	if req.GitHubTokenStrategy != nil {
+		strategy, err := normalizeRuntimeGitHubTokenStrategy(*req.GitHubTokenStrategy)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubTokenStrategy = strategy
+	}
+	if req.GitHubActiveTokenIndex != nil {
+		v, err := validateRuntimeInt("githubActiveTokenIndex", *req.GitHubActiveTokenIndex, 0, 1000)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubActiveTokenIndex = v
+	}
+	if req.IncludeDefaultGitHubTokens != nil {
+		settings.IncludeDefaultGitHubTokens = *req.IncludeDefaultGitHubTokens
+	}
+	if req.GitHubMaxPages != nil {
+		v, err := validateRuntimeInt("githubMaxPages", *req.GitHubMaxPages, 1, 50)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubMaxPages = v
+	}
+	if req.GitHubPerPage != nil {
+		v, err := validateRuntimeInt("githubPerPage", *req.GitHubPerPage, 1, 100)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubPerPage = v
+	}
+	if req.GitHubRequestIntervalMS != nil {
+		v, err := validateRuntimeInt("githubRequestIntervalMs", *req.GitHubRequestIntervalMS, 0, 60000)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubRequestIntervalMS = v
+	}
+	if req.StarSnapshotLimit != nil {
+		v, err := validateRuntimeInt("starSnapshotLimit", *req.StarSnapshotLimit, 1, 5000)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.StarSnapshotLimit = v
+	}
+	if settings.CreatedBy == "" {
+		settings.CreatedBy = actor
+	}
+	settings.UpdatedBy = actor
+	if err := h.store.UpsertRuntimeSettings(r.Context(), settings); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	saved, err := h.store.GetRuntimeSettings(r.Context())
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	writeToolOK(w, map[string]any{"settings": toRuntimeSettingsJSON(saved)})
+}
+
+func (h *ToolAPIHandler) handleCheckGitHubSettings(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req checkGitHubSettingsRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	settings, err := h.store.GetRuntimeSettings(r.Context())
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	if req.GitHubTokens != nil {
+		tokens, err := normalizeRuntimeGitHubTokens(*req.GitHubTokens)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubTokens = tokens
+	}
+	if req.GitHubBaseURL != nil {
+		baseURL, err := normalizeRuntimeGitHubBaseURL(*req.GitHubBaseURL)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+		settings.GitHubBaseURL = baseURL
+	}
+	if req.IncludeDefaultGitHubTokens != nil {
+		settings.IncludeDefaultGitHubTokens = *req.IncludeDefaultGitHubTokens
+	}
+
+	tokens := resolvedRuntimeGitHubTokens(settings)
+	checks := make([]githubTokenCheckJSON, 0, len(tokens))
+	client := tools.NewHTTPGitHubClient("")
+	if settings.GitHubBaseURL != "" {
+		client.BaseURL = settings.GitHubBaseURL
+	}
+	for i, candidate := range tokens {
+		last4 := tokenLast4(candidate.token)
+		item := githubTokenCheckJSON{
+			Index:  i,
+			Masked: "****" + last4,
+			Last4:  last4,
+			Source: candidate.source,
+		}
+		limit, err := client.CheckToken(r.Context(), candidate.token)
+		if err != nil {
+			item.Error = publicGitHubCheckError(err)
+		} else {
+			item.OK = true
+			item.Limit = limit.Limit
+			item.Remaining = limit.Remaining
+			item.ResetAt = limit.ResetAt
+		}
+		checks = append(checks, item)
+	}
+	writeToolOK(w, map[string]any{"tokens": checks})
 }
 
 func (h *ToolAPIHandler) handleListConfigs(w http.ResponseWriter, r *http.Request) {
@@ -557,6 +811,7 @@ type toolListStats struct {
 	UnlinkedEvaluationCount int        `json:"unlinkedEvaluationCount"`
 	EvaluatorCount          int        `json:"evaluatorCount"`
 	LatestUpdatedAt         *time.Time `json:"latestUpdatedAt,omitempty"`
+	PurposeTags             []string   `json:"purposeTags"`
 }
 
 type toolItemJSON struct {
@@ -579,6 +834,8 @@ type toolItemJSON struct {
 	OpenIssues             int                    `json:"openIssues"`
 	Stars7D                *int                   `json:"stars7d,omitempty"`
 	Topics                 []string               `json:"topics"`
+	PurposeTags            []string               `json:"purposeTags"`
+	PurposeTagsManuallySet bool                   `json:"purposeTagsManuallySet"`
 	LicenseSPDX            *string                `json:"licenseSpdx,omitempty"`
 	DefaultBranch          *string                `json:"defaultBranch,omitempty"`
 	PushedAt               *time.Time             `json:"pushedAt,omitempty"`
@@ -637,6 +894,7 @@ func (h *ToolAPIHandler) handleListTools(w http.ResponseWriter, r *http.Request)
 		writeToolErr(w, err)
 		return
 	}
+	purposeTags := tools.NormalizePurposeTags(r.URL.Query()["purposeTag"])
 	limit, err := parseToolLimit(r.URL.Query().Get("take"), 50, 200)
 	if err != nil {
 		writeToolErr(w, err)
@@ -653,6 +911,7 @@ func (h *ToolAPIHandler) handleListTools(w http.ResponseWriter, r *http.Request)
 		Sort:        sortMode,
 		Q:           q,
 		SourceTypes: sourceTypes,
+		PurposeTags: purposeTags,
 		Limit:       limit,
 		Offset:      offset,
 		Now:         time.Now().UTC(),
@@ -684,8 +943,9 @@ func (h *ToolAPIHandler) handleListTools(w http.ResponseWriter, r *http.Request)
 }
 
 type manualRepoRequest struct {
-	RepoURL string `json:"repoUrl"`
-	Actor   string `json:"actor"`
+	RepoURL     string    `json:"repoUrl"`
+	Actor       string    `json:"actor"`
+	PurposeTags *[]string `json:"purposeTags"`
 }
 
 func (h *ToolAPIHandler) handleManualPreview(w http.ResponseWriter, r *http.Request) {
@@ -706,6 +966,44 @@ func (h *ToolAPIHandler) handleManualPreview(w http.ResponseWriter, r *http.Requ
 	writeToolOK(w, map[string]any{"repository": toGitHubRepoJSON(repo)})
 }
 
+type updatePurposeTagsRequest struct {
+	ToolID      string   `json:"toolId"`
+	Actor       string   `json:"actor"`
+	PurposeTags []string `json:"purposeTags"`
+}
+
+func (h *ToolAPIHandler) handleUpdatePurposeTags(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req updatePurposeTagsRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	toolID, err := requireToolText(req.ToolID, "toolId", 120)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	if _, err := requireToolText(req.Actor, "actor", 80); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	purposeTags := tools.NormalizePurposeTags(req.PurposeTags)
+	if err := h.store.UpdateToolPurposeTags(r.Context(), toolID, purposeTags, true); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	tool, err := h.store.GetTool(r.Context(), toolID)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	writeToolOK(w, map[string]any{"tool": toToolJSON(tool, nil, nil)})
+}
+
 func (h *ToolAPIHandler) handleManualAdd(w http.ResponseWriter, r *http.Request) {
 	if err := requireToolDiscoverer(h.discoverer); err != nil {
 		writeToolErr(w, err)
@@ -721,7 +1019,13 @@ func (h *ToolAPIHandler) handleManualAdd(w http.ResponseWriter, r *http.Request)
 		writeToolErr(w, err)
 		return
 	}
-	result, err := h.discoverer.ManualAdd(r.Context(), req.RepoURL, actor)
+	var result tools.ManualAddResult
+	if req.PurposeTags != nil {
+		purposeTags := tools.NormalizePurposeTags(*req.PurposeTags)
+		result, err = h.discoverer.ManualAdd(r.Context(), req.RepoURL, actor, purposeTags)
+	} else {
+		result, err = h.discoverer.ManualAdd(r.Context(), req.RepoURL, actor)
+	}
 	if err != nil {
 		writeToolErr(w, err)
 		return
@@ -734,10 +1038,11 @@ func (h *ToolAPIHandler) handleManualAdd(w http.ResponseWriter, r *http.Request)
 }
 
 type teamImportRequest struct {
-	RepoURL      string `json:"repoUrl"`
-	Operator     string `json:"operator"`
-	CooperURL    string `json:"cooperUrl"`
-	FinalSummary string `json:"finalSummary"`
+	RepoURL      string    `json:"repoUrl"`
+	Operator     string    `json:"operator"`
+	CooperURL    string    `json:"cooperUrl"`
+	FinalSummary string    `json:"finalSummary"`
+	PurposeTags  *[]string `json:"purposeTags"`
 }
 
 func (h *ToolAPIHandler) handleTeamImport(w http.ResponseWriter, r *http.Request) {
@@ -755,7 +1060,13 @@ func (h *ToolAPIHandler) handleTeamImport(w http.ResponseWriter, r *http.Request
 		writeToolErr(w, err)
 		return
 	}
-	result, err := h.discoverer.ImportTeamTool(r.Context(), req.RepoURL, operator, req.FinalSummary, req.CooperURL)
+	var result tools.ManualAddResult
+	if req.PurposeTags != nil {
+		purposeTags := tools.NormalizePurposeTags(*req.PurposeTags)
+		result, err = h.discoverer.ImportTeamTool(r.Context(), req.RepoURL, operator, req.FinalSummary, req.CooperURL, purposeTags)
+	} else {
+		result, err = h.discoverer.ImportTeamTool(r.Context(), req.RepoURL, operator, req.FinalSummary, req.CooperURL)
+	}
 	if err != nil {
 		writeToolErr(w, err)
 		return
@@ -1018,7 +1329,108 @@ func toConfigJSON(cfg tools.DiscoveryConfig) configJSON {
 	}
 }
 
+func toRuntimeSettingsJSON(settings tools.ToolRuntimeSettings) runtimeSettingsJSON {
+	tokens := tools.NormalizeGitHubTokens(settings.GitHubTokens)
+	previews := tokenPreviews(tokens, "saved", 0)
+	defaultTokens := envGitHubTokens()
+	defaultPreviews := tokenPreviews(defaultTokens, "default", 0)
+	var updatedAt *time.Time
+	if !settings.UpdatedAt.IsZero() {
+		t := settings.UpdatedAt
+		updatedAt = &t
+	}
+	return runtimeSettingsJSON{
+		GitHubTokenCount:           len(tokens),
+		GitHubTokens:               previews,
+		DefaultGitHubTokenCount:    len(defaultTokens),
+		DefaultGitHubTokens:        defaultPreviews,
+		GitHubBaseURL:              settings.GitHubBaseURL,
+		GitHubTokenStrategy:        string(settings.GitHubTokenStrategy),
+		GitHubActiveTokenIndex:     settings.GitHubActiveTokenIndex,
+		IncludeDefaultGitHubTokens: settings.IncludeDefaultGitHubTokens,
+		GitHubMaxPages:             settings.GitHubMaxPages,
+		GitHubPerPage:              settings.GitHubPerPage,
+		GitHubRequestIntervalMS:    settings.GitHubRequestIntervalMS,
+		StarSnapshotLimit:          settings.StarSnapshotLimit,
+		UpdatedBy:                  settings.UpdatedBy,
+		UpdatedAt:                  updatedAt,
+	}
+}
+
+func tokenPreviews(tokens []string, source string, indexOffset int) []tokenPreviewJSON {
+	previews := make([]tokenPreviewJSON, 0, len(tokens))
+	for i, token := range tokens {
+		last4 := tokenLast4(token)
+		previews = append(previews, tokenPreviewJSON{
+			Index:  indexOffset + i,
+			Masked: "****" + last4,
+			Last4:  last4,
+			Source: source,
+		})
+	}
+	return previews
+}
+
+func tokenLast4(token string) string {
+	runes := []rune(strings.TrimSpace(token))
+	if len(runes) <= 4 {
+		return string(runes)
+	}
+	return string(runes[len(runes)-4:])
+}
+
+type runtimeGitHubToken struct {
+	token  string
+	source string
+}
+
+func resolvedRuntimeGitHubTokens(settings tools.ToolRuntimeSettings) []runtimeGitHubToken {
+	raw := []runtimeGitHubToken{}
+	if settings.IncludeDefaultGitHubTokens {
+		for _, token := range envGitHubTokens() {
+			raw = append(raw, runtimeGitHubToken{token: token, source: "default"})
+		}
+	}
+	for _, token := range tools.NormalizeGitHubTokens(settings.GitHubTokens) {
+		raw = append(raw, runtimeGitHubToken{token: token, source: "saved"})
+	}
+	seen := map[string]bool{}
+	out := make([]runtimeGitHubToken, 0, len(raw))
+	for _, candidate := range raw {
+		if candidate.token == "" || seen[candidate.token] {
+			continue
+		}
+		seen[candidate.token] = true
+		out = append(out, candidate)
+	}
+	return out
+}
+
+func envGitHubTokens() []string {
+	tokens := []string{}
+	if token := strings.TrimSpace(os.Getenv("AI_TOOL_GITHUB_TOKEN")); token != "" {
+		tokens = append(tokens, token)
+	}
+	tokens = append(tokens, tools.SplitGitHubTokens(os.Getenv("AI_TOOL_GITHUB_TOKENS"))...)
+	return tools.NormalizeGitHubTokens(tokens)
+}
+
+func publicGitHubCheckError(err error) string {
+	var derr *tools.DiscoveryError
+	if tools.AsDiscoveryError(err, &derr) && derr.Message != "" {
+		return derr.Message
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
 func toToolListStatsJSON(stats tools.ToolListStats) toolListStats {
+	purposeTags := stats.PurposeTags
+	if purposeTags == nil {
+		purposeTags = []string{}
+	}
 	return toolListStats{
 		Status:                  string(stats.Status),
 		KeywordSourceCount:      stats.KeywordSourceCount,
@@ -1028,6 +1440,7 @@ func toToolListStatsJSON(stats tools.ToolListStats) toolListStats {
 		UnlinkedEvaluationCount: stats.UnlinkedEvaluationCount,
 		EvaluatorCount:          stats.EvaluatorCount,
 		LatestUpdatedAt:         stats.LatestUpdatedAt,
+		PurposeTags:             purposeTags,
 	}
 }
 
@@ -1087,6 +1500,7 @@ type githubRepoJSON struct {
 	Forks         int        `json:"forks"`
 	OpenIssues    int        `json:"openIssues"`
 	Topics        []string   `json:"topics"`
+	PurposeTags   []string   `json:"purposeTags"`
 	LicenseSPDX   string     `json:"licenseSpdx,omitempty"`
 	DefaultBranch string     `json:"defaultBranch,omitempty"`
 	PushedAt      *time.Time `json:"pushedAt,omitempty"`
@@ -1096,6 +1510,10 @@ func toGitHubRepoJSON(repo tools.GitHubRepo) githubRepoJSON {
 	topics := repo.Topics
 	if topics == nil {
 		topics = []string{}
+	}
+	purposeTags := repo.PurposeTags
+	if purposeTags == nil {
+		purposeTags = []string{}
 	}
 	return githubRepoJSON{
 		NodeID:        repo.NodeID,
@@ -1111,6 +1529,7 @@ func toGitHubRepoJSON(repo tools.GitHubRepo) githubRepoJSON {
 		Forks:         repo.Forks,
 		OpenIssues:    repo.OpenIssues,
 		Topics:        topics,
+		PurposeTags:   purposeTags,
 		LicenseSPDX:   repo.LicenseSPDX,
 		DefaultBranch: repo.DefaultBranch,
 		PushedAt:      repo.PushedAt,
@@ -1142,6 +1561,8 @@ func toToolJSON(tool tools.Tool, sources []tools.ToolSourceSummary, eval *tools.
 		Forks:                  tool.Forks,
 		OpenIssues:             tool.OpenIssues,
 		Topics:                 tool.Topics,
+		PurposeTags:            tool.PurposeTags,
+		PurposeTagsManuallySet: tool.PurposeTagsManuallySet,
 		LicenseSPDX:            tool.LicenseSPDX,
 		DefaultBranch:          tool.DefaultBranch,
 		PushedAt:               tool.PushedAt,
@@ -1160,6 +1581,9 @@ func toToolJSON(tool tools.Tool, sources []tools.ToolSourceSummary, eval *tools.
 	}
 	if out.Topics == nil {
 		out.Topics = []string{}
+	}
+	if out.PurposeTags == nil {
+		out.PurposeTags = []string{}
 	}
 	for _, source := range sources {
 		out.Sources = append(out.Sources, toolSourceJSON{
@@ -1485,6 +1909,54 @@ func parseToolOffset(rawOffset, rawPage string, limit int) (int, int, error) {
 		return 0, 0, &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "page must be an integer greater than 0"}
 	}
 	return (page - 1) * limit, page, nil
+}
+
+func normalizeRuntimeGitHubTokens(tokens []string) ([]string, error) {
+	out := tools.NormalizeGitHubTokens(tokens)
+	if len(out) > 20 {
+		return nil, &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "githubTokens cannot exceed 20 items"}
+	}
+	for _, token := range out {
+		if len([]rune(token)) > 512 {
+			return nil, &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "github token is too long"}
+		}
+	}
+	return out, nil
+}
+
+func normalizeRuntimeGitHubBaseURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "githubBaseUrl must be a valid URL"}
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "githubBaseUrl must use http or https"}
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return strings.TrimRight(u.String(), "/"), nil
+}
+
+func normalizeRuntimeGitHubTokenStrategy(raw string) (tools.GitHubTokenStrategy, error) {
+	strategy := tools.GitHubTokenStrategy(strings.TrimSpace(raw))
+	if strategy == "" {
+		return tools.GitHubTokenStrategyRoundRobin, nil
+	}
+	if !tools.IsValidGitHubTokenStrategy(strategy) {
+		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "githubTokenStrategy must be round_robin, fixed or failover"}
+	}
+	return strategy, nil
+}
+
+func validateRuntimeInt(field string, value, min, max int) (int, error) {
+	if value < min || value > max {
+		return 0, &tools.DiscoveryError{Class: tools.ErrorValidation, Message: fmt.Sprintf("%s must be an integer %d-%d", field, min, max)}
+	}
+	return value, nil
 }
 
 func normalizeConfigTerms(method tools.DiscoveryMethod, terms []string) ([]string, error) {

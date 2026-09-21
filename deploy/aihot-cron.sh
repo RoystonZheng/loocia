@@ -8,6 +8,10 @@ export AIHOT_DATABASE_URL="postgres://aihot:aihot@localhost:5432/aihot"
 export AI_TOOL_DATABASE_URL="${AI_TOOL_DATABASE_URL:-$AIHOT_DATABASE_URL}"
 export AIHOT_MP_CORPUS_DIR="/root/wechat-corpus"
 export AIHOT_TRANSLATE_MODEL="deepseek-v4-flash"
+# Source-only egress proxy. Keep this separate from the internal LLM proxy.
+if grep -q '^AIHOT_SOURCE_HTTP_PROXY=' /root/wechat-push/.env; then
+  export AIHOT_SOURCE_HTTP_PROXY="$(grep '^AIHOT_SOURCE_HTTP_PROXY=' /root/wechat-push/.env | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r')"
+fi
 # The LLM key lives in the wechat-push env file on this host.
 export AIHOT_LLM_API_KEY="$(grep '^LLM_API_KEY' /root/wechat-push/.env | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r')"
 if grep -q '^AI_TOOL_GITHUB_TOKEN=' /root/wechat-push/.env; then

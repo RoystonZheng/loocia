@@ -10,6 +10,7 @@ export function ItemCard({ item }: { item: PublicItem }) {
           {item.source}
         </span>
         <div className="card-badges">
+          {item.sourceKind === 'aihot' && <span className="badge-source-kind">AIHOT补漏</span>}
           {item.selected && <span className="badge-sel">✦ 精选</span>}
           {/* The score is a "why this is 精选" quality signal — only meaningful on
               curated items. Showing it on every 全部 item just advertises low

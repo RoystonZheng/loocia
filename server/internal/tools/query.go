@@ -14,6 +14,7 @@ type ListToolsParams struct {
 	Q           *string
 	SourceType  *SourceType
 	SourceTypes []SourceType
+	PurposeTags []string
 	After       *Cursor
 	Limit       int
 	Offset      int
@@ -30,6 +31,7 @@ type ToolListStats struct {
 	UnlinkedEvaluationCount int
 	EvaluatorCount          int
 	LatestUpdatedAt         *time.Time
+	PurposeTags             []string
 }
 
 type ToolListItem struct {

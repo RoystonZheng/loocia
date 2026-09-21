@@ -17,7 +17,7 @@
 发现配置 / 手动添加 GitHub 仓库
   -> 生成候选工具
   -> 按 GitHub repository node_id 去重并合并来源
-  -> 已发现工具
+  -> 工具百宝箱
   -> 发起测评，手填测评人和操作人
   -> 关联外部 Cooper 测评文档链接
   -> 完成测评：纳入团队工具 / 不纳入
@@ -48,9 +48,9 @@ Cooper 测评文档由用户自己创建和维护。AI Cool 只保存 Cooper URL
 
 > 原型图已内嵌到 Cooper 文档对应位置：测评中。
 
-页面原型还包括已发现工具、手动添加和团队工具。
+页面原型还包括工具百宝箱、手动添加和团队工具。
 
-> 原型图已内嵌到 Cooper 文档对应位置：已发现工具。
+> 原型图已内嵌到 Cooper 文档对应位置：工具百宝箱。
 
 > 原型图已内嵌到 Cooper 文档对应位置：手动添加。
 
@@ -78,7 +78,7 @@ Cooper 测评文档由用户自己创建和维护。AI Cool 只保存 Cooper URL
 | 页面 | 入口 | 首期能力 |
 |---|---|---|
 | 发现配置 | `#tools-configs` | 配置列表、新建、编辑、启停、软删除、手动执行 |
-| 已发现工具 | `#tools-discovered` | 候选列表、搜索、来源筛选、排序、手动添加、开始测评、不处理 |
+| 工具百宝箱 | `#tools-discovered` | 候选列表、搜索、来源筛选、排序、手动添加、开始测评、不处理 |
 | 测评中 | `#tools-evaluating` | 查看测评人、操作人、Cooper 链接，补链接，完成测评 |
 | 团队工具 | `#tools-team` | 只展示 `included` 工具，支持搜索和基础统计 |
 
@@ -125,6 +125,15 @@ server/cmd/discovertools
 | `tool_status_events` | 状态变化审计 |
 | `tool_star_snapshots` | Stars 快照，用于计算近 7 天增长 |
 
+`tools` 主表额外保存用途分类：
+
+- `purpose_tags`：按使用场景保存 0 到多个用途标签，例如“代码开发”“浏览器操作”“深度研究”“MCP 集成”。
+- `purpose_tags_manually_set`：标记是否由用户手动修正。为 `true` 后，自动发现再次命中该仓库时不覆盖分类。
+- 自动分类优先使用现有 LLM client，输入仓库名、描述、Topics 和已有说明，要求模型按使用场景输出最多 3 个用途标签；没有配置 LLM 或调用失败时，回落到本地规则推断。
+- AI 可以从默认用途里选择，也可以返回新的使用场景标签；没有足够信号时保持未分类，不强行塞进默认类别。
+- 用户手动添加或团队导入时，可以直接选择已有用途，也可以新增用途；新增用途会随工具保存，并进入后续筛选选项。
+- 服务启动或命令行可以对历史工具做一次重分类，只处理 `purpose_tags_manually_set=false` 的工具。
+
 后端环境变量：
 
 | 变量 | 说明 |
@@ -133,6 +142,7 @@ server/cmd/discovertools
 | `AI_TOOL_TEST_DATABASE_URL` | 本地和 CI 测试库，不连生产库 |
 | `AI_TOOL_GITHUB_TOKEN` | GitHub API token，首期使用个人账号 token，由用户提供 |
 | `AI_TOOL_GITHUB_MAX_PAGES` | 单个 GitHub 查询最多翻页数 |
+| `AI_TOOL_PURPOSE_RECLASSIFY_LIMIT` | 服务启动时历史工具用途重分类数量；`0` 表示关闭 |
 
 生产库上线前先手动执行正式 schema，建好 `tool_*` 相关表。服务启动可以保留 `EnsureSchema` 的本地和测试兜底能力，但生产发布不能依赖启动时自动 DDL。
 
@@ -152,6 +162,7 @@ server/cmd/discovertools
 | `POST /api/tools/evaluations/cooper-url` | 关联或更新 Cooper URL |
 | `POST /api/tools/evaluations/finish` | 完成测评 |
 | `POST /api/tools/discovered/exclude` | 已发现阶段不处理 |
+| `POST /api/tools/purpose-tags` | 手动修正工具用途分类 |
 
 写接口必须带 `actor`。开始测评必须带 `evaluator`。完成测评前必须已有 Cooper URL。
 
@@ -185,9 +196,16 @@ web/src/api/tools.test.ts
 | 页面 | 主要接口 |
 |---|---|
 | 发现配置 | `GET /api/tools/configs`、`POST /api/tools/configs`、`POST /api/tools/configs/enable`、`POST /api/tools/configs/delete`、`POST /api/tools/configs/run` |
-| 已发现工具 | `GET /api/tools/items?status=discovered`、`POST /api/tools/manual/preview`、`POST /api/tools/manual/add`、`POST /api/tools/evaluations/start`、`POST /api/tools/discovered/exclude` |
+| 工具百宝箱 | `GET /api/tools/items?status=discovered`、`POST /api/tools/manual/preview`、`POST /api/tools/manual/add`、`POST /api/tools/evaluations/start`、`POST /api/tools/discovered/exclude` |
 | 测评中 | `GET /api/tools/items?status=evaluating`、`POST /api/tools/evaluations/cooper-url`、`POST /api/tools/evaluations/finish` |
 | 团队工具 | `GET /api/tools/items?status=included` |
+
+三个工具列表共用用途筛选和分类修正能力：
+
+- 用途筛选用下拉菜单，默认“全部用途”。
+- 列表行展示用途标签；没有分类时展示“未分类”。
+- “分类”操作打开弹窗，操作人必填，可以选择已有分类或新增分类，也可以清空为未分类。
+- 搜索命中范围包含用途标签，便于按场景检索工具池。
 
 前端状态：
 
@@ -271,6 +289,14 @@ topic:browser-automation fork:false archived:false
 - 没有 6 到 8 天前的可用快照时展示“暂无”。
 - Stars 增长只作为列表展示和排序信号，不产生新工具，不叫 GitHub Trending。
 
+### 3.7 用途分类规则
+
+- 分类维度按“使用场景”，不是技术栈或作者名。
+- 自动分类最多给 3 个标签，优先用 AI 判断，失败时用本地规则兜底，避免 LLM 不可用时阻断发现链路。
+- 默认分类不够用时允许新增类别；新增类别来自手动添加、团队导入或分类修正。
+- 自动重分类不覆盖用户手动修正过的工具。
+- 无明显用途信号时保留为空，不为了凑数强行分类。
+
 ## 4. 开发计划和每个阶段验证方式
 
 | 阶段 | 开发内容 | 验证方式 |
@@ -279,9 +305,9 @@ topic:browser-automation fork:false archived:false
 | 2. GitHub 发现 | GitHub client、关键词/Topic 查询、分页、限流、`discovertools` 基础命令 | fake GitHub server 覆盖 200、403、422、5xx、分页截断；本地执行一次配置 |
 | 3. 测评流转 | 开始测评、补 Cooper URL、纳入、不纳入、不处理 | 单测覆盖合法流转、非法状态、重复开始测评、缺 Cooper URL 完成失败 |
 | 4. 后端接口 | `/api/tools/*` handlers，接入两个 HTTP 入口 | handler 测试覆盖字段校验、错误码、状态过滤；本地请求接口返回正常 |
-| 5. 前端页面 | `AI Tool` 导航、四个页面、弹窗、列表刷新和错误态 | `npm run build`、`npm run lint`、`npx vitest run`；本地页面跑通主路径 |
+| 5. 前端页面 | `AI Tool` 导航、四个页面、弹窗、列表刷新、用途筛选、用途修正和错误态 | `npm run build`、`npm run lint`、`npx vitest run`；本地页面跑通主路径 |
 | 6. 本地完整链路 | 配置发现或手动添加 -> 测评 -> 纳入 -> 团队工具可见 | 使用本地 PostgreSQL 跑一条关键词配置、一条 Topic 配置、一个手动 GitHub URL |
-| 7. 部署准备 | 清理测试表和测试数据、手动建正式表、打包 `discovertools`、接入现有早间调度 | 确认正式库新表存在；定时任务 dry run；`AI Tool` 自用入口可访问 |
+| 7. 部署准备 | 清理测试表和测试数据、手动建正式表、打包 `discovertools`、接入现有早间调度、历史工具用途重分类 | 确认正式库新表存在；定时任务 dry run；`AI Tool` 自用入口可访问；历史工具分类可筛选 |
 
 上线前至少执行：
 

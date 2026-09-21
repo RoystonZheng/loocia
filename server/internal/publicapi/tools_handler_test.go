@@ -302,6 +302,9 @@ func TestToolAPIManualAddAndEvaluationClosure(t *testing.T) {
 	if preview.Data.Repository.NodeID != repo.NodeID || preview.Data.Repository.FullName != repo.FullName {
 		t.Fatalf("preview mismatch: %+v", preview.Data.Repository)
 	}
+	if len(preview.Data.Repository.PurposeTags) == 0 || preview.Data.Repository.PurposeTags[0] != "浏览器操作" {
+		t.Fatalf("preview should include auto purpose tags: %+v", preview.Data.Repository.PurposeTags)
+	}
 
 	type manualData struct {
 		Tool      toolItemJSON `json:"tool"`
@@ -309,16 +312,36 @@ func TestToolAPIManualAddAndEvaluationClosure(t *testing.T) {
 		Duplicate bool         `json:"duplicate"`
 	}
 	added := doToolAPI[manualData](t, h, http.MethodPost, "/api/tools/manual/add", map[string]any{
-		"repoUrl": "https://github.com/openai/browser-agent",
-		"actor":   "alice",
+		"repoUrl":     "https://github.com/openai/browser-agent",
+		"actor":       "alice",
+		"purposeTags": []string{"浏览器操作"},
 	}, http.StatusOK)
 	if !added.Data.Created || added.Data.Duplicate || added.Data.Tool.Status != string(tools.ToolDiscovered) {
 		t.Fatalf("manual add mismatch: %+v", added.Data)
 	}
+	if !added.Data.Tool.PurposeTagsManuallySet || len(added.Data.Tool.PurposeTags) != 1 || added.Data.Tool.PurposeTags[0] != "浏览器操作" {
+		t.Fatalf("manual purpose tags mismatch: %+v", added.Data.Tool)
+	}
 
-	discovered := doToolAPI[toolListEnvelope](t, h, http.MethodGet, "/api/tools/items?status=discovered&source=manual", nil, http.StatusOK)
-	if discovered.Data.Count != 1 || discovered.Data.Stats.ManualSourceCount != 1 {
+	discovered := doToolAPI[toolListEnvelope](t, h, http.MethodGet, "/api/tools/items?status=discovered&source=manual&purposeTag=%E6%B5%8F%E8%A7%88%E5%99%A8%E6%93%8D%E4%BD%9C", nil, http.StatusOK)
+	if discovered.Data.Count != 1 || discovered.Data.Stats.ManualSourceCount != 1 || len(discovered.Data.Stats.PurposeTags) == 0 {
 		t.Fatalf("discovered list mismatch: %+v", discovered.Data)
+	}
+
+	missingActor := doToolAPI[toolAPIErrorData](t, h, http.MethodPost, "/api/tools/purpose-tags", map[string]any{
+		"toolId":      added.Data.Tool.ID,
+		"purposeTags": []string{"工作流自动化"},
+	}, http.StatusBadRequest)
+	if missingActor.Data.Class != tools.ErrorValidation {
+		t.Fatalf("missing actor purpose update mismatch: %+v", missingActor)
+	}
+	updatedPurpose := doToolAPI[manualData](t, h, http.MethodPost, "/api/tools/purpose-tags", map[string]any{
+		"toolId":      added.Data.Tool.ID,
+		"actor":       "alice",
+		"purposeTags": []string{"工作流自动化"},
+	}, http.StatusOK)
+	if len(updatedPurpose.Data.Tool.PurposeTags) != 1 || updatedPurpose.Data.Tool.PurposeTags[0] != "工作流自动化" {
+		t.Fatalf("purpose update mismatch: %+v", updatedPurpose.Data.Tool.PurposeTags)
 	}
 
 	type evaluationData struct {

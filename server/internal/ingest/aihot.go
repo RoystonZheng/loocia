@@ -54,7 +54,7 @@ func NewAIHOTSource(name, endpoint string, opts AIHOTSourceOptions) *AIHOTSource
 		maxItems:     maxItems,
 		maxSecondary: maxSecondary,
 		window:       window,
-		client:       &http.Client{Timeout: timeout},
+		client:       newSourceHTTPClient(timeout),
 	}
 }
 

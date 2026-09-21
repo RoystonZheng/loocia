@@ -18,7 +18,7 @@ func TestToPublicExposesOnlyPublicFields(t *testing.T) {
 	sel := true
 	it := items.Item{
 		ID: "id1", Title: "标题", TitleEN: &en, URL: "https://x/y", Permalink: "/items/id1",
-		Source: "Src", PublishedAt: &pub, Summary: &summary, Category: &cat, Score: &score,
+		Source: "Src", SourceKind: "aihot", PublishedAt: &pub, Summary: &summary, Category: &cat, Score: &score,
 		AIRelevance: &rel, AISelected: &sel, Selected: true, Present: true,
 	}
 
@@ -28,6 +28,9 @@ func TestToPublicExposesOnlyPublicFields(t *testing.T) {
 	}
 	if p.TitleEN == nil || *p.TitleEN != "English" || p.Summary == nil || *p.Summary != "摘要" {
 		t.Fatalf("nullable fields: %+v", p)
+	}
+	if p.SourceKind != "aihot" {
+		t.Fatalf("sourceKind: %+v", p)
 	}
 	if p.Category == nil || *p.Category != "ai-models" || p.Score == nil || *p.Score != 4 || !p.Selected {
 		t.Fatalf("category/score/selected: %+v", p)
@@ -44,7 +47,7 @@ func TestToPublicExposesOnlyPublicFields(t *testing.T) {
 			t.Fatalf("internal field %q leaked into JSON: %s", banned, js)
 		}
 	}
-	for _, want := range []string{`"id"`, `"title"`, `"url"`, `"permalink"`, `"source"`, `"selected"`} {
+	for _, want := range []string{`"id"`, `"title"`, `"url"`, `"permalink"`, `"source"`, `"sourceKind"`, `"selected"`} {
 		if !contains(js, want) {
 			t.Fatalf("missing wire field %s in %s", want, js)
 		}

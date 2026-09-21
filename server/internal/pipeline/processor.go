@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"aihot-server/internal/ingest"
 	"aihot-server/internal/items"
@@ -36,6 +37,8 @@ type Processor struct {
 	termsX     TermExtractor // optional; nil disables term extraction
 	termsSink  TermsSink     // where extracted terms go (item_terms)
 }
+
+var itemProcessingTimeout = 3 * time.Minute
 
 func NewProcessor(raw *ingest.RawStore, itemsStore *items.Store, enr Enricher) *Processor {
 	return &Processor{raw: raw, items: itemsStore, enr: enr}
@@ -110,7 +113,14 @@ func (p *Processor) ProcessBatch(ctx context.Context, limit int) (Result, error)
 		return res, err
 	}
 	for _, r := range batch {
-		if err := p.processOne(ctx, r); err != nil {
+		itemCtx := ctx
+		cancel := func() {}
+		if itemProcessingTimeout > 0 {
+			itemCtx, cancel = context.WithTimeout(ctx, itemProcessingTimeout)
+		}
+		err := p.processOne(itemCtx, r)
+		cancel()
+		if err != nil {
 			res.Failed++
 			res.Errors = append(res.Errors, fmt.Errorf("item %s: %w", r.ID, err))
 			continue
@@ -129,7 +139,7 @@ func (p *Processor) processOne(ctx context.Context, r ingest.RawItem) error {
 	// Fetch the article page once: backfill missing media, and for English
 	// (rss) sources replace the feed's short snippet body with the full
 	// extracted article. Best-effort — misses just leave the item as-is.
-	if p.page != nil {
+	if p.page != nil && sourceSupportsPageArticle(r.SourceKind) {
 		img, vid, article := p.page.Resolve(ctx, r.URL)
 		if it.ImageURL == nil {
 			it.ImageURL = img
@@ -137,7 +147,7 @@ func (p *Processor) processOne(ctx context.Context, r ingest.RawItem) error {
 		if it.VideoURL == nil {
 			it.VideoURL = vid
 		}
-		if sourceSupportsPageArticle(r.SourceKind) && article != nil && betterBody(*article, it.Body) {
+		if article != nil && betterBody(*article, it.Body) {
 			it.Body = article
 		}
 	}

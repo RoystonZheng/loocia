@@ -8,11 +8,12 @@ import (
 )
 
 const (
-	DefaultGitHubMaxPages        = 5
-	DefaultGitHubPerPage         = 100
-	DefaultGitHubRequestInterval = 2 * time.Second
-	DefaultStarSnapshotLimit     = 200
-	finishRunTimeout             = 10 * time.Second
+	DefaultGitHubMaxPages         = 5
+	DefaultGitHubPerPage          = 100
+	DefaultGitHubRequestInterval  = 2 * time.Second
+	DefaultStarSnapshotLimit      = 200
+	DefaultPurposeClassifyTimeout = 2 * time.Second
+	finishRunTimeout              = 10 * time.Second
 )
 
 type GitHubClient interface {
@@ -29,14 +30,16 @@ type GitHubQuery struct {
 }
 
 type Discoverer struct {
-	Store             *Store
-	GitHub            GitHubClient
-	MaxPages          int
-	PerPage           int
-	RequestInterval   time.Duration
-	StarSnapshotLimit int
-	Sleep             func(context.Context, time.Duration) error
-	Now               func() time.Time
+	Store                  *Store
+	GitHub                 GitHubClient
+	MaxPages               int
+	PerPage                int
+	RequestInterval        time.Duration
+	StarSnapshotLimit      int
+	PurposeClassifier      PurposeClassifier
+	PurposeClassifyTimeout time.Duration
+	Sleep                  func(context.Context, time.Duration) error
+	Now                    func() time.Time
 }
 
 type WeeklySummary struct {
@@ -54,6 +57,13 @@ type StarSnapshotSummary struct {
 	RateLimited bool
 }
 
+type PurposeReclassifySummary struct {
+	Attempted int
+	Updated   int
+	Skipped   int
+	Failed    int
+}
+
 type ManualAddResult struct {
 	Tool      Tool
 	Created   bool
@@ -62,14 +72,42 @@ type ManualAddResult struct {
 
 func NewDiscoverer(store *Store, github GitHubClient) *Discoverer {
 	return &Discoverer{
-		Store:             store,
-		GitHub:            github,
-		MaxPages:          DefaultGitHubMaxPages,
-		PerPage:           DefaultGitHubPerPage,
-		RequestInterval:   DefaultGitHubRequestInterval,
-		StarSnapshotLimit: DefaultStarSnapshotLimit,
-		Now:               time.Now,
+		Store:                  store,
+		GitHub:                 github,
+		MaxPages:               DefaultGitHubMaxPages,
+		PerPage:                DefaultGitHubPerPage,
+		RequestInterval:        DefaultGitHubRequestInterval,
+		StarSnapshotLimit:      DefaultStarSnapshotLimit,
+		PurposeClassifyTimeout: DefaultPurposeClassifyTimeout,
+		Now:                    time.Now,
 	}
+}
+
+func (d *Discoverer) ApplyRuntimeSettings(ctx context.Context) error {
+	if d == nil || d.Store == nil {
+		return nil
+	}
+	settings, found, err := d.Store.FindRuntimeSettings(ctx)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	if client, ok := d.GitHub.(*HTTPGitHubClient); ok {
+		client.SetTokens(settings.GitHubTokens)
+		client.SetTokenSelection(settings.GitHubTokenStrategy, settings.GitHubActiveTokenIndex, settings.IncludeDefaultGitHubTokens)
+		if settings.GitHubBaseURL == "" {
+			client.BaseURL = GitHubDefaultBaseURL
+		} else {
+			client.BaseURL = settings.GitHubBaseURL
+		}
+	}
+	d.MaxPages = settings.GitHubMaxPages
+	d.PerPage = settings.GitHubPerPage
+	d.RequestInterval = time.Duration(settings.GitHubRequestIntervalMS) * time.Millisecond
+	d.StarSnapshotLimit = settings.StarSnapshotLimit
+	return nil
 }
 
 func BuildGitHubQueries(cfg DiscoveryConfig) []GitHubQuery {
@@ -204,6 +242,9 @@ func (d *Discoverer) RunExistingConfig(ctx context.Context, configID, runID stri
 	if d == nil || d.Store == nil || d.GitHub == nil {
 		return RunResult{}, &DiscoveryError{Class: ErrorGitHub, Message: "discoverer dependencies are not configured"}
 	}
+	if err := d.ApplyRuntimeSettings(ctx); err != nil {
+		return RunResult{}, err
+	}
 	cfg, err := d.Store.GetConfig(ctx, configID)
 	if err != nil {
 		return RunResult{}, err
@@ -309,6 +350,7 @@ func (d *Discoverer) RunExistingConfig(ctx context.Context, configID, runID stri
 					result.SkippedCount++
 					continue
 				}
+				repo.PurposeTags = d.classifyPurposeTags(ctx, repo)
 				upsert, err := d.Store.UpsertFromGitHub(ctx, repo, DiscoverySource{
 					ConfigID:   &configRef,
 					SourceType: q.SourceType,
@@ -529,6 +571,9 @@ func (d *Discoverer) SnapshotActiveTools(ctx context.Context, limit int) (StarSn
 	if d == nil || d.Store == nil || d.GitHub == nil {
 		return StarSnapshotSummary{}, &DiscoveryError{Class: ErrorGitHub, Message: "discoverer dependencies are not configured"}
 	}
+	if err := d.ApplyRuntimeSettings(ctx); err != nil {
+		return StarSnapshotSummary{}, err
+	}
 	if limit <= 0 {
 		limit = d.StarSnapshotLimit
 	}
@@ -588,9 +633,37 @@ func (d *Discoverer) SnapshotActiveTools(ctx context.Context, limit int) (StarSn
 	return summary, nil
 }
 
+func (d *Discoverer) ReclassifyPurposeTags(ctx context.Context, limit int) (PurposeReclassifySummary, error) {
+	if d == nil || d.Store == nil {
+		return PurposeReclassifySummary{}, &DiscoveryError{Class: ErrorGitHub, Message: "tool store is not configured"}
+	}
+	tools, err := d.Store.ListToolsForPurposeClassification(ctx, limit)
+	if err != nil {
+		return PurposeReclassifySummary{}, err
+	}
+	var summary PurposeReclassifySummary
+	for _, tool := range tools {
+		summary.Attempted++
+		if tool.PurposeTagsManuallySet {
+			summary.Skipped++
+			continue
+		}
+		tags := d.classifyPurposeTags(ctx, RepoFromToolForPurpose(tool))
+		if err := d.Store.UpdateToolPurposeTags(ctx, tool.ID, tags, false); err != nil {
+			summary.Failed++
+			return summary, err
+		}
+		summary.Updated++
+	}
+	return summary, nil
+}
+
 func (d *Discoverer) PreviewManualAdd(ctx context.Context, repoURL string) (GitHubRepo, error) {
 	if d == nil || d.GitHub == nil {
 		return GitHubRepo{}, &DiscoveryError{Class: ErrorGitHub, Message: "github client is not configured"}
+	}
+	if err := d.ApplyRuntimeSettings(ctx); err != nil {
+		return GitHubRepo{}, err
 	}
 	owner, repo, err := ParseGitHubRepoURL(repoURL)
 	if err != nil {
@@ -606,10 +679,42 @@ func (d *Discoverer) PreviewManualAdd(ctx context.Context, repoURL string) (GitH
 	if ghRepo.Fork {
 		return GitHubRepo{}, &DiscoveryError{Class: ErrorRepositoryRejected, Message: "fork repositories are not accepted"}
 	}
+	ghRepo.PurposeTags = d.classifyPurposeTags(ctx, ghRepo)
 	return ghRepo, nil
 }
 
-func (d *Discoverer) ManualAdd(ctx context.Context, repoURL, actor string) (ManualAddResult, error) {
+func (d *Discoverer) classifyPurposeTags(ctx context.Context, repo GitHubRepo) []string {
+	if len(NormalizePurposeTags(repo.PurposeTags)) > 0 || repo.PurposeTagsManuallySet {
+		return NormalizePurposeTags(repo.PurposeTags)
+	}
+	if d != nil && d.PurposeClassifier != nil {
+		timeout := d.PurposeClassifyTimeout
+		if timeout <= 0 {
+			timeout = DefaultPurposeClassifyTimeout
+		}
+		classifyCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if tags, err := d.PurposeClassifier.ClassifyPurposeTags(classifyCtx, repo, d.purposeTagOptions(ctx)); err == nil {
+			return NormalizePurposeTags(tags)
+		}
+	}
+	return InferPurposeTags(repo)
+}
+
+func (d *Discoverer) purposeTagOptions(ctx context.Context) []string {
+	options := append([]string{}, DefaultPurposeTags...)
+	if d == nil || d.Store == nil {
+		return options
+	}
+	tags, err := d.Store.ListPurposeTags(ctx, ListToolsParams{})
+	if err != nil {
+		return options
+	}
+	options = append(options, tags...)
+	return NormalizePurposeTags(options)
+}
+
+func (d *Discoverer) ManualAdd(ctx context.Context, repoURL, actor string, purposeTags ...[]string) (ManualAddResult, error) {
 	if d == nil || d.Store == nil {
 		return ManualAddResult{}, &DiscoveryError{Class: ErrorGitHub, Message: "tool store is not configured"}
 	}
@@ -617,7 +722,7 @@ func (d *Discoverer) ManualAdd(ctx context.Context, repoURL, actor string) (Manu
 	if err != nil {
 		return ManualAddResult{}, err
 	}
-	upsert, err := d.Store.ManualAdd(ctx, ghRepo, actor)
+	upsert, err := d.Store.ManualAdd(ctx, ghRepo, actor, purposeTags...)
 	if err != nil {
 		return ManualAddResult{}, err
 	}
@@ -628,7 +733,7 @@ func (d *Discoverer) ManualAdd(ctx context.Context, repoURL, actor string) (Manu
 	}, nil
 }
 
-func (d *Discoverer) ImportTeamTool(ctx context.Context, repoURL, operator, finalSummary, cooperURL string) (ManualAddResult, error) {
+func (d *Discoverer) ImportTeamTool(ctx context.Context, repoURL, operator, finalSummary, cooperURL string, purposeTags ...[]string) (ManualAddResult, error) {
 	if d == nil || d.Store == nil {
 		return ManualAddResult{}, &DiscoveryError{Class: ErrorGitHub, Message: "tool store is not configured"}
 	}
@@ -636,7 +741,7 @@ func (d *Discoverer) ImportTeamTool(ctx context.Context, repoURL, operator, fina
 	if err != nil {
 		return ManualAddResult{}, err
 	}
-	upsert, err := d.Store.ImportTeamTool(ctx, ghRepo, operator, finalSummary, cooperURL)
+	upsert, err := d.Store.ImportTeamTool(ctx, ghRepo, operator, finalSummary, cooperURL, purposeTags...)
 	if err != nil {
 		return ManualAddResult{}, err
 	}

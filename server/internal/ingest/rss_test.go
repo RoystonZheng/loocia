@@ -170,8 +170,10 @@ func TestRSSSourceFetch(t *testing.T) {
 
 func TestRSSSourceFetchWithOptions(t *testing.T) {
 	var userAgent string
+	var accept string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userAgent = r.Header.Get("User-Agent")
+		accept = r.Header.Get("Accept")
 		w.Header().Set("Content-Type", "application/rss+xml")
 		_, _ = w.Write([]byte(sampleRSS))
 	}))
@@ -193,8 +195,63 @@ func TestRSSSourceFetchWithOptions(t *testing.T) {
 	if items[0].SourceRole != SourceRoleProfessional {
 		t.Fatalf("source role: %q", items[0].SourceRole)
 	}
-	if userAgent != "aihot-ingest/0.1" {
+	if userAgent != rssUserAgent {
 		t.Fatalf("user-agent: %q", userAgent)
+	}
+	if accept != rssAccept {
+		t.Fatalf("accept: %q", accept)
+	}
+}
+
+func TestRSSSourceFetchRetriesTransientStatus(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			http.Error(w, "temporary failure", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write([]byte(sampleRSS))
+	}))
+	defer srv.Close()
+
+	items, err := NewRSSSourceWithOptions("Retrying", srv.URL, RSSSourceOptions{
+		RetryAttempts: 2,
+	}).Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts: got %d want 2", attempts)
+	}
+	if len(items) != 2 {
+		t.Fatalf("want 2 items after retry, got %d", len(items))
+	}
+}
+
+func TestRSSSourceUsesSourceProxyOverride(t *testing.T) {
+	var proxyRequests int
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyRequests++
+		if r.URL.String() != "http://feed.example.test/rss" {
+			t.Fatalf("proxy request URL: %q", r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write([]byte(sampleRSS))
+	}))
+	defer proxy.Close()
+	t.Setenv("AIHOT_SOURCE_HTTP_PROXY", proxy.URL)
+
+	items, err := NewRSSSource("Proxied", "http://feed.example.test/rss").Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("want 2 proxied items, got %d", len(items))
+	}
+	if proxyRequests != 1 {
+		t.Fatalf("proxy requests: got %d want 1", proxyRequests)
 	}
 }
 
@@ -205,7 +262,9 @@ func TestRSSSourceFetchReportsRetryAfter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := NewRSSSource("Limited", srv.URL).Fetch(context.Background())
+	_, err := NewRSSSourceWithOptions("Limited", srv.URL, RSSSourceOptions{
+		RetryAttempts: 1,
+	}).Fetch(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "retry-after 120") {
 		t.Fatalf("expected retry-after error, got %v", err)
 	}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { vi } from 'vitest'
 import App from './App'
 
@@ -46,11 +46,12 @@ it('renders the daily home with the word cloud by default, and switches views', 
   await waitFor(() => expect(screen.getByText('词云词')).toBeInTheDocument())
   expect(screen.queryByText('标题A')).toBeNull()
 
-  // 精选 → feed + hot-topics strip
-  fireEvent.click(screen.getByRole('button', { name: '精选资讯' }))
+  // AI 动态 → feed + hot-topics strip
+  fireEvent.click(screen.getByRole('button', { name: 'AI 动态' }))
   await waitFor(() => expect(screen.getByText('标题A')).toBeInTheDocument())
   expect(screen.getByText(/当前热点/)).toBeInTheDocument()
   expect(screen.getByText('热点一')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'AI 动态' })).toBeInTheDocument()
 
   // back to the daily home
   fireEvent.click(screen.getByRole('button', { name: 'AI 日报' }))
@@ -68,12 +69,65 @@ it('switches to the standalone graph view', async () => {
   expect(screen.queryByText('日报导语')).toBeNull()
 })
 
+it('exposes the complete AI news navigation from the home sidebar', async () => {
+  mockAll()
+  window.location.hash = ''
+  try {
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('日报导语')).toBeInTheDocument())
+
+    const allNews = screen.getByRole('button', { name: 'AI 动态' })
+    expect(allNews).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '测评中' })).toBeNull()
+    fireEvent.click(allNews)
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'AI 动态' })).toBeInTheDocument())
+  } finally {
+    window.location.hash = ''
+  }
+})
+
 it('deep-links to the 精选 feed via location hash', async () => {
   mockAll()
   window.location.hash = '#selected'
   try {
     render(<App />)
     await waitFor(() => expect(screen.getByText('标题A')).toBeInTheDocument())
+  } finally {
+    window.location.hash = ''
+  }
+})
+
+it('clears stale sidebar counts when a later backend refresh fails', async () => {
+  let offline = false
+  globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+    const u = String(url)
+    if (u.includes('/api/tools/configs')) {
+      return offline
+        ? Promise.reject(new Error('backend unavailable'))
+        : Promise.resolve({ ok: true, json: async () => ({ errno: 0, errmsg: 'ok', data: { count: 3, items: [] } }) })
+    }
+    if (u.includes('/api/tools/items?status=discovered')) {
+      return offline
+        ? Promise.reject(new Error('backend unavailable'))
+        : Promise.resolve({ ok: true, json: async () => ({ errno: 0, errmsg: 'ok', data: { count: 7, items: [] } }) })
+    }
+    if (u.includes('/api/tools/items?status=included')) {
+      return offline
+        ? Promise.reject(new Error('backend unavailable'))
+        : Promise.resolve({ ok: true, json: async () => ({ errno: 0, errmsg: 'ok', data: { count: 2, items: [] } }) })
+    }
+    return Promise.resolve({ ok: true, json: async () => ({ count: 0, hasNext: false, nextCursor: null, items: [] }) })
+  }) as unknown as typeof fetch
+
+  window.location.hash = '#all'
+  try {
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('7', { selector: '.sb-badge' })).toBeInTheDocument())
+    offline = true
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await waitFor(() => expect(document.querySelectorAll('.sb-badge')).toHaveLength(0))
   } finally {
     window.location.hash = ''
   }

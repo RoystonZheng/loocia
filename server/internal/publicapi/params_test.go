@@ -48,6 +48,18 @@ func TestParseCategoryValidAndInvalid(t *testing.T) {
 	}
 }
 
+func TestParseScoreMinValidAndInvalid(t *testing.T) {
+	p, err := parseListParams(vals("mode=all&score_min=4"), refNow)
+	if err != nil || p.ScoreMin == nil || *p.ScoreMin != 4 {
+		t.Fatalf("valid score_min: %+v err=%v", p.ScoreMin, err)
+	}
+	for _, value := range []string{"0", "6", "abc"} {
+		if _, err := parseListParams(vals("score_min="+value), refNow); err == nil {
+			t.Fatalf("score_min=%s should 400", value)
+		}
+	}
+}
+
 func TestParseTakeBounds(t *testing.T) {
 	if _, err := parseListParams(vals("take=0"), refNow); err == nil {
 		t.Fatal("take=0 should 400")

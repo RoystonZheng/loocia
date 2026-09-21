@@ -20,6 +20,8 @@ const baseTool = {
   forks: 12,
   openIssues: 4,
   topics: ['browser-agent'],
+  purposeTags: ['浏览器操作'],
+  purposeTagsManuallySet: false,
   status: 'discovered',
   firstDiscoveredAt: now,
   lastDiscoveredAt: now,
@@ -66,6 +68,7 @@ function toolList(status: string, items: unknown[], overrides: Record<string, un
       unlinkedEvaluationCount: items.filter((item) => Boolean((item as { evaluation?: unknown }).evaluation)).length,
       evaluatorCount: 1,
       latestUpdatedAt: now,
+      purposeTags: ['浏览器操作'],
     },
     items,
     ...overrides,
@@ -388,7 +391,7 @@ describe('ToolsView', () => {
   it('previews, adds and starts evaluation from discovered tools', async () => {
     const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
       if (url === '/api/tools/manual/preview') {
-        return ok({ repository: { nodeId: 'node1', owner: 'openai', repo: 'browser-agent', fullName: 'openai/browser-agent', url: 'https://github.com/openai/browser-agent', name: 'browser-agent', description: 'A browser automation agent', stars: 321, forks: 12, openIssues: 4, topics: [] } })
+        return ok({ repository: { nodeId: 'node1', owner: 'openai', repo: 'browser-agent', fullName: 'openai/browser-agent', url: 'https://github.com/openai/browser-agent', name: 'browser-agent', description: 'A browser automation agent', stars: 321, forks: 12, openIssues: 4, topics: [], purposeTags: ['浏览器操作'] } })
       }
       if (url === '/api/tools/manual/add') return ok({ tool: baseTool, created: true, duplicate: false })
       if (url === '/api/tools/evaluations/start') return ok({ evaluation: { id: 'eval1', evaluator: '张三', operator: '李四', startedAt: now } })
@@ -416,6 +419,39 @@ describe('ToolsView', () => {
 
     await waitFor(() => expect(screen.getByText('已开始测评')).toBeInTheDocument())
     expect(fetchMock.mock.calls.map((call) => call[0])).toContain('/api/tools/evaluations/start')
+  })
+
+  it('filters and manually corrects purpose tags', async () => {
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (url === '/api/tools/purpose-tags') return ok({ tool: { ...baseTool, purposeTags: ['工作流自动化'], purposeTagsManuallySet: true } })
+      if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [baseTool]))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="discovered" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('浏览器操作')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('用途'), { target: { value: '浏览器操作' } })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((call) => String(call[0]))
+      expect(urls.some((url) => url.includes('purposeTag=%E6%B5%8F%E8%A7%88%E5%99%A8%E6%93%8D%E4%BD%9C'))).toBe(true)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '分类' }))
+    fireEvent.change(screen.getByLabelText('操作人'), { target: { value: '李四' } })
+    fireEvent.click(screen.getByRole('button', { name: '浏览器操作' }))
+    fireEvent.change(screen.getByPlaceholderText('新增分类，如：会议纪要'), { target: { value: '工作流自动化' } })
+    fireEvent.click(screen.getByRole('button', { name: '新增' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => expect(screen.getByText('用途分类已更新')).toBeInTheDocument())
+    const updateCall = fetchMock.mock.calls.find((call) => call[0] === '/api/tools/purpose-tags')
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toEqual({
+      toolId: 'tool1',
+      actor: '李四',
+      purposeTags: ['工作流自动化'],
+    })
   })
 
   it('links the real GitHub identity and preloads a Chinese summary once', async () => {

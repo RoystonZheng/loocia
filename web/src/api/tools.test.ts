@@ -16,6 +16,7 @@ import {
   setToolConfigEnabled,
   startToolEvaluation,
   updateToolEvaluationCooperURL,
+  updateToolPurposeTags,
 } from './tools'
 
 function ok(data: unknown) {
@@ -51,13 +52,14 @@ describe('tools api client', () => {
       stats: { status: 'discovered', keywordSourceCount: 0, topicSourceCount: 0, manualSourceCount: 0, linkedEvaluationCount: 0, unlinkedEvaluationCount: 0, evaluatorCount: 0 },
       items: [],
     })) as unknown as typeof fetch
-    await fetchTools({ status: 'discovered', sort: 'stars7d', sources: ['keyword', 'manual'], q: 'agent', take: 20, offset: 40, page: 3 })
+    await fetchTools({ status: 'discovered', sort: 'stars7d', sources: ['keyword', 'manual'], purposeTags: ['浏览器操作'], q: 'agent', take: 20, offset: 40, page: 3 })
     const url = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
     expect(url).toContain('/api/tools/items?')
     expect(url).toContain('status=discovered')
     expect(url).toContain('sort=stars7d')
     expect(url).toContain('source=keyword')
     expect(url).toContain('source=manual')
+    expect(url).toContain('purposeTag=%E6%B5%8F%E8%A7%88%E5%99%A8%E6%93%8D%E4%BD%9C')
     expect(url).toContain('q=agent')
     expect(url).toContain('take=20')
     expect(url).toContain('offset=40')
@@ -110,6 +112,7 @@ describe('tools api client', () => {
       .mockResolvedValueOnce(ok({ evaluation: { id: 'eval1', evaluator: '张三', operator: '李四', cooperUrl: 'https://cooper.didichuxing.com/didocs/1', startedAt: '2026-09-10T00:00:00Z' } }))
       .mockResolvedValueOnce(ok({ completed: true }))
       .mockResolvedValueOnce(ok({ excluded: true }))
+      .mockResolvedValueOnce(ok({ tool: { id: 'tool1', purposeTags: ['浏览器操作'] } }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     await previewManualTool('https://github.com/o/r')
@@ -118,6 +121,7 @@ describe('tools api client', () => {
     await updateToolEvaluationCooperURL('tool1', 'https://cooper.didichuxing.com/didocs/1', '李四')
     await finishToolEvaluation({ toolId: 'tool1', evaluationId: 'eval1', result: 'included', operator: '李四', finalSummary: '一个适合团队使用的工具' })
     await excludeDiscoveredTool('tool2', '不处理', '李四')
+    await updateToolPurposeTags({ toolId: 'tool1', actor: '李四', purposeTags: ['浏览器操作'] })
 
     expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
       '/api/tools/manual/preview',
@@ -126,6 +130,7 @@ describe('tools api client', () => {
       '/api/tools/evaluations/cooper-url',
       '/api/tools/evaluations/finish',
       '/api/tools/discovered/exclude',
+      '/api/tools/purpose-tags',
     ])
   })
 

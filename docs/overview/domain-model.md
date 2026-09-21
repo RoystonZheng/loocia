@@ -67,16 +67,17 @@ evaluating
 当前前端使用 hash 视图：
 
 - `/`：日报首页。
-- `#selected`：精选。
-- `#all`：全部动态。
+- `#all`：AI 动态主视图，默认展示全部可展示资讯。
+- `#selected`：兼容旧链接，进入 AI 动态并默认选中“精选”筛选。
 - `#graph`：图谱。
 
 本次工具模块规划新增：
 
-- `#/tools/discovered`：已发现工具。
-- `#/tools/evaluating`：测评中工具。
+- `#/tools/discovered`：工具百宝箱。
 - `#/tools/team`：团队工具。
 - `#/tools/configs`：发现配置。
+
+`evaluating` 仍是工具生命周期中的后端状态，用于驱动测评写入和流转；当前前端不把它作为独立导航入口展示。
 
 ## 关键规则
 

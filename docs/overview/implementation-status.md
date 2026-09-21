@@ -1,12 +1,14 @@
 # 实现状态
 
-最后更新：2026-09-14
+最后更新：2026-09-16
 
 ## 已实现
 
 - AI 资讯采集、富化、入库主链路已存在。
 - 信息源扩展已接入 `source_kind=rss/html/mp/aihot` 与 `source_role=official/professional/discovery`，并支持配置启停。
 - `raw_items` 已持久化 `source_role`，enrichment prompt 已包含来源上下文。
+- AIHOT 补漏源已在未处理队列中优先富化，避免被旧 RSS backlog 阻塞；AIHOT 富化不再追溯原网页抓正文。
+- 富化解析已支持常见 category 别名归一，并只取模型输出中的第一个合法 JSON 对象，降低单条 LLM 输出异常导致的丢条。
 - 新处理资讯的精选门槛已调整为 `relevance >= 4 && score >= 3`。
 - 前端 Feed 已支持 RSS/Atom、网页直采、公众号、AIHOT 补漏四类来源筛选。
 - 公共 HTTP 入口 `server/cmd/webserver/main.go` 已注册版本、健康检查、资讯列表、日报、热点、图谱和详情页。
@@ -30,8 +32,9 @@
 
 ## 当前风险
 
-- 外部信息源存在限流、网络失败和 HTML 结构漂移风险；单源失败不会中断其他来源，但需要观察 `pulse` 日志中的 `srcerrs`。
+- 外部信息源存在限流、网络失败和 HTML 结构漂移风险；单源失败不会中断其他来源，但需要观察 `pulse` 日志中的 `srcerrs` 及其后续 `source error: <来源>` 明细。
 - AIHOT 公共 API 有明确授权边界，外部商业复用或公开再分发需单独授权；当前仅按组织内部补漏使用。
+- LLM 富化仍可能出现单条失败；当前按单条隔离和超时处理，不阻断整轮 `pulse`。
 - 本次工具需求引入写操作，但首期不接 SSO/RBAC，只靠手填操作人留痕；公网部署前需要重新评估写接口开放范围。
 - GitHub API 有限流和搜索上限，需要 token、分页上限、时间窗口拆分和失败记录。
 - Cooper 链接首期只校验域名，无法证明文档真实存在或有权限访问。

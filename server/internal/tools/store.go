@@ -24,6 +24,8 @@ type Store struct {
 	pool *pgxpool.Pool
 }
 
+const defaultRuntimeSettingsID = "default"
+
 func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
@@ -34,6 +36,93 @@ func (s *Store) EnsureSchema(ctx context.Context) error {
 		return err
 	}
 	_, err = s.pool.Exec(ctx, string(sql))
+	return err
+}
+
+func DefaultRuntimeSettings() ToolRuntimeSettings {
+	return ToolRuntimeSettings{
+		ID:                         defaultRuntimeSettingsID,
+		GitHubTokens:               []string{},
+		GitHubTokenStrategy:        GitHubTokenStrategyRoundRobin,
+		IncludeDefaultGitHubTokens: true,
+		GitHubMaxPages:             DefaultGitHubMaxPages,
+		GitHubPerPage:              DefaultGitHubPerPage,
+		GitHubRequestIntervalMS:    int(DefaultGitHubRequestInterval / time.Millisecond),
+		StarSnapshotLimit:          DefaultStarSnapshotLimit,
+	}
+}
+
+func (s *Store) GetRuntimeSettings(ctx context.Context) (ToolRuntimeSettings, error) {
+	settings, found, err := s.FindRuntimeSettings(ctx)
+	if err != nil {
+		return ToolRuntimeSettings{}, err
+	}
+	if !found {
+		return DefaultRuntimeSettings(), nil
+	}
+	return settings, nil
+}
+
+func (s *Store) FindRuntimeSettings(ctx context.Context) (ToolRuntimeSettings, bool, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, github_tokens::text, github_base_url,
+		       github_token_strategy, github_active_token_index, include_default_github_tokens,
+		       github_max_pages, github_per_page, github_request_interval_ms, star_snapshot_limit,
+		       created_by, updated_by, created_at, updated_at
+		FROM tool_runtime_settings
+		WHERE id=$1`, defaultRuntimeSettingsID)
+	settings, err := scanRuntimeSettings(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ToolRuntimeSettings{}, false, nil
+	}
+	if err != nil {
+		return ToolRuntimeSettings{}, false, err
+	}
+	return withRuntimeDefaults(settings), true, nil
+}
+
+func (s *Store) UpsertRuntimeSettings(ctx context.Context, settings ToolRuntimeSettings) error {
+	settings = withRuntimeDefaults(settings)
+	if settings.ID == "" {
+		settings.ID = defaultRuntimeSettingsID
+	}
+	settings.GitHubTokens = NormalizeGitHubTokens(settings.GitHubTokens)
+	if strings.TrimSpace(settings.CreatedBy) == "" {
+		settings.CreatedBy = settings.UpdatedBy
+	}
+	if strings.TrimSpace(settings.CreatedBy) == "" {
+		settings.CreatedBy = "system"
+	}
+	if strings.TrimSpace(settings.UpdatedBy) == "" {
+		settings.UpdatedBy = settings.CreatedBy
+	}
+	tokens, err := json.Marshal(settings.GitHubTokens)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO tool_runtime_settings (
+			id, github_tokens, github_base_url, github_token_strategy,
+			github_active_token_index, include_default_github_tokens, github_max_pages,
+			github_per_page, github_request_interval_ms, star_snapshot_limit,
+			created_by, updated_by, updated_at
+		) VALUES ($1,$2::jsonb,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now())
+		ON CONFLICT (id) DO UPDATE SET
+			github_tokens = EXCLUDED.github_tokens,
+			github_base_url = EXCLUDED.github_base_url,
+			github_token_strategy = EXCLUDED.github_token_strategy,
+			github_active_token_index = EXCLUDED.github_active_token_index,
+			include_default_github_tokens = EXCLUDED.include_default_github_tokens,
+			github_max_pages = EXCLUDED.github_max_pages,
+			github_per_page = EXCLUDED.github_per_page,
+			github_request_interval_ms = EXCLUDED.github_request_interval_ms,
+			star_snapshot_limit = EXCLUDED.star_snapshot_limit,
+			updated_by = EXCLUDED.updated_by,
+			updated_at = now()`,
+		settings.ID, string(tokens), settings.GitHubBaseURL, settings.GitHubTokenStrategy,
+		settings.GitHubActiveTokenIndex, settings.IncludeDefaultGitHubTokens, settings.GitHubMaxPages,
+		settings.GitHubPerPage, settings.GitHubRequestIntervalMS, settings.StarSnapshotLimit,
+		settings.CreatedBy, settings.UpdatedBy)
 	return err
 }
 
@@ -617,10 +706,14 @@ func (s *Store) UpsertFromGitHub(ctx context.Context, repo GitHubRepo, source Di
 	return UpsertResult{Tool: tool, Created: created}, nil
 }
 
-func (s *Store) ManualAdd(ctx context.Context, repo GitHubRepo, actor string) (UpsertResult, error) {
+func (s *Store) ManualAdd(ctx context.Context, repo GitHubRepo, actor string, purposeTags ...[]string) (UpsertResult, error) {
 	actor = strings.TrimSpace(actor)
 	if actor == "" {
 		actor = "manual"
+	}
+	if len(purposeTags) > 0 {
+		repo.PurposeTags = NormalizePurposeTags(purposeTags[0])
+		repo.PurposeTagsManuallySet = true
 	}
 	term := repo.FullName
 	if term == "" && repo.Owner != "" && repo.Repo != "" {
@@ -633,7 +726,7 @@ func (s *Store) ManualAdd(ctx context.Context, repo GitHubRepo, actor string) (U
 	})
 }
 
-func (s *Store) ImportTeamTool(ctx context.Context, repo GitHubRepo, operator, finalSummary, cooperURL string) (UpsertResult, error) {
+func (s *Store) ImportTeamTool(ctx context.Context, repo GitHubRepo, operator, finalSummary, cooperURL string, purposeTags ...[]string) (UpsertResult, error) {
 	operator, err := requireText(operator, "operator", 80)
 	if err != nil {
 		return UpsertResult{}, err
@@ -645,6 +738,10 @@ func (s *Store) ImportTeamTool(ctx context.Context, repo GitHubRepo, operator, f
 	cooper, err := validateOptionalCooperURL(cooperURL)
 	if err != nil {
 		return UpsertResult{}, err
+	}
+	if len(purposeTags) > 0 {
+		repo.PurposeTags = NormalizePurposeTags(purposeTags[0])
+		repo.PurposeTagsManuallySet = true
 	}
 
 	tx, err := s.pool.Begin(ctx)
@@ -949,6 +1046,11 @@ func (s *Store) ListTools(ctx context.Context, p ListToolsParams) ([]ToolListIte
 		    OR t.description ILIKE '%'||$4||'%'
 		    OR t.temporary_summary ILIKE '%'||$4||'%'
 		    OR t.final_summary ILIKE '%'||$4||'%'
+		    OR EXISTS (
+		        SELECT 1
+		        FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
+		        WHERE purpose.tag ILIKE '%'||$4||'%'
+		    )
 		    OR ev.evaluator ILIKE '%'||$4||'%'
 		    OR ev.cooper_url ILIKE '%'||$4||'%'
 		    OR EXISTS (
@@ -963,9 +1065,14 @@ func (s *Store) ListTools(ctx context.Context, p ListToolsParams) ([]ToolListIte
 		      FROM tool_discovery_sources s
 		      WHERE s.tool_id=t.id AND s.source_type = ANY($5::text[])
 		  ))
+		  AND ($7::text[] IS NULL OR EXISTS (
+		      SELECT 1
+		      FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
+		      WHERE purpose.tag = ANY($7::text[])
+		  ))
 		ORDER BY `+order+`
 		LIMIT $2 OFFSET $6`,
-		status, p.Limit, p.Now.UTC(), p.Q, listToolSourceTypesArg(p), p.Offset)
+		status, p.Limit, p.Now.UTC(), p.Q, listToolSourceTypesArg(p), p.Offset, listPurposeTagsArg(p))
 	if err != nil {
 		return nil, err
 	}
@@ -1032,6 +1139,60 @@ func (s *Store) UpdateTemporarySummary(ctx context.Context, toolID, summary, sou
 	return nil
 }
 
+func (s *Store) UpdateToolPurposeTags(ctx context.Context, toolID string, purposeTags []string, manuallySet bool) error {
+	tags := NormalizePurposeTags(purposeTags)
+	raw, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE tools
+		SET purpose_tags=$2,
+		    purpose_tags_manually_set=$3,
+		    status_version=status_version+1,
+		    updated_at=now()
+		WHERE id=$1`,
+		toolID, string(raw), manuallySet)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) ListToolsForPurposeClassification(ctx context.Context, limit int) ([]Tool, error) {
+	args := []any{}
+	limitClause := ""
+	if limit > 0 {
+		args = append(args, limit)
+		limitClause = "LIMIT $1"
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT `+toolColumns("t")+`, NULL::integer
+		FROM tools t
+		WHERE t.purpose_tags_manually_set=false
+		  AND t.status IN ('discovered', 'evaluating', 'included')
+		ORDER BY t.updated_at DESC, t.id DESC
+		`+limitClause, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Tool
+	for rows.Next() {
+		var tool Tool
+		var stars7D *int
+		if err := scanTool(rows, &tool, &stars7D); err != nil {
+			return nil, err
+		}
+		out = append(out, tool)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) ToolStats(ctx context.Context, p ListToolsParams) (ToolListStats, error) {
 	status := p.Status
 	if status == "" {
@@ -1077,6 +1238,11 @@ func (s *Store) ToolStats(ctx context.Context, p ListToolsParams) (ToolListStats
 		    OR t.description ILIKE '%'||$2||'%'
 		    OR t.temporary_summary ILIKE '%'||$2||'%'
 		    OR t.final_summary ILIKE '%'||$2||'%'
+		    OR EXISTS (
+		        SELECT 1
+		        FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
+		        WHERE purpose.tag ILIKE '%'||$2||'%'
+		    )
 		    OR ev.evaluator ILIKE '%'||$2||'%'
 		    OR ev.cooper_url ILIKE '%'||$2||'%'
 		    OR EXISTS (
@@ -1090,8 +1256,13 @@ func (s *Store) ToolStats(ctx context.Context, p ListToolsParams) (ToolListStats
 		      SELECT 1
 		      FROM tool_discovery_sources s
 		      WHERE s.tool_id=t.id AND s.source_type = ANY($3::text[])
+		  ))
+		  AND ($7::text[] IS NULL OR EXISTS (
+		      SELECT 1
+		      FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
+		      WHERE purpose.tag = ANY($7::text[])
 		  ))`,
-		status, p.Q, listToolSourceTypesArg(p), SourceKeyword, SourceTopic, SourceManual)
+		status, p.Q, listToolSourceTypesArg(p), SourceKeyword, SourceTopic, SourceManual, listPurposeTagsArg(p))
 	if err := row.Scan(
 		&stats.Count,
 		&stats.KeywordSourceCount,
@@ -1104,6 +1275,16 @@ func (s *Store) ToolStats(ctx context.Context, p ListToolsParams) (ToolListStats
 	); err != nil {
 		return ToolListStats{}, err
 	}
+	tags, err := s.ListPurposeTags(ctx, ListToolsParams{
+		Status:      status,
+		Q:           p.Q,
+		SourceType:  p.SourceType,
+		SourceTypes: p.SourceTypes,
+	})
+	if err != nil {
+		return ToolListStats{}, err
+	}
+	stats.PurposeTags = tags
 	return stats, nil
 }
 
@@ -1119,6 +1300,70 @@ func listToolSourceTypesArg(p ListToolsParams) any {
 		return []string{string(*p.SourceType)}
 	}
 	return nil
+}
+
+func listPurposeTagsArg(p ListToolsParams) any {
+	tags := NormalizePurposeTags(p.PurposeTags)
+	if len(tags) == 0 {
+		return nil
+	}
+	return tags
+}
+
+func (s *Store) ListPurposeTags(ctx context.Context, p ListToolsParams) ([]string, error) {
+	status := p.Status
+	if status == "" {
+		status = ToolDiscovered
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT purpose.tag
+		FROM tools t
+		CROSS JOIN LATERAL jsonb_array_elements_text(t.purpose_tags) purpose(tag)
+		LEFT JOIN LATERAL (
+			SELECT e.id, e.evaluator, e.operator, e.cooper_url
+			FROM tool_evaluations e
+			WHERE e.tool_id = t.id
+			ORDER BY (e.completed_at IS NULL) DESC, e.started_at DESC, e.id DESC
+			LIMIT 1
+		) ev ON true
+		WHERE t.status = $1
+		  AND purpose.tag <> ''
+		  AND ($2::text IS NULL OR (
+		       t.github_full_name ILIKE '%'||$2||'%'
+		    OR t.description ILIKE '%'||$2||'%'
+		    OR t.temporary_summary ILIKE '%'||$2||'%'
+		    OR t.final_summary ILIKE '%'||$2||'%'
+		    OR purpose.tag ILIKE '%'||$2||'%'
+		    OR ev.evaluator ILIKE '%'||$2||'%'
+		    OR ev.cooper_url ILIKE '%'||$2||'%'
+		    OR EXISTS (
+		        SELECT 1
+		        FROM tool_discovery_sources s
+		        WHERE s.tool_id=t.id
+		          AND (s.term ILIKE '%'||$2||'%'
+		           OR s.source_type ILIKE '%'||$2||'%')
+		    )))
+		  AND ($3::text[] IS NULL OR EXISTS (
+		      SELECT 1
+		      FROM tool_discovery_sources s
+		      WHERE s.tool_id=t.id AND s.source_type = ANY($3::text[])
+		  ))
+		ORDER BY purpose.tag ASC`,
+		status, p.Q, listToolSourceTypesArg(p))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		out = append(out, tag)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) StartEvaluation(ctx context.Context, toolID, evaluator, cooperURL, actor string) (Evaluation, error) {
@@ -1379,14 +1624,23 @@ func upsertTool(ctx context.Context, tx pgx.Tx, repo GitHubRepo) (bool, Tool, er
 	if err != nil {
 		return false, Tool{}, err
 	}
+	purposeTags := NormalizePurposeTags(repo.PurposeTags)
+	if len(purposeTags) == 0 && !repo.PurposeTagsManuallySet {
+		purposeTags = InferPurposeTags(repo)
+	}
+	purposeTagsRaw, err := json.Marshal(purposeTags)
+	if err != nil {
+		return false, Tool{}, err
+	}
 
 	row := tx.QueryRow(ctx, `
 		INSERT INTO tools (
 			id, github_node_id, github_owner, github_repo, github_full_name,
 			github_url, homepage_url, name, description, temporary_summary,
 			temporary_summary_source, stars, forks, open_issues, topics,
-			license_spdx, default_branch, pushed_at, archived, fork, status
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+			purpose_tags, purpose_tags_manually_set, license_spdx, default_branch,
+			pushed_at, archived, fork, status
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
 		ON CONFLICT (github_node_id) DO UPDATE SET
 			github_owner=EXCLUDED.github_owner,
 			github_repo=EXCLUDED.github_repo,
@@ -1401,6 +1655,12 @@ func upsertTool(ctx context.Context, tx pgx.Tx, repo GitHubRepo) (bool, Tool, er
 			forks=EXCLUDED.forks,
 			open_issues=EXCLUDED.open_issues,
 			topics=EXCLUDED.topics,
+			purpose_tags=CASE
+				WHEN EXCLUDED.purpose_tags_manually_set THEN EXCLUDED.purpose_tags
+				WHEN tools.purpose_tags_manually_set THEN tools.purpose_tags
+				ELSE EXCLUDED.purpose_tags
+			END,
+			purpose_tags_manually_set=tools.purpose_tags_manually_set OR EXCLUDED.purpose_tags_manually_set,
 			license_spdx=EXCLUDED.license_spdx,
 			default_branch=EXCLUDED.default_branch,
 			pushed_at=EXCLUDED.pushed_at,
@@ -1412,7 +1672,8 @@ func upsertTool(ctx context.Context, tx pgx.Tx, repo GitHubRepo) (bool, Tool, er
 		id, repo.NodeID, repo.Owner, repo.Repo, repo.FullName,
 		repo.URL, homepageURL, repo.Name, description, summary,
 		summarySource, repo.Stars, repo.Forks, repo.OpenIssues, string(topics),
-		license, defaultBranch, repo.PushedAt, repo.Archived, repo.Fork, ToolDiscovered)
+		string(purposeTagsRaw), repo.PurposeTagsManuallySet, license, defaultBranch,
+		repo.PushedAt, repo.Archived, repo.Fork, ToolDiscovered)
 
 	var tool Tool
 	var created bool
@@ -1510,6 +1771,53 @@ func insertStatusEvent(ctx context.Context, tx pgx.Tx, toolID string, from, to T
 	return err
 }
 
+func scanRuntimeSettings(row pgx.Row) (ToolRuntimeSettings, error) {
+	var settings ToolRuntimeSettings
+	var tokensRaw string
+	if err := row.Scan(
+		&settings.ID, &tokensRaw, &settings.GitHubBaseURL, &settings.GitHubTokenStrategy,
+		&settings.GitHubActiveTokenIndex, &settings.IncludeDefaultGitHubTokens, &settings.GitHubMaxPages,
+		&settings.GitHubPerPage, &settings.GitHubRequestIntervalMS,
+		&settings.StarSnapshotLimit, &settings.CreatedBy, &settings.UpdatedBy,
+		&settings.CreatedAt, &settings.UpdatedAt,
+	); err != nil {
+		return settings, err
+	}
+	if err := json.Unmarshal([]byte(tokensRaw), &settings.GitHubTokens); err != nil {
+		return settings, err
+	}
+	settings.GitHubTokens = NormalizeGitHubTokens(settings.GitHubTokens)
+	return settings, nil
+}
+
+func withRuntimeDefaults(settings ToolRuntimeSettings) ToolRuntimeSettings {
+	defaults := DefaultRuntimeSettings()
+	if settings.ID == "" {
+		settings.ID = defaults.ID
+	}
+	settings.GitHubTokens = NormalizeGitHubTokens(settings.GitHubTokens)
+	settings.GitHubBaseURL = strings.TrimRight(strings.TrimSpace(settings.GitHubBaseURL), "/")
+	if !IsValidGitHubTokenStrategy(settings.GitHubTokenStrategy) {
+		settings.GitHubTokenStrategy = defaults.GitHubTokenStrategy
+	}
+	if settings.GitHubActiveTokenIndex < 0 {
+		settings.GitHubActiveTokenIndex = defaults.GitHubActiveTokenIndex
+	}
+	if settings.GitHubMaxPages <= 0 {
+		settings.GitHubMaxPages = defaults.GitHubMaxPages
+	}
+	if settings.GitHubPerPage <= 0 || settings.GitHubPerPage > DefaultGitHubPerPage {
+		settings.GitHubPerPage = defaults.GitHubPerPage
+	}
+	if settings.GitHubRequestIntervalMS < 0 {
+		settings.GitHubRequestIntervalMS = defaults.GitHubRequestIntervalMS
+	}
+	if settings.StarSnapshotLimit <= 0 {
+		settings.StarSnapshotLimit = defaults.StarSnapshotLimit
+	}
+	return settings
+}
+
 func scanConfig(row pgx.Row) (DiscoveryConfig, error) {
 	var cfg DiscoveryConfig
 	var termsRaw string
@@ -1571,6 +1879,7 @@ func scanEvaluation(row pgx.Row) (Evaluation, error) {
 func scanToolListItem(row pgx.Row) (ToolListItem, error) {
 	var item ToolListItem
 	var topicsRaw string
+	var purposeTagsRaw string
 	var evalID *string
 	var evaluator *string
 	var operator *string
@@ -1585,18 +1894,21 @@ func scanToolListItem(row pgx.Row) (ToolListItem, error) {
 		&item.GitHubFullName, &item.GitHubURL, &item.HomepageURL,
 		&item.Name, &item.Description, &item.TemporarySummary,
 		&item.TemporarySummarySource, &item.FinalSummary, &item.Stars,
-		&item.Forks, &item.OpenIssues, &topicsRaw, &item.LicenseSPDX,
-		&item.DefaultBranch, &item.PushedAt, &item.Archived, &item.Fork,
-		&item.Status, &item.FirstDiscoveredAt, &item.LastDiscoveredAt,
-		&item.IncludedAt, &item.ExcludedAt, &item.ExcludedStage,
-		&item.ExcludedReason, &item.StatusVersion, &item.CreatedAt,
-		&item.UpdatedAt, &item.Stars7D,
+		&item.Forks, &item.OpenIssues, &topicsRaw, &purposeTagsRaw,
+		&item.PurposeTagsManuallySet, &item.LicenseSPDX, &item.DefaultBranch,
+		&item.PushedAt, &item.Archived, &item.Fork, &item.Status,
+		&item.FirstDiscoveredAt, &item.LastDiscoveredAt, &item.IncludedAt,
+		&item.ExcludedAt, &item.ExcludedStage, &item.ExcludedReason,
+		&item.StatusVersion, &item.CreatedAt, &item.UpdatedAt, &item.Stars7D,
 		&evalID, &evaluator, &operator, &cooperURL, &startedAt,
 		&completedAt, &result, &finalSummary, &notIncludedReason,
 	); err != nil {
 		return item, err
 	}
 	if err := json.Unmarshal([]byte(topicsRaw), &item.Topics); err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(purposeTagsRaw), &item.PurposeTags); err != nil {
 		return item, err
 	}
 	if evalID != nil && evaluator != nil && operator != nil && startedAt != nil {
@@ -1620,42 +1932,50 @@ func scanToolListItem(row pgx.Row) (ToolListItem, error) {
 
 func scanToolWithCreated(row pgx.Row, tool *Tool, created *bool) error {
 	var topicsRaw string
+	var purposeTagsRaw string
 	err := row.Scan(
 		&tool.ID, &tool.GitHubNodeID, &tool.GitHubOwner, &tool.GitHubRepo,
 		&tool.GitHubFullName, &tool.GitHubURL, &tool.HomepageURL,
 		&tool.Name, &tool.Description, &tool.TemporarySummary,
 		&tool.TemporarySummarySource, &tool.FinalSummary, &tool.Stars,
-		&tool.Forks, &tool.OpenIssues, &topicsRaw, &tool.LicenseSPDX,
-		&tool.DefaultBranch, &tool.PushedAt, &tool.Archived, &tool.Fork,
-		&tool.Status, &tool.FirstDiscoveredAt, &tool.LastDiscoveredAt,
-		&tool.IncludedAt, &tool.ExcludedAt, &tool.ExcludedStage,
-		&tool.ExcludedReason, &tool.StatusVersion, &tool.CreatedAt,
-		&tool.UpdatedAt, created,
+		&tool.Forks, &tool.OpenIssues, &topicsRaw, &purposeTagsRaw,
+		&tool.PurposeTagsManuallySet, &tool.LicenseSPDX, &tool.DefaultBranch,
+		&tool.PushedAt, &tool.Archived, &tool.Fork, &tool.Status,
+		&tool.FirstDiscoveredAt, &tool.LastDiscoveredAt, &tool.IncludedAt,
+		&tool.ExcludedAt, &tool.ExcludedStage, &tool.ExcludedReason,
+		&tool.StatusVersion, &tool.CreatedAt, &tool.UpdatedAt, created,
 	)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal([]byte(topicsRaw), &tool.Topics)
+	if err := json.Unmarshal([]byte(topicsRaw), &tool.Topics); err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(purposeTagsRaw), &tool.PurposeTags)
 }
 
 func scanTool(row pgx.Row, tool *Tool, stars7D **int) error {
 	var topicsRaw string
+	var purposeTagsRaw string
 	err := row.Scan(
 		&tool.ID, &tool.GitHubNodeID, &tool.GitHubOwner, &tool.GitHubRepo,
 		&tool.GitHubFullName, &tool.GitHubURL, &tool.HomepageURL,
 		&tool.Name, &tool.Description, &tool.TemporarySummary,
 		&tool.TemporarySummarySource, &tool.FinalSummary, &tool.Stars,
-		&tool.Forks, &tool.OpenIssues, &topicsRaw, &tool.LicenseSPDX,
-		&tool.DefaultBranch, &tool.PushedAt, &tool.Archived, &tool.Fork,
-		&tool.Status, &tool.FirstDiscoveredAt, &tool.LastDiscoveredAt,
-		&tool.IncludedAt, &tool.ExcludedAt, &tool.ExcludedStage,
-		&tool.ExcludedReason, &tool.StatusVersion, &tool.CreatedAt,
-		&tool.UpdatedAt, stars7D,
+		&tool.Forks, &tool.OpenIssues, &topicsRaw, &purposeTagsRaw,
+		&tool.PurposeTagsManuallySet, &tool.LicenseSPDX, &tool.DefaultBranch,
+		&tool.PushedAt, &tool.Archived, &tool.Fork, &tool.Status,
+		&tool.FirstDiscoveredAt, &tool.LastDiscoveredAt, &tool.IncludedAt,
+		&tool.ExcludedAt, &tool.ExcludedStage, &tool.ExcludedReason,
+		&tool.StatusVersion, &tool.CreatedAt, &tool.UpdatedAt, stars7D,
 	)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal([]byte(topicsRaw), &tool.Topics)
+	if err := json.Unmarshal([]byte(topicsRaw), &tool.Topics); err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(purposeTagsRaw), &tool.PurposeTags)
 }
 
 func toolColumns(alias string) string {
@@ -1667,14 +1987,16 @@ func toolColumns(alias string) string {
 		%sgithub_full_name, %sgithub_url, %shomepage_url, %sname,
 		%sdescription, %stemporary_summary, %stemporary_summary_source,
 		%sfinal_summary, %sstars, %sforks, %sopen_issues, %stopics::text,
-		%slicense_spdx, %sdefault_branch, %spushed_at, %sarchived, %sfork,
-		%sstatus, %sfirst_discovered_at, %slast_discovered_at, %sincluded_at,
+		%spurpose_tags::text, %spurpose_tags_manually_set, %slicense_spdx,
+		%sdefault_branch, %spushed_at, %sarchived, %sfork, %sstatus,
+		%sfirst_discovered_at, %slast_discovered_at, %sincluded_at,
 		%sexcluded_at, %sexcluded_stage, %sexcluded_reason, %sstatus_version,
 		%screated_at, %supdated_at`,
 		prefix, prefix, prefix, prefix, prefix, prefix, prefix, prefix,
 		prefix, prefix, prefix, prefix, prefix, prefix, prefix, prefix,
 		prefix, prefix, prefix, prefix, prefix, prefix, prefix, prefix,
-		prefix, prefix, prefix, prefix, prefix, prefix, prefix)
+		prefix, prefix, prefix, prefix, prefix, prefix, prefix, prefix,
+		prefix)
 }
 
 func runColumns(alias string) string {

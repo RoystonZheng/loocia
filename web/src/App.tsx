@@ -8,9 +8,24 @@ import { ToolsView, type ToolsSection } from './components/ToolsView'
 import { fetchToolConfigs, fetchTools } from './api/tools'
 import { useTheme } from './theme'
 
+const SIDEBAR_REFRESH_MS = 30_000
+
 const HEADERS: Record<'selected' | 'all', { title: string; sub: string }> = {
-  selected: { title: '精选', sub: 'AI 自动挑选的高价值内容' },
-  all: { title: '全部 AI 动态', sub: 'AI 相关资讯全量信息流' },
+  selected: { title: 'AI 动态', sub: 'AI 自动挑选的高价值内容' },
+  all: { title: 'AI 动态', sub: 'AI 相关资讯信息流' },
+}
+
+async function fetchSidebarCounts(): Promise<SidebarCounts> {
+  const [configs, discovered, team] = await Promise.all([
+    fetchToolConfigs(),
+    fetchTools({ status: 'discovered', take: 1 }),
+    fetchTools({ status: 'included', take: 1 }),
+  ])
+  return {
+    configs: configs.count,
+    discovered: discovered.count,
+    team: team.count,
+  }
 }
 
 function viewFromHash(): View {
@@ -19,6 +34,7 @@ function viewFromHash(): View {
     case '#all': return 'all'
     case '#graph': return 'graph'
     case '#tools-configs': return 'tools-configs'
+    case '#tools-accounts': return 'tools-accounts'
     case '#tools-discovered': return 'tools-discovered'
     case '#tools-evaluating': return 'tools-evaluating'
     case '#tools-team': return 'tools-team'
@@ -29,6 +45,7 @@ function viewFromHash(): View {
 function toolSectionFromView(view: View): ToolsSection | null {
   switch (view) {
     case 'tools-configs': return 'configs'
+    case 'tools-accounts': return 'accounts'
     case 'tools-discovered': return 'discovered'
     case 'tools-evaluating': return 'evaluating'
     case 'tools-team': return 'team'
@@ -56,21 +73,31 @@ export default function App() {
 
   useEffect(() => {
     let stale = false
-    Promise.allSettled([
-      fetchToolConfigs(),
-      fetchTools({ status: 'discovered', take: 1 }),
-      fetchTools({ status: 'evaluating', take: 1 }),
-      fetchTools({ status: 'included', take: 1 }),
-    ]).then(([configs, discovered, evaluating, team]) => {
-      if (stale) return
-      setToolCounts({
-        configs: configs.status === 'fulfilled' ? configs.value.count : undefined,
-        discovered: discovered.status === 'fulfilled' ? discovered.value.count : undefined,
-        evaluating: evaluating.status === 'fulfilled' ? evaluating.value.count : undefined,
-        team: team.status === 'fulfilled' ? team.value.count : undefined,
-      })
-    })
-    return () => { stale = true }
+    let refreshing = false
+    const refresh = async () => {
+      if (stale || refreshing) return
+      refreshing = true
+      try {
+        const counts = await fetchSidebarCounts()
+        if (!stale) setToolCounts(counts)
+      } catch {
+        // A badge is only valid for a successful current snapshot. Do not
+        // leave the last successful count visible while the backend is down.
+        if (!stale) setToolCounts({})
+      } finally {
+        refreshing = false
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(refresh, SIDEBAR_REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    return () => {
+      stale = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+    }
   }, [])
 
   useEffect(() => {
@@ -103,7 +130,7 @@ export default function App() {
               <h1>{HEADERS[feedView].title}</h1>
               <p className="page-sub">{HEADERS[feedView].sub}</p>
             </header>
-            <Feed mode={feedView} />
+            <Feed key={feedView} mode={feedView} />
           </>
         ) : (
           <DailyView />

@@ -111,6 +111,59 @@ func TestListFiltersSelectedCategorySince(t *testing.T) {
 	}
 }
 
+func TestListIncludesRecentItemsWithoutPublishedAt(t *testing.T) {
+	s := newTestStore(t)
+	created := time.Date(2026, 5, 9, 12, 0, 0, 0, time.UTC)
+	noPublishedAt := sampleItem("html-no-published-at", time.Time{})
+	noPublishedAt.PublishedAt = nil
+	noPublishedAt.SourceKind = "html"
+	seed(t, s, noPublishedAt)
+	if _, err := s.pool.Exec(context.Background(),
+		`UPDATE items SET created_at=$2, updated_at=$2 WHERE id=$1`,
+		noPublishedAt.ID, created); err != nil {
+		t.Fatalf("set created_at: %v", err)
+	}
+
+	since := created.Add(-time.Hour)
+	kind := "html"
+	got, err := s.List(context.Background(), ListParams{
+		SourceKind: &kind,
+		Since:      &since,
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if g := ids(got); !equal(g, []string{noPublishedAt.ID}) {
+		t.Fatalf("recent null-published item should remain visible: got %v", g)
+	}
+	if got[0].PublishedAt != nil {
+		t.Fatalf("list must preserve the missing published_at value: %v", got[0].PublishedAt)
+	}
+}
+
+func TestListFiltersMinimumScore(t *testing.T) {
+	s := newTestStore(t)
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	low := sampleItem("score-2", base.Add(2*time.Hour))
+	low.Score = intptr(2)
+	mid := sampleItem("score-3", base.Add(time.Hour))
+	mid.Score = intptr(3)
+	high := sampleItem("score-4", base)
+	high.Score = intptr(4)
+	seed(t, s, low, mid, high)
+
+	min := 3
+	got, err := s.List(context.Background(), ListParams{ScoreMin: &min, Limit: 10})
+	if err != nil {
+		t.Fatalf("List score_min: %v", err)
+	}
+	if g := ids(got); !equal(g, []string{"score-3", "score-4"}) {
+		t.Fatalf("score_min filter: got %v", g)
+	}
+}
+
 func TestListExcludesNotPresentAndDuplicates(t *testing.T) {
 	s := newTestStore(t)
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)

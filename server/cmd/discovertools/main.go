@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"aihot-server/internal/db"
+	"aihot-server/internal/llm"
 	"aihot-server/internal/tools"
 )
 
@@ -90,6 +91,19 @@ func run(command string, args []string) error {
 		fmt.Printf("ai tool manual: tool=%s created=%t duplicate=%t\n",
 			result.Tool.GitHubFullName, result.Created, result.Duplicate)
 		return nil
+	case "reclassify-purpose":
+		fs := flag.NewFlagSet("reclassify-purpose", flag.ExitOnError)
+		limit := fs.Int("limit", 0, "maximum tools to reclassify; 0 means no limit")
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		sum, err := discoverer.ReclassifyPurposeTags(ctx, *limit)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("ai tool purpose reclassify: attempted=%d updated=%d skipped=%d failed=%d\n",
+			sum.Attempted, sum.Updated, sum.Skipped, sum.Failed)
+		return nil
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", command)
@@ -111,6 +125,7 @@ func newDiscoverer(ctx context.Context) (*tools.Store, *tools.Discoverer, func()
 		client.BaseURL = baseURL
 	}
 	discoverer := tools.NewDiscoverer(store, client)
+	discoverer.PurposeClassifier = newToolPurposeClassifier()
 	if raw := os.Getenv("AI_TOOL_GITHUB_MAX_PAGES"); raw != "" {
 		maxPages, err := strconv.Atoi(raw)
 		if err != nil || maxPages <= 0 {
@@ -138,6 +153,15 @@ func newDiscoverer(ctx context.Context) (*tools.Store, *tools.Discoverer, func()
 	return store, discoverer, pool.Close, nil
 }
 
+func newToolPurposeClassifier() tools.PurposeClassifier {
+	client, err := llm.NewTermsClientFromEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ai tool: AI purpose classification disabled: %v\n", err)
+		return nil
+	}
+	return tools.NewLLMPurposeClassifier(client)
+}
+
 func printRunResult(label string, result tools.RunResult) {
 	fmt.Printf("ai tool %s: status=%s results=%d new=%d updated=%d skipped=%d pages=%d incomplete=%t truncated=%t",
 		label, result.Status, result.ResultCount, result.NewCount, result.UpdatedCount,
@@ -153,4 +177,5 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  discovertools weekly [-actor cron]")
 	fmt.Fprintln(os.Stderr, "  discovertools run -config <id> [-actor name]")
 	fmt.Fprintln(os.Stderr, "  discovertools manual -repo <github-url> [-actor name]")
+	fmt.Fprintln(os.Stderr, "  discovertools reclassify-purpose [-limit n]")
 }

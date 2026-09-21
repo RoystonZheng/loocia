@@ -270,6 +270,17 @@ aiSelected := selected
 | 1 | 5 | false |
 | 4 | 1 | false |
 
+### 6.4 队列优先级与富化容错
+
+`RawStore.ListUnprocessed` 对未处理队列按来源做轻量优先级排序：`source_kind=aihot` 先于普通 RSS/HTML/MP backlog。原因是 AIHOT 是补漏源，如果严格按最老 `fetched_at` 处理，历史 RSS 未处理队列会挡住当日 AIHOT 内容，导致 `/api/public/items?source_kind=aihot` 长时间为空。
+
+`Processor` 对单条富化做以下保护：
+
+- 单条处理有总超时，避免一次 LLM/页面/抽词调用拖住整轮 `pulse`。
+- AIHOT 不追溯原网页做 PageResolver 补正文，直接使用 AIHOT API 给出的标题、摘要和原文链接进入富化，避免补漏链路被外部页面抓取拖慢。
+- 模型 `category` 允许常见别名归一，如把 `discovery` 归到 `industry`，但无意义分类仍报错。
+- 模型输出多个 JSON 或 JSON 后带多余内容时，只解析第一个合法 JSON 对象，降低单条富化失败率。
+
 ## 7. 公共接口方案
 
 ### 7.1 `GET /api/public/items`
@@ -367,6 +378,10 @@ AIHOT 二手线索通过 `source="AIHOT · 二手线索"` 表达来源性质，�
 | 429/503 | adapter 返回可观察错误；来源可配置 `rate_limit` 降低频率 |
 | HTML 结构漂移 | Anthropic 来源本轮失败，不影响其他来源 |
 | AIHOT 无原文链接 | 只在二手线索上限内保留 |
+| AIHOT 被旧队列阻塞 | 未处理队列优先处理 `source_kind=aihot` |
+| 单条富化耗时过长 | 单条超时后记录 failed，其他条目继续 |
+| LLM 输出 `category=discovery` 等别名 | 归一到既有五类，无法识别的分类仍失败 |
+| LLM 在 JSON 后追加多余内容 | 只解析第一个合法 JSON 对象 |
 | DB 迁移重复执行 | `ADD COLUMN IF NOT EXISTS` + 约束存在性检查保证幂等 |
 | 旧配置只有 name/url | 兼容为 RSS + discovery |
 
@@ -381,7 +396,7 @@ AIHOT 二手线索通过 `source="AIHOT · 二手线索"` 表达来源性质，�
 5. 如需要官方公众号覆盖，设置 `AIHOT_MP_OFFICIAL_ACCOUNTS`。
 6. 手动执行一次 `pulse` smoke。
 7. 验证 `/api/public/items?mode=all&source_kind=aihot` 和前端筛选。
-8. 观察 `pulse` 日志中的 fetched、inserted、srcerrs。
+8. 观察 `pulse` 日志中的 fetched、inserted、srcerrs 及具体的 `source error: <来源>` 明细。
 
 ### 10.2 回滚策略
 
@@ -463,6 +478,9 @@ CHECK source_role IN ('official','professional','discovery')
 | TC-PIPE-001 | Prompt 来源上下文 | prompt 包含来源名称和来源角色 |
 | TC-PIPE-002 | 双门槛通过 | relevance=4, score=3 进入精选 |
 | TC-PIPE-003 | 相关度不足 | relevance=3, score=5 不进精选 |
+| TC-PIPE-004 | AIHOT 队列优先 | AIHOT raw 不被旧 RSS backlog 长时间阻塞 |
+| TC-PIPE-005 | AIHOT 不追溯页面 | AIHOT 富化不调用 PageResolver 抓原文 |
+| TC-PIPE-006 | LLM 输出容错 | category 别名归一，尾部多余 JSON 文本不丢整条 |
 | TC-API-001 | `source_kind=html` | 返回网页直采内容 |
 | TC-API-002 | `source_kind=aihot` | 返回 AIHOT 补漏内容 |
 | TC-API-003 | 非法 `source_kind` | 返回 400 |
@@ -497,4 +515,3 @@ CHECK source_role IN ('official','professional','discovery')
 | AIHOT 授权边界 | 只用公开只读 API，不抓网页正文 | 对外再分发前补授权确认 |
 | LLM 评分波动 | 程序双门槛兜底，prompt 固定来源角色规则 | 后续可做抽样人工评估 |
 | 测试库并发污染 | Playwright 调度 Go 多 package 测试时使用 `-p=1` | CI 若并发跑 DB 测试，优先每包独立库 |
-

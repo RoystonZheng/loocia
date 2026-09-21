@@ -33,6 +33,12 @@ describe('ItemCard', () => {
     expect(document.querySelector('.badge-score')!.getAttribute('data-tier')).toBe('S')
   })
 
+  it('marks AIHOT-sourced items without replacing the original source', () => {
+    render(<ItemCard item={{ ...base, source: 'Preferred Networks', sourceKind: 'aihot', selected: false }} />)
+    expect(screen.getByText('Preferred Networks')).toBeInTheDocument()
+    expect(screen.getByText('AIHOT补漏')).toBeInTheDocument()
+  })
+
   it('links the title to the permalink', () => {
     render(<ItemCard item={base} />)
     const link = screen.getByRole('link', { name: /模型 X 发布/ })

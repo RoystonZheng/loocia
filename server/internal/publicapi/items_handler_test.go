@@ -29,7 +29,7 @@ func mkItem(id string, pub time.Time) items.Item {
 	score := 3
 	return items.Item{
 		ID: id, Title: "t-" + id, URL: "https://x/" + id, Permalink: "/items/" + id,
-		Source: "S", PublishedAt: &pub, Summary: &summary, Category: &cat, Score: &score,
+		Source: "S", SourceKind: "rss", PublishedAt: &pub, Summary: &summary, Category: &cat, Score: &score,
 		Selected: true, Present: true,
 	}
 }
@@ -67,6 +67,9 @@ func TestHandlerReturnsEnvelope(t *testing.T) {
 	if !env.HasNext || env.NextCursor == nil {
 		t.Fatalf("expected hasNext + nextCursor: %+v", env)
 	}
+	if env.Items[0].SourceKind != "rss" {
+		t.Fatalf("sourceKind: %+v", env.Items[0])
+	}
 	if f.got.Limit != 3 {
 		t.Fatalf("handler should request take+1 (3), got %d", f.got.Limit)
 	}
@@ -93,6 +96,19 @@ func TestHandlerBadParamIs400(t *testing.T) {
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/public/items?take=999", nil))
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlerPassesScoreMin(t *testing.T) {
+	f := &fakeLister{result: []items.Item{mkItem("a", hNow.Add(-time.Hour))}}
+	h := newTestHandler(f)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/public/items?mode=all&score_min=4", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code: %d", rr.Code)
+	}
+	if f.got.ScoreMin == nil || *f.got.ScoreMin != 4 {
+		t.Fatalf("score_min: %+v", f.got.ScoreMin)
 	}
 }
 

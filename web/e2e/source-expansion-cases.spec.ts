@@ -18,6 +18,7 @@ type PublicItem = {
   url: string
   permalink: string
   source: string
+  sourceKind?: 'rss' | 'html' | 'mp' | 'aihot'
   selected: boolean
   category?: string
   score?: number
@@ -63,7 +64,7 @@ test.describe('AI Cool 第四部分：信息源扩展 Playwright 验收', () => 
 
     await test.step('打开全部动态并展示来源分组', async () => {
       await page.goto('/#all')
-      await expect(page.getByRole('heading', { name: '全部 AI 动态' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'AI 动态' })).toBeVisible()
       for (const label of ['全部来源', 'RSS/Atom', '网页直采', '公众号', 'AIHOT补漏']) {
         await expect(page.getByRole('button', { name: label })).toBeVisible()
       }
@@ -95,6 +96,7 @@ test.describe('AI Cool 第四部分：信息源扩展 Playwright 验收', () => 
       await page.getByRole('button', { name: 'AIHOT补漏' }).click()
       await expect(page.getByRole('link', { name: 'AIHOT 二手补漏资讯' })).toBeVisible()
       await expect(page.getByText('AIHOT · 二手线索')).toBeVisible()
+      await expect(page.locator('.badge-source-kind')).toHaveText('AIHOT补漏')
       await expect(page.getByText('discovery')).toBeHidden()
       expect(calls.items.at(-1)).toContain('source_kind=aihot')
     })
@@ -236,10 +238,12 @@ function itemForSource(sourceKind: string): PublicItem {
 }
 
 function item(id: string, title: string, source: string, selected: boolean, sourceRole: string): PublicItem {
+  const sourceKind = sourceKindFromID(id)
   return {
     id,
     title,
     source,
+    ...(sourceKind ? { sourceKind } : {}),
     selected,
     source_role: sourceRole,
     url: `https://example.com/${id}`,
@@ -248,6 +252,12 @@ function item(id: string, title: string, source: string, selected: boolean, sour
     score: selected ? 4 : undefined,
     summary: `${title} 摘要`,
   }
+}
+
+function sourceKindFromID(id: string): PublicItem['sourceKind'] | undefined {
+  const prefix = id.split('-')[0]
+  if (prefix === 'rss' || prefix === 'html' || prefix === 'mp' || prefix === 'aihot') return prefix
+  return undefined
 }
 
 function emptyToolList() {

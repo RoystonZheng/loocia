@@ -40,7 +40,9 @@ func (s *RawStore) InsertRaw(ctx context.Context, r RawItem) (bool, error) {
 	return tag.RowsAffected() == 1, nil
 }
 
-// ListUnprocessed returns up to limit oldest-first unprocessed raw items.
+// ListUnprocessed returns up to limit unprocessed raw items. Discovery
+// supplements such as AIHOT are prioritized so a backlog of older RSS rows does
+// not keep high-signal discovery content out of the public feed.
 func (s *RawStore) ListUnprocessed(ctx context.Context, limit int) ([]RawItem, error) {
 	if limit <= 0 {
 		limit = 100
@@ -49,7 +51,7 @@ func (s *RawStore) ListUnprocessed(ctx context.Context, limit int) ([]RawItem, e
 		SELECT id, source, source_kind, source_role, url, title, published_at, raw_content, image_url, video_url
 		FROM raw_items
 		WHERE processed = false
-		ORDER BY fetched_at ASC
+		ORDER BY CASE WHEN source_kind = 'aihot' THEN 0 ELSE 1 END, fetched_at ASC
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

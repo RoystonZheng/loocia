@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Feed } from './Feed'
 import type { ItemList } from '../api/items'
 
+vi.mock('./HotTopics', () => ({ HotTopics: () => null }))
+
 function page(items: string[], nextCursor: string | null): ItemList {
   return {
     count: items.length,
@@ -77,6 +79,32 @@ describe('Feed', () => {
     expect(screen.queryByText('t-a')).toBeNull()
     const mpUrl = fetchMock.mock.calls[1][0] as string
     expect(mpUrl).toContain('source_kind=mp')
+  })
+
+  it('switching the article filter supports 精选 and score thresholds', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => page(['a'], null) })
+      .mockResolvedValueOnce({ ok: true, json: async () => page(['selected'], null) })
+      .mockResolvedValueOnce({ ok: true, json: async () => page(['score4'], null) })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<Feed mode="all" />)
+    await waitFor(() => expect(screen.getByText('t-a')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByRole('combobox', { name: '资讯筛选' }), { target: { value: 'selected' } })
+    await waitFor(() => expect(screen.getByText('t-selected')).toBeInTheDocument())
+    expect(screen.queryByText('t-a')).toBeNull()
+    const selectedUrl = fetchMock.mock.calls[1][0] as string
+    expect(selectedUrl).toContain('mode=selected')
+    expect(selectedUrl).not.toContain('score_min=')
+    expect(selectedUrl).not.toContain('cursor=')
+
+    fireEvent.change(screen.getByRole('combobox', { name: '资讯筛选' }), { target: { value: 'score-4' } })
+    await waitFor(() => expect(screen.getByText('t-score4')).toBeInTheDocument())
+    const scoreUrl = fetchMock.mock.calls[2][0] as string
+    expect(scoreUrl).toContain('mode=all')
+    expect(scoreUrl).toContain('score_min=4')
+    expect(scoreUrl).not.toContain('cursor=')
   })
 
   it('supports html and aihot source filters', async () => {

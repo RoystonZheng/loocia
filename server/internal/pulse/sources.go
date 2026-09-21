@@ -25,6 +25,7 @@ type SourceConfig struct {
 	MaxSecondaryPerRun int    `json:"max_secondary_per_run,omitempty"`
 	SecondaryCap       int    `json:"secondary_cap,omitempty"`
 	TimeoutSeconds     int    `json:"timeout_seconds,omitempty"`
+	RetryAttempts      int    `json:"retry_attempts,omitempty"`
 	Window             string `json:"window,omitempty"`
 	RateLimit          string `json:"rate_limit,omitempty"`
 }
@@ -57,7 +58,7 @@ var defaultSources = []SourceConfig{
 	{Name: "NVIDIA Generative AI", URL: "https://developer.nvidia.com/blog/category/generative-ai/feed/", Adapter: adapterRSS, SourceKind: ingest.SourceKindRSS, SourceRole: ingest.SourceRoleOfficial},
 	{Name: "人人都是产品经理", URL: "https://www.woshipm.com/feed", Adapter: adapterRSS, SourceKind: ingest.SourceKindRSS, SourceRole: ingest.SourceRoleProfessional},
 	{Name: "极客公园", URL: "https://www.geekpark.net/rss", Adapter: adapterRSS, SourceKind: ingest.SourceKindRSS, SourceRole: ingest.SourceRoleProfessional},
-	{Name: "Reddit LocalLLaMA", URL: "https://www.reddit.com/r/LocalLLaMA/new/.rss", Adapter: adapterRSS, SourceKind: ingest.SourceKindRSS, SourceRole: ingest.SourceRoleDiscovery},
+	{Name: "Reddit LocalLLaMA", URL: "https://www.reddit.com/r/LocalLLaMA/new/.rss", Adapter: adapterRSS, SourceKind: ingest.SourceKindRSS, SourceRole: ingest.SourceRoleDiscovery, TimeoutSeconds: 12, RetryAttempts: 2},
 	{Name: "Reddit MachineLearning", URL: "https://www.reddit.com/r/MachineLearning/new/.rss", Adapter: adapterRSS, SourceKind: ingest.SourceKindRSS, SourceRole: ingest.SourceRoleDiscovery, Enabled: boolPtr(false)},
 	{Name: "AIHOT", URL: "https://aihot.news/api/v1/items", Adapter: adapterAIHOTV1Items, SourceKind: ingest.SourceKindAIHOT, SourceRole: ingest.SourceRoleDiscovery, MaxItemsPerRun: defaultAIHOTLimit, MaxSecondaryPerRun: defaultAIHOTSecondary, Window: defaultAIHOTWindow},
 }
@@ -103,15 +104,16 @@ func LoadSources(path string) ([]ingest.Source, error) {
 
 type normalizedSourceConfig struct {
 	SourceConfig
-	adapter      string
-	sourceKind   string
-	sourceRole   string
-	enabled      bool
-	maxItems     int
-	maxSecondary int
-	timeout      time.Duration
-	rateLimit    time.Duration
-	window       string
+	adapter       string
+	sourceKind    string
+	sourceRole    string
+	enabled       bool
+	maxItems      int
+	maxSecondary  int
+	timeout       time.Duration
+	retryAttempts int
+	rateLimit     time.Duration
+	window        string
 }
 
 func buildSource(c SourceConfig, index int) (ingest.Source, bool, error) {
@@ -130,6 +132,7 @@ func buildSource(c SourceConfig, index int) (ingest.Source, bool, error) {
 			SourceRole:     n.sourceRole,
 			MaxItemsPerRun: n.maxItems,
 			Timeout:        n.timeout,
+			RetryAttempts:  n.retryAttempts,
 		})
 	case adapterAnthropicHTML:
 		src = ingest.NewAnthropicNewsSource(n.Name, n.URL, ingest.HTMLSourceOptions{
@@ -215,21 +218,29 @@ func normalizeSourceConfig(c SourceConfig, index int) (normalizedSourceConfig, e
 	if c.TimeoutSeconds > 0 {
 		timeout = time.Duration(c.TimeoutSeconds) * time.Second
 	}
+	retryAttempts := c.RetryAttempts
+	if retryAttempts < 0 {
+		return normalizedSourceConfig{}, fmt.Errorf("source %d: retry_attempts must be non-negative", index)
+	}
+	if retryAttempts > 4 {
+		return normalizedSourceConfig{}, fmt.Errorf("source %d: retry_attempts must be <= 4", index)
+	}
 	rateLimit, err := parseRateLimit(c.RateLimit)
 	if err != nil {
 		return normalizedSourceConfig{}, fmt.Errorf("source %d: invalid rate_limit %q: %w", index, c.RateLimit, err)
 	}
 	return normalizedSourceConfig{
-		SourceConfig: c,
-		adapter:      adapter,
-		sourceKind:   sourceKind,
-		sourceRole:   sourceRole,
-		enabled:      true,
-		maxItems:     maxItems,
-		maxSecondary: maxSecondary,
-		timeout:      timeout,
-		rateLimit:    rateLimit,
-		window:       window,
+		SourceConfig:  c,
+		adapter:       adapter,
+		sourceKind:    sourceKind,
+		sourceRole:    sourceRole,
+		enabled:       true,
+		maxItems:      maxItems,
+		maxSecondary:  maxSecondary,
+		timeout:       timeout,
+		retryAttempts: retryAttempts,
+		rateLimit:     rateLimit,
+		window:        window,
 	}, nil
 }
 

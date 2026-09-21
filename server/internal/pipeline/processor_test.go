@@ -30,6 +30,20 @@ func (f fakePage) Resolve(ctx context.Context, u string) (image, video, article 
 	return f.img, f.vid, f.article
 }
 
+type countingPage struct{ calls int }
+
+func (f *countingPage) Resolve(ctx context.Context, u string) (image, video, article *string) {
+	f.calls++
+	return nil, nil, nil
+}
+
+type blockingEnricher struct{}
+
+func (blockingEnricher) Enrich(ctx context.Context, r ingest.RawItem) (Enrichment, error) {
+	<-ctx.Done()
+	return Enrichment{}, ctx.Err()
+}
+
 func TestBetterBody(t *testing.T) {
 	short := "one short line"
 	long := strings.Repeat("full article text ", 40)
@@ -98,6 +112,31 @@ func TestToItemSelectionByRelevanceAndScore(t *testing.T) {
 				t.Fatalf("AIRelevance: %v", it.AIRelevance)
 			}
 		})
+	}
+}
+
+func TestToItemPreservesAIHOTSourceKind(t *testing.T) {
+	raw := ingest.RawItem{
+		ID:         ingest.RawID("https://aihot.news/items/proof"),
+		URL:        "https://aihot.news/items/proof",
+		Source:     "AIHOT · 二手线索",
+		SourceKind: ingest.SourceKindAIHOT,
+		Title:      "AIHOT proof",
+	}
+	enrichment := Enrichment{
+		TitleCN:   "AIHOT 标签验证",
+		SummaryCN: "摘要",
+		Category:  items.CategoryIndustry,
+		Relevance: 4,
+		Score:     3,
+	}
+
+	it := toItem(raw, enrichment)
+	if it.SourceKind != ingest.SourceKindAIHOT {
+		t.Fatalf("source kind should survive raw -> item mapping: %+v", it)
+	}
+	if it.Source != raw.Source {
+		t.Fatalf("source should keep original source label: %+v", it)
 	}
 }
 
@@ -194,6 +233,42 @@ func TestProcessBatchUsesFullArticleForRSSAndHTML(t *testing.T) {
 	}
 	if gotMP.Body == nil || *gotMP.Body != mpBody {
 		t.Fatalf("mp body must stay the snippet (page not consulted for body): %v", gotMP.Body)
+	}
+}
+
+func TestProcessBatchSkipsPageResolveForAIHOT(t *testing.T) {
+	pool := testPool(t)
+	raw, itemsStore := testStores(t, pool)
+	ctx := context.Background()
+
+	body := "AIHOT summary"
+	r := ingest.RawItem{
+		ID: ingest.RawID("https://ex.com/aihot"), Source: "X：AIHOT", SourceKind: ingest.SourceKindAIHOT,
+		URL: "https://ex.com/aihot", Title: "AIHOT title", RawContent: &body,
+	}
+	if _, err := raw.InsertRaw(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	enr := fakeEnricher{out: Enrichment{TitleCN: "标题", SummaryCN: "摘要", Category: "industry", Relevance: 5, Score: 4}}
+	page := &countingPage{}
+
+	p := NewProcessor(raw, itemsStore, enr).WithPageResolver(page)
+	res, err := p.ProcessBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("ProcessBatch: %v", err)
+	}
+	if res.Processed != 1 || res.Failed != 0 {
+		t.Fatalf("result: %+v", res)
+	}
+	if page.calls != 0 {
+		t.Fatalf("AIHOT should not chase original page during enrichment, got %d calls", page.calls)
+	}
+	got, err := itemsStore.GetByID(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.SourceKind != ingest.SourceKindAIHOT {
+		t.Fatalf("source kind should survive into items: %+v", got)
 	}
 }
 
@@ -319,6 +394,34 @@ func TestProcessBatchIsolatesEnrichFailure(t *testing.T) {
 	}
 	if len(un) != 1 {
 		t.Fatalf("failed item should remain unprocessed, got %d", len(un))
+	}
+}
+
+func TestProcessBatchTimesOutSingleItem(t *testing.T) {
+	pool := testPool(t)
+	raw, itemsStore := testStores(t, pool)
+	ctx := context.Background()
+
+	if _, err := raw.InsertRaw(ctx, ingest.RawItem{
+		ID: ingest.RawID("https://ex.com/slow"), Source: "S", SourceKind: "rss",
+		URL: "https://ex.com/slow", Title: "slow",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	oldTimeout := itemProcessingTimeout
+	itemProcessingTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { itemProcessingTimeout = oldTimeout })
+
+	p := NewProcessor(raw, itemsStore, blockingEnricher{})
+	res, err := p.ProcessBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("ProcessBatch top-level: %v", err)
+	}
+	if res.Processed != 0 || res.Failed != 1 || len(res.Errors) != 1 {
+		t.Fatalf("timeout should be isolated as one failed item: %+v", res)
+	}
+	if !errors.Is(res.Errors[0], context.DeadlineExceeded) {
+		t.Fatalf("timeout error should wrap context deadline: %v", res.Errors[0])
 	}
 }
 

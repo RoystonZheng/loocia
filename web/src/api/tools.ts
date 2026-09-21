@@ -80,7 +80,65 @@ export interface DiscoveryRun {
   errorClass?: string
   errorMessage?: string
   rateLimited: boolean
-  rateLimitResetAt?: string
+	rateLimitResetAt?: string
+}
+
+export type GitHubTokenStrategy = 'round_robin' | 'fixed' | 'failover'
+
+export interface ToolSettingsTokenPreview {
+  index: number
+  masked: string
+  last4: string
+  source?: string
+}
+
+export interface ToolRuntimeSettings {
+  githubTokenCount: number
+  githubTokens: ToolSettingsTokenPreview[]
+  defaultGitHubTokenCount: number
+  defaultGitHubTokens: ToolSettingsTokenPreview[]
+  githubBaseUrl: string
+  githubTokenStrategy: GitHubTokenStrategy
+  githubActiveTokenIndex: number
+  includeDefaultGitHubTokens: boolean
+  githubMaxPages: number
+  githubPerPage: number
+  githubRequestIntervalMs: number
+  starSnapshotLimit: number
+  updatedBy?: string
+  updatedAt?: string
+}
+
+export interface SaveToolSettingsInput {
+  githubTokens?: string[]
+  clearGitHubTokens?: boolean
+  githubBaseUrl?: string
+  githubTokenStrategy?: GitHubTokenStrategy
+  githubActiveTokenIndex?: number
+  includeDefaultGitHubTokens?: boolean
+  githubMaxPages?: number
+  githubPerPage?: number
+  githubRequestIntervalMs?: number
+  starSnapshotLimit?: number
+  actor: string
+}
+
+export interface CheckGitHubSettingsInput {
+  githubTokens?: string[]
+  githubBaseUrl?: string
+  includeDefaultGitHubTokens?: boolean
+}
+
+export interface GitHubTokenCheck {
+  index: number
+  masked: string
+  last4: string
+  source: string
+  ok: boolean
+  limit?: number
+  remaining?: number
+  resetAt?: string
+  error?: string
 }
 
 export interface GitHubRepositoryPreview {
@@ -97,6 +155,7 @@ export interface GitHubRepositoryPreview {
   forks: number
   openIssues: number
   topics: string[]
+  purposeTags: string[]
   licenseSpdx?: string
   defaultBranch?: string
   pushedAt?: string
@@ -142,6 +201,8 @@ export interface ToolItem {
   openIssues: number
   stars7d?: number
   topics: string[]
+  purposeTags: string[]
+  purposeTagsManuallySet: boolean
   licenseSpdx?: string
   defaultBranch?: string
   pushedAt?: string
@@ -169,6 +230,7 @@ export interface ToolListStats {
   unlinkedEvaluationCount: number
   evaluatorCount: number
   latestUpdatedAt?: string
+  purposeTags: string[]
 }
 
 export interface ToolList {
@@ -186,6 +248,7 @@ export interface ListToolsQuery {
   sort?: ToolSort
   source?: ToolSourceType
   sources?: ToolSourceType[]
+  purposeTags?: string[]
   q?: string
   take?: number
   offset?: number
@@ -265,8 +328,23 @@ export async function pauseToolConfig(id: string, actor: string): Promise<Discov
 }
 
 export async function resumeToolConfig(id: string, actor: string): Promise<DiscoveryRun> {
-  const data = await postToolAPI<{ run: DiscoveryRun }>('/api/tools/configs/resume', { id, actor })
-  return data.run
+	const data = await postToolAPI<{ run: DiscoveryRun }>('/api/tools/configs/resume', { id, actor })
+	return data.run
+}
+
+export async function fetchToolSettings(): Promise<ToolRuntimeSettings> {
+  const data = await requestToolAPI<{ settings: ToolRuntimeSettings }>('/api/tools/settings')
+  return data.settings
+}
+
+export async function saveToolSettings(input: SaveToolSettingsInput): Promise<ToolRuntimeSettings> {
+  const data = await postToolAPI<{ settings: ToolRuntimeSettings }>('/api/tools/settings', input)
+  return data.settings
+}
+
+export async function checkGitHubSettings(input: CheckGitHubSettingsInput): Promise<GitHubTokenCheck[]> {
+  const data = await postToolAPI<{ tokens: GitHubTokenCheck[] }>('/api/tools/settings/check-github', input)
+  return data.tokens
 }
 
 export function fetchTools(query: ListToolsQuery): Promise<ToolList> {
@@ -275,6 +353,7 @@ export function fetchTools(query: ListToolsQuery): Promise<ToolList> {
   if (query.sort) params.set('sort', query.sort)
   const sources = query.sources ?? (query.source ? [query.source] : [])
   for (const source of sources) params.append('source', source)
+  for (const tag of query.purposeTags ?? []) params.append('purposeTag', tag)
   if (query.q) params.set('q', query.q)
   if (query.take != null) params.set('take', String(query.take))
   if (query.offset != null) params.set('offset', String(query.offset))
@@ -292,8 +371,8 @@ export async function previewManualTool(repoUrl: string): Promise<GitHubReposito
   return data.repository
 }
 
-export async function addManualTool(repoUrl: string, actor: string): Promise<{ tool: ToolItem; created: boolean; duplicate: boolean }> {
-  return postToolAPI('/api/tools/manual/add', { repoUrl, actor })
+export async function addManualTool(repoUrl: string, actor: string, purposeTags?: string[]): Promise<{ tool: ToolItem; created: boolean; duplicate: boolean }> {
+  return postToolAPI('/api/tools/manual/add', { repoUrl, actor, purposeTags })
 }
 
 export async function importTeamTool(input: {
@@ -301,8 +380,17 @@ export async function importTeamTool(input: {
   operator: string
   cooperUrl?: string
   finalSummary?: string
+  purposeTags?: string[]
 }): Promise<{ tool: ToolItem; created: boolean; duplicate: boolean }> {
   return postToolAPI('/api/tools/team/import', input)
+}
+
+export function updateToolPurposeTags(input: {
+  toolId: string
+  actor: string
+  purposeTags: string[]
+}): Promise<{ tool: ToolItem }> {
+  return postToolAPI('/api/tools/purpose-tags', input)
 }
 
 export function updateTeamTool(input: {

@@ -1,10 +1,9 @@
 export type View = 'selected' | 'all' | 'daily' | 'graph'
-  | 'tools-configs' | 'tools-discovered' | 'tools-evaluating' | 'tools-team'
+  | 'tools-configs' | 'tools-accounts' | 'tools-discovered' | 'tools-evaluating' | 'tools-team'
 
 export interface SidebarCounts {
   configs?: number
   discovered?: number
-  evaluating?: number
   team?: number
 }
 
@@ -18,15 +17,14 @@ const NAV_GROUPS: {
     title: '内容',
     items: [
       { view: 'daily', label: 'AI 日报', icon: '▤' },
-      { view: 'selected', label: '精选资讯', icon: '✦' },
+      { view: 'all', label: 'AI 动态', icon: '≣' },
       { view: 'graph', label: '话题图谱', icon: '◇' },
     ],
   },
   {
     title: '工具',
     items: [
-      { view: 'tools-discovered', label: '已发现工具', icon: '◎', badge: 'discovered' },
-      { view: 'tools-evaluating', label: '测评中', icon: '▣', badge: 'evaluating' },
+      { view: 'tools-discovered', label: '工具百宝箱', icon: '◎', badge: 'discovered' },
       { view: 'tools-team', label: '团队工具', icon: '⌁', badge: 'team' },
     ],
   },
@@ -68,10 +66,11 @@ export function Sidebar({
             <div className="sb-group">{group.title}</div>
             {group.items.map((item) => {
               const badge = item.badge ? counts[item.badge] : undefined
+              const active = view === item.view || (item.view === 'all' && view === 'selected')
               return (
                 <button
                   key={item.view}
-                  className={`sb-item${view === item.view ? ' active' : ''}`}
+                  className={`sb-item${active ? ' active' : ''}`}
                   onClick={() => onView(item.view)}
                 >
                   <span className="sb-icon" aria-hidden>{item.icon}</span>

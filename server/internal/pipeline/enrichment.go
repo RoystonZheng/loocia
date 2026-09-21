@@ -113,15 +113,39 @@ func parseEnrichment(text string) (Enrichment, error) {
 	if err := json.Unmarshal([]byte(jsonStr), &e); err != nil {
 		return e, fmt.Errorf("enrichment json: %w", err)
 	}
-	if !validCategories[e.Category] {
+	category, ok := normalizeCategory(e.Category)
+	if !ok {
 		return e, fmt.Errorf("invalid category %q", e.Category)
 	}
+	e.Category = category
 	e.Score = clampTier(e.Score)
 	e.Relevance = clampTier(e.Relevance)
 	if e.TitleCN == "" {
 		return e, fmt.Errorf("empty title_cn")
 	}
 	return e, nil
+}
+
+func normalizeCategory(category string) (string, bool) {
+	c := strings.ToLower(strings.TrimSpace(category))
+	c = strings.ReplaceAll(c, "_", "-")
+	if validCategories[c] {
+		return c, true
+	}
+	switch c {
+	case "ai-model", "model", "models", "llm":
+		return items.CategoryAIModels, true
+	case "ai-product", "product", "products", "tool", "tools":
+		return items.CategoryAIProducts, true
+	case "research", "paper", "papers":
+		return items.CategoryPaper, true
+	case "tutorial", "how-to", "howto", "tips", "guide":
+		return items.CategoryTip, true
+	case "business", "market", "news", "discovery", "source-discovery":
+		return items.CategoryIndustry, true
+	default:
+		return "", false
+	}
 }
 
 // clampTier bounds a 1-5 ordinal; out-of-range model output is clamped rather
@@ -144,9 +168,13 @@ func extractJSONObject(text string) (string, error) {
 	s = strings.TrimSuffix(s, "```")
 	s = strings.TrimSpace(s)
 	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start < 0 || end < 0 || end < start {
+	if start < 0 {
 		return "", fmt.Errorf("no JSON object found in model output")
 	}
-	return s[start : end+1], nil
+	var raw json.RawMessage
+	dec := json.NewDecoder(strings.NewReader(s[start:]))
+	if err := dec.Decode(&raw); err != nil {
+		return "", fmt.Errorf("no JSON object found in model output: %w", err)
+	}
+	return string(raw), nil
 }

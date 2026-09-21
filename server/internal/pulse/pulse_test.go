@@ -2,6 +2,7 @@ package pulse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,19 @@ type fakeLLM struct{ reply string }
 
 func (f fakeLLM) Complete(ctx context.Context, system, user string) (string, error) {
 	return f.reply, nil
+}
+
+func TestSourceErrorMessages(t *testing.T) {
+	got := sourceErrorMessages([]error{errors.New(`source "A": timeout`), nil, errors.New(`source "B": 503`)})
+	want := []string{`source "A": timeout`, `source "B": 503`}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
 }
 
 func testPool(t *testing.T) *pgxpool.Pool {

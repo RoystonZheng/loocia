@@ -51,6 +51,14 @@ const (
 	SortStars7D SortMode = "stars7d"
 )
 
+type GitHubTokenStrategy string
+
+const (
+	GitHubTokenStrategyRoundRobin GitHubTokenStrategy = "round_robin"
+	GitHubTokenStrategyFixed      GitHubTokenStrategy = "fixed"
+	GitHubTokenStrategyFailover   GitHubTokenStrategy = "failover"
+)
+
 type EvaluationResult string
 
 const (
@@ -126,6 +134,23 @@ type RunResult struct {
 	RateLimitResetAt  *time.Time
 }
 
+type ToolRuntimeSettings struct {
+	ID                         string
+	GitHubTokens               []string
+	GitHubBaseURL              string
+	GitHubTokenStrategy        GitHubTokenStrategy
+	GitHubActiveTokenIndex     int
+	IncludeDefaultGitHubTokens bool
+	GitHubMaxPages             int
+	GitHubPerPage              int
+	GitHubRequestIntervalMS    int
+	StarSnapshotLimit          int
+	CreatedBy                  string
+	UpdatedBy                  string
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
+}
+
 type GitHubRepo struct {
 	NodeID                 string
 	Owner                  string
@@ -146,6 +171,8 @@ type GitHubRepo struct {
 	PushedAt               *time.Time
 	Archived               bool
 	Fork                   bool
+	PurposeTags            []string
+	PurposeTagsManuallySet bool
 }
 
 type DiscoverySource struct {
@@ -177,6 +204,8 @@ type Tool struct {
 	Forks                  int
 	OpenIssues             int
 	Topics                 []string
+	PurposeTags            []string
+	PurposeTagsManuallySet bool
 	LicenseSPDX            *string
 	DefaultBranch          *string
 	PushedAt               *time.Time

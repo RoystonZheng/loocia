@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -65,17 +66,103 @@ type GitHubSearchResult struct {
 }
 
 type HTTPGitHubClient struct {
-	BaseURL string
-	Token   string
-	Client  *http.Client
+	BaseURL                    string
+	Token                      string
+	DefaultTokens              []string
+	Tokens                     []string
+	TokenStrategy              GitHubTokenStrategy
+	ActiveTokenIndex           int
+	IncludeDefaultGitHubTokens bool
+	Client                     *http.Client
+	mu                         sync.Mutex
+	next                       int
 }
 
 func NewHTTPGitHubClient(token string) *HTTPGitHubClient {
 	return &HTTPGitHubClient{
-		BaseURL: GitHubDefaultBaseURL,
-		Token:   token,
-		Client:  &http.Client{Timeout: 30 * time.Second},
+		BaseURL:                    GitHubDefaultBaseURL,
+		Token:                      strings.TrimSpace(token),
+		DefaultTokens:              NormalizeGitHubTokens([]string{token}),
+		TokenStrategy:              GitHubTokenStrategyRoundRobin,
+		IncludeDefaultGitHubTokens: true,
+		Client:                     &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+func IsValidGitHubTokenStrategy(strategy GitHubTokenStrategy) bool {
+	switch strategy {
+	case GitHubTokenStrategyRoundRobin, GitHubTokenStrategyFixed, GitHubTokenStrategyFailover:
+		return true
+	default:
+		return false
+	}
+}
+
+func SplitGitHubTokens(raw string) []string {
+	return NormalizeGitHubTokens(strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '，' || r == '；'
+	}))
+}
+
+func NormalizeGitHubTokens(tokens []string) []string {
+	out := make([]string, 0, len(tokens))
+	seen := map[string]bool{}
+	for _, token := range tokens {
+		token = strings.TrimSpace(token)
+		if token == "" || seen[token] {
+			continue
+		}
+		seen[token] = true
+		out = append(out, token)
+	}
+	return out
+}
+
+func (c *HTTPGitHubClient) SetTokens(tokens []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Tokens = NormalizeGitHubTokens(tokens)
+	c.next = 0
+}
+
+func (c *HTTPGitHubClient) SetDefaultTokens(tokens []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.DefaultTokens = NormalizeGitHubTokens(append([]string{c.Token}, tokens...))
+}
+
+func (c *HTTPGitHubClient) SetTokenSelection(strategy GitHubTokenStrategy, activeIndex int, includeDefaultTokens bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !IsValidGitHubTokenStrategy(strategy) {
+		strategy = GitHubTokenStrategyRoundRobin
+	}
+	c.TokenStrategy = strategy
+	if activeIndex < 0 {
+		activeIndex = 0
+	}
+	c.ActiveTokenIndex = activeIndex
+	c.IncludeDefaultGitHubTokens = includeDefaultTokens
+}
+
+func (c *HTTPGitHubClient) AuthTokens() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.authTokensLocked()
+}
+
+func (c *HTTPGitHubClient) authTokensLocked() []string {
+	tokens := []string{}
+	if c.IncludeDefaultGitHubTokens {
+		tokens = append(tokens, c.DefaultTokens...)
+	}
+	if len(c.Tokens) > 0 {
+		tokens = append(tokens, c.Tokens...)
+	}
+	if len(tokens) == 0 && strings.TrimSpace(c.Token) != "" {
+		tokens = append(tokens, strings.TrimSpace(c.Token))
+	}
+	return NormalizeGitHubTokens(tokens)
 }
 
 func (c *HTTPGitHubClient) SearchRepositories(ctx context.Context, req GitHubSearchRequest) (GitHubSearchResult, error) {
@@ -122,6 +209,95 @@ func (c *HTTPGitHubClient) GetRepository(ctx context.Context, owner, repo string
 }
 
 func (c *HTTPGitHubClient) getJSON(ctx context.Context, path string, query url.Values, out any) error {
+	tokens := c.orderedAuthTokens()
+	if len(tokens) == 0 {
+		return c.getJSONWithToken(ctx, path, query, out, "")
+	}
+	var lastErr error
+	for _, token := range tokens {
+		err := c.getJSONWithToken(ctx, path, query, out, token)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		var derr *DiscoveryError
+		if !AsDiscoveryError(err, &derr) || !derr.RateLimited {
+			return err
+		}
+	}
+	return lastErr
+}
+
+func (c *HTTPGitHubClient) orderedAuthTokens() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	tokens := c.authTokensLocked()
+	if len(tokens) == 0 {
+		return nil
+	}
+	index := c.ActiveTokenIndex
+	if index >= len(tokens) {
+		index = 0
+	}
+	switch c.TokenStrategy {
+	case GitHubTokenStrategyFixed:
+		return []string{tokens[index]}
+	case GitHubTokenStrategyFailover:
+		return rotateTokens(tokens, index)
+	default:
+		start := c.nextAuthTokenIndexLocked(tokens)
+		return rotateTokens(tokens, start)
+	}
+}
+
+func (c *HTTPGitHubClient) nextAuthTokenIndexLocked(tokens []string) int {
+	if len(tokens) == 1 {
+		return 0
+	}
+	index := c.next % len(tokens)
+	c.next = (c.next + 1) % len(tokens)
+	return index
+}
+
+func rotateTokens(tokens []string, start int) []string {
+	if len(tokens) == 0 {
+		return nil
+	}
+	if start < 0 || start >= len(tokens) {
+		start = 0
+	}
+	out := make([]string, 0, len(tokens))
+	out = append(out, tokens[start:]...)
+	out = append(out, tokens[:start]...)
+	return out
+}
+
+type GitHubRateLimit struct {
+	Limit     int
+	Remaining int
+	ResetAt   *time.Time
+}
+
+func (c *HTTPGitHubClient) CheckToken(ctx context.Context, token string) (GitHubRateLimit, error) {
+	var payload struct {
+		Rate struct {
+			Limit     int   `json:"limit"`
+			Remaining int   `json:"remaining"`
+			Reset     int64 `json:"reset"`
+		} `json:"rate"`
+	}
+	if err := c.getJSONWithToken(ctx, "/rate_limit", nil, &payload, strings.TrimSpace(token)); err != nil {
+		return GitHubRateLimit{}, err
+	}
+	var resetAt *time.Time
+	if payload.Rate.Reset > 0 {
+		t := time.Unix(payload.Rate.Reset, 0).UTC()
+		resetAt = &t
+	}
+	return GitHubRateLimit{Limit: payload.Rate.Limit, Remaining: payload.Rate.Remaining, ResetAt: resetAt}, nil
+}
+
+func (c *HTTPGitHubClient) getJSONWithToken(ctx context.Context, path string, query url.Values, out any, token string) error {
 	base := c.BaseURL
 	if base == "" {
 		base = GitHubDefaultBaseURL
@@ -145,8 +321,8 @@ func (c *HTTPGitHubClient) getJSON(ctx context.Context, path string, query url.V
 	httpReq.Header.Set("Accept", "application/vnd.github+json")
 	httpReq.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	httpReq.Header.Set("User-Agent", "ai-tool/0.1")
-	if c.Token != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := client.Do(httpReq)

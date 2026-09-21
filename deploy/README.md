@@ -41,6 +41,9 @@ Mac 只负责交叉编译 + scp。
 - 失败条目留在 raw_items 未处理态,下轮 pulse 自动重试;毒条目不会死循环
   (无进展即停批)。
 - LLM key 轮换后无需改动(每次执行时从 .env 现读)。
+- 如果生产机无法直连 Reddit 等外部来源，可在 `/root/wechat-push/.env` 增加
+  `AIHOT_SOURCE_HTTP_PROXY=http://127.0.0.1:端口`。该代理只用于信息源请求，
+  不会改写内部 LLM 请求；配置后下一轮 `pulse` 会自动使用。
 - AI Tool 使用 `AI_TOOL_GITHUB_TOKEN` 访问 GitHub API。上线前把 token 写入
   `/root/wechat-push/.env`，不要写进仓库；可选配置 `AI_TOOL_GITHUB_MAX_PAGES` 控制单次查询分页上限，
   `AI_TOOL_GITHUB_REQUEST_INTERVAL_MS` 控制 GitHub 请求间隔，`AI_TOOL_STAR_SNAPSHOT_LIMIT`

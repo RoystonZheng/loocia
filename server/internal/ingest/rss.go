@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,6 +118,7 @@ type RSSSource struct {
 	sourceKind string
 	sourceRole string
 	maxItems   int
+	attempts   int
 	client     *http.Client
 }
 
@@ -129,6 +131,7 @@ type RSSSourceOptions struct {
 	SourceRole     string
 	MaxItemsPerRun int
 	Timeout        time.Duration
+	RetryAttempts  int
 }
 
 func NewRSSSourceWithOptions(name, feedURL string, opts RSSSourceOptions) *RSSSource {
@@ -140,38 +143,110 @@ func NewRSSSourceWithOptions(name, feedURL string, opts RSSSourceOptions) *RSSSo
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
+	attempts := opts.RetryAttempts
+	if attempts <= 0 {
+		attempts = 2
+	}
+	if attempts > 4 {
+		attempts = 4
+	}
 	return &RSSSource{
 		name:       name,
 		feedURL:    feedURL,
 		sourceKind: sourceKind,
 		sourceRole: DefaultSourceRole(opts.SourceRole),
 		maxItems:   opts.MaxItemsPerRun,
-		client:     &http.Client{Timeout: timeout},
+		attempts:   attempts,
+		client:     newSourceHTTPClient(timeout),
 	}
 }
 
 func (r *RSSSource) Name() string { return r.name }
 
 func (r *RSSSource) Fetch(ctx context.Context) ([]RawItem, error) {
+	var lastErr error
+	for attempt := 1; attempt <= r.attempts; attempt++ {
+		items, retry, retryAfter, err := r.fetchOnce(ctx)
+		if err == nil {
+			return items, nil
+		}
+		lastErr = err
+		if !retry || attempt == r.attempts {
+			return nil, err
+		}
+		if err := waitRSSRetry(ctx, rssRetryDelay(attempt, retryAfter)); err != nil {
+			return nil, fmt.Errorf("fetch %q: retry wait: %w", r.name, err)
+		}
+	}
+	return nil, lastErr
+}
+
+const (
+	rssUserAgent = "aihot-ingest/0.2 (+https://aihot.virxact.com/)"
+	rssAccept    = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.1"
+	rssRetryCap  = 3 * time.Second
+	rssRetryBase = 250 * time.Millisecond
+)
+
+func (r *RSSSource) fetchOnce(ctx context.Context) ([]RawItem, bool, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.feedURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, "", err
 	}
-	req.Header.Set("User-Agent", "aihot-ingest/0.1")
+	req.Header.Set("User-Agent", rssUserAgent)
+	req.Header.Set("Accept", rssAccept)
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch %q: %w", r.name, err)
+		return nil, true, "", fmt.Errorf("fetch %q: %w", r.name, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-			return nil, fmt.Errorf("fetch %q: status %d retry-after %s", r.name, resp.StatusCode, retryAfter)
+		retryAfter := resp.Header.Get("Retry-After")
+		retryable := resp.StatusCode == http.StatusRequestTimeout ||
+			resp.StatusCode == http.StatusTooEarly ||
+			resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode >= http.StatusInternalServerError
+		if retryAfter != "" {
+			return nil, retryable, retryAfter, fmt.Errorf("fetch %q: status %d retry-after %s", r.name, resp.StatusCode, retryAfter)
 		}
-		return nil, fmt.Errorf("fetch %q: status %d", r.name, resp.StatusCode)
+		return nil, retryable, "", fmt.Errorf("fetch %q: status %d", r.name, resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read %q body: %w", r.name, err)
+		return nil, true, "", fmt.Errorf("read %q body: %w", r.name, err)
 	}
-	return parseFeedWithOptions(body, r.name, r.sourceKind, r.sourceRole, r.maxItems)
+	items, err := parseFeedWithOptions(body, r.name, r.sourceKind, r.sourceRole, r.maxItems)
+	if err != nil {
+		return nil, false, "", err
+	}
+	return items, false, "", nil
+}
+
+func rssRetryDelay(attempt int, retryAfter string) time.Duration {
+	if seconds, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && seconds > 0 {
+		delay := time.Duration(seconds) * time.Second
+		if delay > rssRetryCap {
+			return rssRetryCap
+		}
+		return delay
+	}
+	delay := time.Duration(attempt) * rssRetryBase
+	if delay > rssRetryCap {
+		return rssRetryCap
+	}
+	return delay
+}
+
+func waitRSSRetry(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

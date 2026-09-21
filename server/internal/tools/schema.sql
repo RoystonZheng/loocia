@@ -81,6 +81,64 @@ ALTER TABLE tool_discovery_runs
     ADD CONSTRAINT tool_discovery_runs_next_page_check
     CHECK (next_page >= 1);
 
+CREATE TABLE IF NOT EXISTS tool_runtime_settings (
+    id                            TEXT PRIMARY KEY,
+    github_tokens                 JSONB NOT NULL DEFAULT '[]'::jsonb,
+    github_base_url               TEXT NOT NULL DEFAULT '',
+    github_token_strategy         TEXT NOT NULL DEFAULT 'round_robin',
+    github_active_token_index     INTEGER NOT NULL DEFAULT 0,
+    include_default_github_tokens BOOLEAN NOT NULL DEFAULT TRUE,
+    github_max_pages              INTEGER NOT NULL DEFAULT 5,
+    github_per_page               INTEGER NOT NULL DEFAULT 100,
+    github_request_interval_ms    INTEGER NOT NULL DEFAULT 2000,
+    star_snapshot_limit           INTEGER NOT NULL DEFAULT 200,
+    created_by                    TEXT NOT NULL,
+    updated_by                    TEXT NOT NULL,
+    created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (jsonb_typeof(github_tokens) = 'array'),
+    CHECK (github_token_strategy IN ('round_robin', 'fixed', 'failover')),
+    CHECK (github_active_token_index >= 0),
+    CHECK (github_max_pages > 0),
+    CHECK (github_per_page > 0 AND github_per_page <= 100),
+    CHECK (github_request_interval_ms >= 0),
+    CHECK (star_snapshot_limit > 0)
+);
+
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS github_tokens JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS github_base_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS github_token_strategy TEXT NOT NULL DEFAULT 'round_robin';
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS github_active_token_index INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS include_default_github_tokens BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS github_max_pages INTEGER NOT NULL DEFAULT 5;
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS github_per_page INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS github_request_interval_ms INTEGER NOT NULL DEFAULT 2000;
+ALTER TABLE tool_runtime_settings
+    ADD COLUMN IF NOT EXISTS star_snapshot_limit INTEGER NOT NULL DEFAULT 200;
+ALTER TABLE tool_runtime_settings
+    DROP CONSTRAINT IF EXISTS tool_runtime_settings_github_tokens_check;
+ALTER TABLE tool_runtime_settings
+    ADD CONSTRAINT tool_runtime_settings_github_tokens_check
+    CHECK (jsonb_typeof(github_tokens) = 'array');
+ALTER TABLE tool_runtime_settings
+    DROP CONSTRAINT IF EXISTS tool_runtime_settings_github_token_strategy_check;
+ALTER TABLE tool_runtime_settings
+    ADD CONSTRAINT tool_runtime_settings_github_token_strategy_check
+    CHECK (github_token_strategy IN ('round_robin', 'fixed', 'failover'));
+ALTER TABLE tool_runtime_settings
+    DROP CONSTRAINT IF EXISTS tool_runtime_settings_github_active_token_index_check;
+ALTER TABLE tool_runtime_settings
+    ADD CONSTRAINT tool_runtime_settings_github_active_token_index_check
+    CHECK (github_active_token_index >= 0);
+
 CREATE TABLE IF NOT EXISTS tools (
     id                       TEXT PRIMARY KEY,
     github_node_id           TEXT NOT NULL UNIQUE,
@@ -98,6 +156,8 @@ CREATE TABLE IF NOT EXISTS tools (
     forks                    INTEGER NOT NULL DEFAULT 0,
     open_issues              INTEGER NOT NULL DEFAULT 0,
     topics                   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    purpose_tags             JSONB NOT NULL DEFAULT '[]'::jsonb,
+    purpose_tags_manually_set BOOLEAN NOT NULL DEFAULT FALSE,
     license_spdx             TEXT,
     default_branch           TEXT,
     pushed_at                TIMESTAMPTZ,
@@ -113,8 +173,19 @@ CREATE TABLE IF NOT EXISTS tools (
     status_version           INTEGER NOT NULL DEFAULT 1,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (github_owner, github_repo)
+    UNIQUE (github_owner, github_repo),
+    CHECK (jsonb_typeof(purpose_tags) = 'array')
 );
+
+ALTER TABLE tools
+    ADD COLUMN IF NOT EXISTS purpose_tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE tools
+    ADD COLUMN IF NOT EXISTS purpose_tags_manually_set BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tools
+    DROP CONSTRAINT IF EXISTS tools_purpose_tags_check;
+ALTER TABLE tools
+    ADD CONSTRAINT tools_purpose_tags_check
+    CHECK (jsonb_typeof(purpose_tags) = 'array');
 
 CREATE TABLE IF NOT EXISTS tool_discovery_sources (
     tool_id       TEXT NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
@@ -218,6 +289,9 @@ CREATE INDEX IF NOT EXISTS tools_status_included_idx
 
 CREATE INDEX IF NOT EXISTS tools_name_trgm_idx
     ON tools USING gin (github_full_name gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS tools_purpose_tags_idx
+    ON tools USING gin (purpose_tags);
 
 CREATE INDEX IF NOT EXISTS tool_star_snapshots_lookup_idx
     ON tool_star_snapshots (tool_id, snapshot_at DESC);

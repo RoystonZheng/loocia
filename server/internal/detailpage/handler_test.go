@@ -191,15 +191,31 @@ func TestRendersItemPage(t *testing.T) {
 		"中文标题", "这是中文摘要。", "OpenAI Blog", "模型发布/更新",
 		"2026-05-07 12:00", "Original English Title",
 		`href="https://source.example/post"`, "阅读原文", // outbound
-		`href="/"`, "全部 AI 动态", // sidebar shell nav back to the SPA
-		`href="/#graph"`, "图谱", // sidebar link to the graph view
-		"AI 摘要",       // summary box label
-		"导出 Markdown", // export affordance
-		"<title>中文标题", // page title
+		`href="/"`, "AI 动态", // sidebar shell nav back to the SPA
+		`class="sb-item active" href="/#all"`, // detail pages keep AI 动态 active
+		`href="/#graph"`, "图谱",                // sidebar link to the graph view
+		`class="sb-logo"`, "2.0", // the detail shell uses the same logo card as the SPA
+		`class="sb-group">内容</div>`, // the detail shell uses the same grouped nav
+		"AI 摘要",                     // summary box label
+		"导出 Markdown",               // export affordance
+		"<title>中文标题",               // page title
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in page:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "测评中") {
+		t.Fatal("detail sidebar must not expose a standalone evaluating navigation item")
+	}
+	if !strings.Contains(body, "font-family:'Orbitron',var(--sans)") {
+		t.Fatal("detail sidebar logo must use the same font declaration as the SPA")
+	}
+	if !strings.Contains(body, "@font-face{font-family:'Orbitron';font-weight:700;font-display:swap;src:url(data:font/woff2;base64,") {
+		t.Fatal("detail sidebar logo must embed the same Orbitron font resource as the SPA")
+	}
+	if !strings.Contains(body, ".sb-item{display:grid;") ||
+		!strings.Contains(body, "cursor:pointer;line-height:normal;") {
+		t.Fatal("detail sidebar items must use the SPA line height instead of inheriting body line-height")
 	}
 }
 

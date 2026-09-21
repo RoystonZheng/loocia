@@ -34,11 +34,40 @@ func TestParseEnrichmentStripsCodeFence(t *testing.T) {
 	}
 }
 
+func TestParseEnrichmentIgnoresTrailingJSONLikeText(t *testing.T) {
+	raw := "{\"title_cn\":\"标题\",\"summary_cn\":\"摘要\",\"category\":\"paper\",\"relevance\":3,\"score\":3}\n```json\n{\"ignored\":true}\n```"
+	e, err := parseEnrichment(raw)
+	if err != nil {
+		t.Fatalf("parseEnrichment: %v", err)
+	}
+	if e.TitleCN != "标题" || e.Category != "paper" {
+		t.Fatalf("fields: %+v", e)
+	}
+}
+
 func TestParseEnrichmentRejectsBadCategory(t *testing.T) {
 	raw := `{"title_cn":"t","summary_cn":"s","category":"nonsense","relevance":3,"score":3}`
 	_, err := parseEnrichment(raw)
 	if err == nil {
 		t.Fatal("expected error for invalid category")
+	}
+}
+
+func TestParseEnrichmentNormalizesCategoryAliases(t *testing.T) {
+	cases := map[string]string{
+		"discovery":  "industry",
+		"AI_PRODUCT": "ai-products",
+		"how-to":     "tip",
+	}
+	for rawCategory, want := range cases {
+		raw := fmt.Sprintf(`{"title_cn":"t","summary_cn":"s","category":%q,"relevance":3,"score":3}`, rawCategory)
+		e, err := parseEnrichment(raw)
+		if err != nil {
+			t.Fatalf("parseEnrichment(%s): %v", rawCategory, err)
+		}
+		if e.Category != want {
+			t.Fatalf("category(%s): got %q want %q", rawCategory, e.Category, want)
+		}
 	}
 }
 

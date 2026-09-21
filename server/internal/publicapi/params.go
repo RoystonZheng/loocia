@@ -68,6 +68,14 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		p.SourceKind = &skk
 	}
 
+	if score := q.Get("score_min"); score != "" {
+		n, err := strconv.Atoi(score)
+		if err != nil || n < 1 || n > 5 {
+			return p, errBadRequest
+		}
+		p.ScoreMin = &n
+	}
+
 	p.Limit = defaultTake
 	if t := q.Get("take"); t != "" {
 		n, err := strconv.Atoi(t)

@@ -75,7 +75,7 @@ pulse.LoadSources
 发现配置或手动添加
   -> GitHub API
   -> tools 独立表
-  -> 已发现工具页面
+  -> 工具百宝箱页面
   -> 用户开始测评并填写 Cooper 链接
   -> 用户完成测评
   -> included 工具进入团队工具页面

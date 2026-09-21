@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom'
 import {
   ToolApiError,
   addManualTool,
+  checkGitHubSettings,
   deleteTeamTool,
   deleteToolConfig,
   excludeDiscoveredTool,
   fetchToolConfigs,
+  fetchToolSettings,
   fetchToolSummaryByURLKey,
   fetchTools,
   finishToolEvaluation,
@@ -16,33 +18,41 @@ import {
   resumeToolConfig,
   runToolConfig,
   saveToolConfig,
+  saveToolSettings,
   setToolConfigEnabled,
   startToolEvaluation,
   updateTeamTool,
+  updateToolPurposeTags,
   updateToolEvaluationCooperURL,
   type ConfigList,
   type DiscoveryConfig,
   type DiscoveryMethod,
   type GitHubRepositoryPreview,
+  type GitHubTokenCheck,
+  type GitHubTokenStrategy,
   type ToolItem,
   type ToolList,
   type ToolSort,
   type ToolSourceType,
   type ToolStatus,
+  type ToolRuntimeSettings,
   type TriggerMode,
 } from '../api/tools'
 import { formatBeijingTime } from '../format'
 
-export type ToolsSection = 'configs' | 'discovered' | 'evaluating' | 'team'
+export type ToolsSection = 'configs' | 'accounts' | 'discovered' | 'evaluating' | 'team'
 
 const SECTION_META: Record<ToolsSection, { title: string; sub: string; search: string }> = {
   configs: { title: '发现配置', sub: '关键词与 Topic 检索规则', search: '搜索配置或检索词' },
-  discovered: { title: '已发现工具', sub: 'GitHub 自动检索与团队手动添加', search: '搜索工具、仓库或发现来源' },
+  accounts: { title: '抓取账号', sub: 'GitHub 工具发现的必要账号', search: '' },
+  discovered: { title: '工具百宝箱', sub: 'GitHub 自动检索与团队手动添加', search: '搜索工具、仓库或发现来源' },
   evaluating: { title: '测评中', sub: '关联 Cooper 测评记录并确认是否纳入', search: '搜索工具或测评人' },
   team: { title: '团队工具', sub: '团队已验证并纳入使用的工具', search: '搜索团队工具' },
 }
 
 type SourceFilter = ToolSourceType | 'all'
+type PurposeFilter = string
+type ManualPurposeMode = 'ai' | 'manual'
 type ConfigMethodFilter = DiscoveryMethod | 'all'
 type ConfigTriggerFilter = TriggerMode | 'all'
 type ConfigRunState = 'idle' | 'running' | 'pausing' | 'paused'
@@ -72,7 +82,30 @@ const SORT_OPTIONS: { key: ToolSort; label: string; icon: string }[] = [
   { key: 'stars7d', label: '7 日 Star 增长', icon: '↗' },
 ]
 
+const GITHUB_TOKEN_STRATEGIES: { value: GitHubTokenStrategy; label: string; desc: string }[] = [
+  { value: 'round_robin', label: '轮流使用', desc: '每次请求按候选账号顺序轮换' },
+  { value: 'fixed', label: '固定使用', desc: '始终使用选中的一个账号' },
+  { value: 'failover', label: '额度不足时切换', desc: '优先使用第一个可选账号，限流后切换' },
+]
+
 const PAGE_SIZE_OPTIONS = [50, 100, 200] as const
+
+const DEFAULT_PURPOSE_TAGS = [
+  '代码开发',
+  '浏览器操作',
+  '深度研究',
+  '知识库检索',
+  'MCP 集成',
+  'Agent 编排',
+  '数据分析',
+  '工作流自动化',
+  '测试验证',
+  '文档写作',
+  '设计创作',
+  '命令行效率',
+  'API/SDK 集成',
+  '提示词管理',
+]
 
 type ToolAction =
   | { kind: 'start'; tool: ToolItem }
@@ -80,6 +113,7 @@ type ToolAction =
   | { kind: 'cooper'; tool: ToolItem }
   | { kind: 'include'; tool: ToolItem }
   | { kind: 'reject'; tool: ToolItem }
+  | { kind: 'purpose'; tool: ToolItem }
   | { kind: 'team-edit'; tool: ToolItem }
   | { kind: 'team-delete'; tool: ToolItem }
 
@@ -108,8 +142,20 @@ type ConfigFormState = {
   actor: string
 }
 
+type SettingsFormState = {
+  githubTokensText: string
+  clearGitHubTokens: boolean
+  githubBaseUrl: string
+  useEnterpriseGitHub: boolean
+  githubTokenStrategy: GitHubTokenStrategy
+  githubActiveTokenIndex: string
+  includeDefaultGitHubTokens: boolean
+  actor: string
+}
+
 export function ToolsView({
   section,
+  onSection,
 }: {
   section: ToolsSection
   onSection: (section: ToolsSection) => void
@@ -118,7 +164,26 @@ export function ToolsView({
   const [error, setError] = useState('')
 
   if (section === 'configs') {
-    return <ConfigPanel notice={notice} error={error} onNotice={setNotice} onError={setError} />
+    return (
+      <ConfigPanel
+        notice={notice}
+        error={error}
+        onNotice={setNotice}
+        onError={setError}
+        onOpenSettings={() => onSection('accounts')}
+      />
+    )
+  }
+  if (section === 'accounts') {
+    return (
+      <AccountPanel
+        notice={notice}
+        error={error}
+        onNotice={setNotice}
+        onError={setError}
+        onBack={() => onSection('configs')}
+      />
+    )
   }
   return <ToolListPanel section={section} notice={notice} error={error} onNotice={setNotice} onError={setError} />
 }
@@ -131,6 +196,7 @@ function ToolShell({
   actions,
   notice,
   error,
+  hideSearch = false,
   children,
 }: {
   section: ToolsSection
@@ -140,17 +206,22 @@ function ToolShell({
   actions?: ReactNode
   notice: string
   error: string
+  hideSearch?: boolean
   children: ReactNode
 }) {
   const meta = SECTION_META[section]
   return (
     <div className="tools-page">
       <header className="tools-topbar">
-        <form className="tools-top-search" role="search" onSubmit={(e) => { e.preventDefault(); onSearch() }}>
-          <span aria-hidden>⌕</span>
-          <input value={q} onChange={(e) => onQ(e.target.value)} placeholder={meta.search} aria-label={meta.search} />
-          <button className="tools-search-submit" type="submit">搜索</button>
-        </form>
+        {hideSearch ? (
+          <div className="tools-top-spacer" />
+        ) : (
+          <form className="tools-top-search" role="search" onSubmit={(e) => { e.preventDefault(); onSearch() }}>
+            <span aria-hidden>⌕</span>
+            <input value={q} onChange={(e) => onQ(e.target.value)} placeholder={meta.search} aria-label={meta.search} />
+            <button className="tools-search-submit" type="submit">搜索</button>
+          </form>
+        )}
         <div className="tools-top-status">
           <span className="tools-health"><i />GitHub API 正常</span>
           <span className="tools-avatar">LM</span>
@@ -180,11 +251,13 @@ function ConfigPanel({
   error,
   onNotice,
   onError,
+  onOpenSettings,
 }: {
   notice: string
   error: string
   onNotice: (v: string) => void
   onError: (v: string) => void
+  onOpenSettings: () => void
 }) {
   const [data, setData] = useState<ConfigList | null>(null)
   const [loading, setLoading] = useState(false)
@@ -336,7 +409,7 @@ function ConfigPanel({
   }
 
   async function removeConfig(cfg: DiscoveryConfig) {
-    if (!window.confirm(`删除配置「${cfg.name}」？历史运行和已发现工具会保留。`)) return
+    if (!window.confirm(`删除配置「${cfg.name}」？历史运行和工具百宝箱条目会保留。`)) return
     onError('')
     const actor = actorForConfigAction(cfg)
     if (!actor) {
@@ -388,7 +461,12 @@ function ConfigPanel({
       onSearch={() => setSubmittedQ(q.trim())}
       notice={notice}
       error={error}
-      actions={<button type="button" className="tools-btn primary" onClick={openNewConfig}><span aria-hidden>＋</span>新增配置</button>}
+      actions={(
+        <>
+          <button type="button" className="tools-btn" onClick={onOpenSettings}>配置设置</button>
+          <button type="button" className="tools-btn primary" onClick={openNewConfig}><span aria-hidden>＋</span>新增配置</button>
+        </>
+      )}
     >
       <SummaryStrip aside="仅使用 GitHub Repository Search API">
         <SummaryMetric value={data?.count ?? 0} label="条配置" />
@@ -468,6 +546,274 @@ function ConfigPanel({
   )
 }
 
+function AccountPanel({
+  notice,
+  error,
+  onNotice,
+  onError,
+  onBack,
+}: {
+  notice: string
+  error: string
+  onNotice: (v: string) => void
+  onError: (v: string) => void
+  onBack: () => void
+}) {
+  const [settings, setSettings] = useState<ToolRuntimeSettings | null>(null)
+  const [form, setForm] = useState<SettingsFormState>(emptySettingsForm('', null))
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [checks, setChecks] = useState<GitHubTokenCheck[]>([])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    onError('')
+    try {
+      const next = normalizeSettings(await fetchToolSettings())
+      setSettings(next)
+      setForm(emptySettingsForm(next.updatedBy || '', next))
+    } catch (err) {
+      onError(formatToolError(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [onError])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const savedTokens = settings?.githubTokens ?? []
+  const defaultTokens = settings?.defaultGitHubTokens ?? []
+  const draftTokens = splitRuntimeTokens(form.githubTokensText)
+  const candidates = [...(form.includeDefaultGitHubTokens ? defaultTokens : []), ...savedTokens]
+  const fixedCandidates = candidates.length > 0 ? candidates : draftTokens.map((token, index) => ({
+    index,
+    masked: maskDraftToken(token),
+    last4: token.slice(-4),
+    source: 'saved' as const,
+  }))
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    onError('')
+    const actor = form.actor.trim() || settings?.updatedBy || 'system'
+    const tokens = splitRuntimeTokens(form.githubTokensText)
+    const activeIndex = parseActiveTokenIndex(form.githubActiveTokenIndex)
+    if (form.githubTokenStrategy === 'fixed' && fixedCandidates.length === 0) {
+      onError('请先配置至少一个 GitHub Token')
+      return
+    }
+    if (form.githubTokenStrategy === 'fixed' && activeIndex >= fixedCandidates.length) {
+      onError('固定 Token 已超出当前候选范围')
+      return
+    }
+    try {
+      setSaving(true)
+      const saved = await saveToolSettings({
+        githubTokens: tokens.length > 0 ? tokens : undefined,
+        clearGitHubTokens: tokens.length > 0 ? false : form.clearGitHubTokens,
+        githubBaseUrl: form.useEnterpriseGitHub ? form.githubBaseUrl.trim() : '',
+        githubTokenStrategy: form.githubTokenStrategy,
+        githubActiveTokenIndex: activeIndex,
+        includeDefaultGitHubTokens: form.includeDefaultGitHubTokens,
+        actor,
+      })
+      const normalized = normalizeSettings(saved)
+      setSettings(normalized)
+      setForm(emptySettingsForm(actor, normalized))
+      setChecks([])
+      onNotice('抓取账号已保存')
+    } catch (err) {
+      onError(formatToolError(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function testConnection() {
+    onError('')
+    setChecking(true)
+    try {
+      const tokens = splitRuntimeTokens(form.githubTokensText)
+      const result = await checkGitHubSettings({
+        githubTokens: tokens.length > 0 ? tokens : undefined,
+        githubBaseUrl: form.useEnterpriseGitHub ? form.githubBaseUrl.trim() : '',
+        includeDefaultGitHubTokens: form.includeDefaultGitHubTokens,
+      })
+      setChecks(result)
+      onNotice(result.some((item) => item.ok) ? 'GitHub Token 校验完成' : '没有可用的 GitHub Token')
+    } catch (err) {
+      onError(formatToolError(err))
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <ToolShell
+      section="accounts"
+      q=""
+      onQ={() => {}}
+      onSearch={() => {}}
+      notice={notice}
+      error={error}
+      hideSearch
+      actions={<button type="button" className="tools-btn" onClick={onBack}>返回发现配置</button>}
+    >
+      <SummaryStrip aside="仅影响 GitHub 工具发现；资讯 RSS 不使用这里的账号">
+        <SummaryMetric value={(settings?.defaultGitHubTokenCount ?? 0) + (settings?.githubTokenCount ?? 0)} label="候选 Token" />
+        <SummaryMetric value={tokenStrategyLabel(form.githubTokenStrategy)} label="使用策略" />
+        <SummaryMetric value={settings?.updatedBy || '未保存'} label="最近操作" />
+      </SummaryStrip>
+
+      {loading ? <LoadingBlock /> : (
+        <form className="tools-account-panel" onSubmit={submit}>
+          <section className="tools-account-section">
+            <div className="tools-account-head">
+              <div>
+                <h2>GitHub Token</h2>
+                <p>工具发现通过 GitHub HTTPS API 抓取仓库，只需要这里的 Token。</p>
+              </div>
+              <div className="tools-account-actions">
+                <button type="button" className="tools-btn" onClick={testConnection} disabled={checking}>
+                  {checking ? '测试中...' : '测试连接'}
+                </button>
+                <button className="tools-btn primary" type="submit" disabled={saving}>
+                  {saving ? '保存中...' : '保存账号'}
+                </button>
+              </div>
+            </div>
+
+            <div className="tools-token-list" aria-label="当前 Token">
+              {settings?.includeDefaultGitHubTokens && defaultTokens.map((token, index) => (
+                <TokenPill key={`default-${index}`} token={token} label="默认" />
+              ))}
+              {savedTokens.map((token, index) => (
+                <TokenPill key={`saved-${index}`} token={token} label="已保存" />
+              ))}
+              {defaultTokens.length === 0 && savedTokens.length === 0 && <span className="tools-muted">还没有可用 Token</span>}
+            </div>
+
+            {defaultTokens.length > 0 && (
+              <label className="tools-check">
+                <input
+                  type="checkbox"
+                  checked={form.includeDefaultGitHubTokens}
+                  onChange={(e) => setForm({ ...form, includeDefaultGitHubTokens: e.target.checked })}
+                />
+                <span>把环境里的默认初始 Token 加入候选账号</span>
+              </label>
+            )}
+
+            <label>
+              <span>新增或替换 Token</span>
+              <textarea
+                value={form.githubTokensText}
+                onChange={(e) => setForm({ ...form, githubTokensText: e.target.value, clearGitHubTokens: false })}
+                placeholder="每行一个 token；留空表示不替换已保存 token"
+              />
+            </label>
+            <label className="tools-check">
+              <input
+                type="checkbox"
+                checked={form.clearGitHubTokens}
+                onChange={(e) => setForm({ ...form, clearGitHubTokens: e.target.checked, githubTokensText: e.target.checked ? '' : form.githubTokensText })}
+              />
+              <span>清空已保存 Token</span>
+            </label>
+          </section>
+
+          <section className="tools-account-section">
+            <div className="tools-account-head compact">
+              <div>
+                <h2>使用策略</h2>
+              </div>
+            </div>
+            <div className="tools-strategy-grid">
+              {GITHUB_TOKEN_STRATEGIES.map((item) => (
+                <label key={item.value} className={`tools-strategy-card${form.githubTokenStrategy === item.value ? ' selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="githubTokenStrategy"
+                    value={item.value}
+                    aria-label={item.label}
+                    checked={form.githubTokenStrategy === item.value}
+                    onChange={() => setForm({ ...form, githubTokenStrategy: item.value })}
+                  />
+                  <strong>{item.label}</strong>
+                  <span>{item.desc}</span>
+                </label>
+              ))}
+            </div>
+            {form.githubTokenStrategy === 'fixed' && (
+              <label>
+                <span>固定使用</span>
+                <select value={form.githubActiveTokenIndex} onChange={(e) => setForm({ ...form, githubActiveTokenIndex: e.target.value })}>
+                  {fixedCandidates.map((token, index) => (
+                    <option key={`${token.source}-${index}`} value={String(index)}>
+                      {index + 1}. {token.source === 'default' ? '默认' : '已保存'} {token.masked}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </section>
+
+          <section className="tools-account-section">
+            <label className="tools-check">
+              <input
+                type="checkbox"
+                checked={form.useEnterpriseGitHub}
+                onChange={(e) => setForm({ ...form, useEnterpriseGitHub: e.target.checked, githubBaseUrl: e.target.checked ? form.githubBaseUrl : '' })}
+              />
+              <span>使用企业 GitHub API 地址</span>
+            </label>
+            {form.useEnterpriseGitHub && (
+              <label>
+                <span>GitHub API Base URL</span>
+                <input value={form.githubBaseUrl} onChange={(e) => setForm({ ...form, githubBaseUrl: e.target.value })} placeholder="https://github.example/api/v3" />
+              </label>
+            )}
+            <label>
+              <span>操作人</span>
+              <input value={form.actor} onChange={(e) => setForm({ ...form, actor: e.target.value })} placeholder="手动填写" />
+            </label>
+          </section>
+
+          {checks.length > 0 && (
+            <section className="tools-account-section">
+              <div className="tools-account-head compact">
+                <div>
+                  <h2>连接测试结果</h2>
+                </div>
+              </div>
+              <div className="tools-check-results">
+                {checks.map((item) => (
+                  <div key={`${item.source}-${item.index}`} className={`tools-check-result ${item.ok ? 'ok' : 'bad'}`}>
+                    <strong>{item.source === 'default' ? '默认' : '已保存'} {item.masked}</strong>
+                    <span>{item.ok ? `剩余额度 ${item.remaining ?? 0}/${item.limit ?? 0}` : item.error || '不可用'}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </form>
+      )}
+    </ToolShell>
+  )
+}
+
+function TokenPill({ token, label }: { token: { masked: string }; label: string }) {
+  return (
+    <span className="tools-token-pill">
+      <i>{label}</i>
+      <strong>{token.masked}</strong>
+    </span>
+  )
+}
+
 function ConfigCard({
   cfg,
   runState,
@@ -539,6 +885,7 @@ function ToolListPanel({
   const [submittedQ, setSubmittedQ] = useState('')
   const [sort, setSort] = useState<ToolSort>('latest')
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [purposeFilter, setPurposeFilter] = useState<PurposeFilter>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [summaryOverrides, setSummaryOverrides] = useState<Record<string, string>>({})
@@ -551,6 +898,8 @@ function ToolListPanel({
   const [manualActor, setManualActor] = useState('')
   const [manualCooperUrl, setManualCooperUrl] = useState('')
   const [manualSummary, setManualSummary] = useState('')
+  const [manualPurposeMode, setManualPurposeMode] = useState<ManualPurposeMode>('ai')
+  const [manualPurposeTags, setManualPurposeTags] = useState<string[]>([])
   const [manualError, setManualError] = useState('')
   const [preview, setPreview] = useState<GitHubRepositoryPreview | null>(null)
   const [manualLoading, setManualLoading] = useState(false)
@@ -560,10 +909,12 @@ function ToolListPanel({
     onError('')
     try {
       const sources = sourceFilter === 'all' ? undefined : [sourceFilter]
+      const purposeTags = purposeFilter === 'all' ? undefined : [purposeFilter]
       const next = await fetchTools({
         status,
         sort,
         sources,
+        purposeTags,
         q: submittedQ || undefined,
         take: pageSize,
         offset: (page - 1) * pageSize,
@@ -588,7 +939,7 @@ function ToolListPanel({
     } finally {
       setLoading(false)
     }
-  }, [onError, page, pageSize, sort, sourceFilter, status, submittedQ])
+  }, [onError, page, pageSize, purposeFilter, sort, sourceFilter, status, submittedQ])
 
   useEffect(() => {
     setAction(null)
@@ -598,8 +949,11 @@ function ToolListPanel({
     setPreview(null)
     setManualOpen(false)
     setSourceFilter('all')
+    setPurposeFilter('all')
     setManualCooperUrl('')
     setManualSummary('')
+    setManualPurposeMode('ai')
+    setManualPurposeTags([])
     setManualError('')
     setSummaryOverrides({})
     summaryRequestIdsRef.current.clear()
@@ -694,7 +1048,9 @@ function ToolListPanel({
     setManualLoading(true)
     onError('')
     try {
-      setPreview(await previewManualTool(manualRepoURL))
+      const nextPreview = await previewManualTool(manualRepoURL)
+      setPreview(nextPreview)
+      setManualPurposeTags(nextPreview.purposeTags ?? [])
       onNotice('仓库预览已同步')
     } catch (err) {
       setPreview(null)
@@ -712,15 +1068,18 @@ function ToolListPanel({
     setManualLoading(true)
     onError('')
     try {
+      const manualTags = manualPurposeMode === 'manual' ? manualPurposeTags : undefined
       const res = section === 'team'
-        ? await importTeamTool({ repoUrl: manualRepoURL, operator: manualActor, cooperUrl: manualCooperUrl, finalSummary: manualSummary })
-        : await addManualTool(manualRepoURL, manualActor)
+        ? await importTeamTool({ repoUrl: manualRepoURL, operator: manualActor, cooperUrl: manualCooperUrl, finalSummary: manualSummary, purposeTags: manualTags })
+        : await addManualTool(manualRepoURL, manualActor, manualTags)
       onNotice(section === 'team'
         ? (res.duplicate ? '团队工具已更新' : '工具已加入团队工具')
         : (res.duplicate ? '仓库已存在，已合并手动来源' : '仓库已加入已发现列表'))
       setManualRepoURL('')
       setManualCooperUrl('')
       setManualSummary('')
+      setManualPurposeMode('ai')
+      setManualPurposeTags([])
       setPreview(null)
       setManualOpen(false)
       await load()
@@ -732,6 +1091,17 @@ function ToolListPanel({
   }
 
   const stats = data?.stats
+  const purposeOptions = useMemo(() => mergePurposeOptions(stats?.purposeTags ?? [], visibleTools), [stats?.purposeTags, visibleTools])
+  const allPurposeTags = useMemo(
+    () => mergeTagOptions(
+      DEFAULT_PURPOSE_TAGS,
+      stats?.purposeTags ?? [],
+      visibleTools.flatMap((tool) => tool.purposeTags ?? []),
+      selectedTools.flatMap((tool) => tool.purposeTags ?? []),
+      preview?.purposeTags ?? [],
+    ),
+    [preview?.purposeTags, selectedTools, stats?.purposeTags, visibleTools],
+  )
   const summary = useMemo(() => {
     if (section === 'discovered') {
       return {
@@ -810,6 +1180,15 @@ function ToolListPanel({
               resetListPosition()
             }}
           />
+          <SelectFilter
+            label="用途"
+            options={purposeOptions}
+            value={purposeFilter}
+            onChange={(next) => {
+              setPurposeFilter(next)
+              resetListPosition()
+            }}
+          />
           <BatchActionBar
             section={section}
             selectedTools={selectedTools}
@@ -870,6 +1249,32 @@ function ToolListPanel({
               </>
             )}
             {preview && <ManualPreview preview={preview} />}
+            {preview && (
+              <div className="tools-classification-mode">
+                <span>使用场景分类</span>
+                <label>
+                  <input type="radio" name="manual-purpose-mode" checked={manualPurposeMode === 'ai'} onChange={() => setManualPurposeMode('ai')} />
+                  AI 自动分类
+                </label>
+                <label>
+                  <input type="radio" name="manual-purpose-mode" checked={manualPurposeMode === 'manual'} onChange={() => setManualPurposeMode('manual')} />
+                  手动分类
+                </label>
+                {manualPurposeMode === 'ai' ? (
+                  <div className="tools-classification-preview">
+                    <span>AI 预估</span>
+                    <PurposeChips tags={preview.purposeTags ?? []} manual={false} />
+                  </div>
+                ) : (
+                  <TagEditor
+                    label="手动选择使用场景"
+                    selected={manualPurposeTags}
+                    options={allPurposeTags}
+                    onChange={setManualPurposeTags}
+                  />
+                )}
+              </div>
+            )}
             <div className="tools-modal-actions">
               <button type="button" className="tools-btn" onClick={() => setManualOpen(false)}>取消</button>
               <button type="submit" className="tools-btn" disabled={manualLoading}>{manualLoading ? '同步中...' : '预览'}</button>
@@ -892,6 +1297,7 @@ function ToolListPanel({
             await load()
           }}
           onError={onError}
+          purposeOptions={allPurposeTags}
         />
       )}
 
@@ -1005,10 +1411,11 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
           <thead>
             <tr>
               <th className="tools-select-col">
-                <input type="checkbox" aria-label="选择全部已发现工具" checked={allSelected} onChange={(e) => onSelectAll(e.target.checked)} />
+                <input type="checkbox" aria-label="选择全部工具百宝箱条目" checked={allSelected} onChange={(e) => onSelectAll(e.target.checked)} />
               </th>
               <th>工具</th>
               <th>介绍</th>
+              <th>用途</th>
               <th>发现来源</th>
               <th>Stars</th>
               <th>7 日增长</th>
@@ -1024,14 +1431,16 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                 </td>
                 <td><ToolIdentity tool={tool} /></td>
                 <td><ToolDescription text={toolSummaryText(tool, summaryOverrides)} onReveal={() => onRevealSummary(tool)} /></td>
+                <td><PurposeChips tags={tool.purposeTags} manual={tool.purposeTagsManuallySet} /></td>
                 <td><SourceChips tool={tool} /></td>
                 <td className="tools-strong">{formatCompactNumber(tool.stars)}</td>
                 <td className={tool.stars7d ? 'tools-growth' : 'tools-muted'}>{formatGrowth(tool.stars7d)}</td>
                 <td><DateStack main={formatPushedAt(tool.pushedAt)} sub={`发现 ${formatShortDateTime(tool.firstDiscoveredAt)}`} /></td>
                 <td>
                   <div className="tools-row-actions">
-                    <button type="button" className="tools-text-action" onClick={() => onAction({ kind: 'start', tool })}>开始测评</button>
-                    <button type="button" className="tools-icon-danger" aria-label="不处理" title="不处理" onClick={() => onAction({ kind: 'exclude', tool })}>⌫</button>
+                    <RowIconButton label="开始测评" icon="☑" onClick={() => onAction({ kind: 'start', tool })} />
+                    <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
+                    <RowIconButton label="不处理" icon="⌫" danger onClick={() => onAction({ kind: 'exclude', tool })} />
                   </div>
                 </td>
               </tr>
@@ -1052,6 +1461,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
               </th>
               <th>工具</th>
               <th>介绍</th>
+              <th>用途</th>
               <th>测评人</th>
               <th>Cooper 测评记录</th>
               <th>开始时间</th>
@@ -1066,6 +1476,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                 </td>
                 <td><ToolIdentity tool={tool} /></td>
                 <td><ToolDescription text={toolSummaryText(tool, summaryOverrides)} onReveal={() => onRevealSummary(tool)} /></td>
+                <td><PurposeChips tags={tool.purposeTags} manual={tool.purposeTagsManuallySet} /></td>
                 <td><EvaluatorBadge name={tool.evaluation?.evaluator || '待填写'} /></td>
                 <td>
                   {tool.evaluation?.cooperUrl ? (
@@ -1077,8 +1488,9 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                 <td>{formatMonthDay(tool.evaluation?.startedAt)}</td>
                 <td>
                   <div className="tools-row-actions">
-                    <button type="button" className="tools-text-action" onClick={() => onAction({ kind: 'include', tool })}>✓ 纳入</button>
-                    <button type="button" className="tools-text-action danger" onClick={() => onAction({ kind: 'reject', tool })}>不纳入</button>
+                    <RowIconButton label="✓ 纳入" icon="✓" onClick={() => onAction({ kind: 'include', tool })} />
+                    <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
+                    <RowIconButton label="不纳入" icon="×" danger onClick={() => onAction({ kind: 'reject', tool })} />
                   </div>
                 </td>
               </tr>
@@ -1098,6 +1510,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
             </th>
             <th>工具</th>
             <th>团队使用说明</th>
+            <th>用途</th>
             <th>测评人</th>
             <th>纳入时间</th>
             <th>相关链接</th>
@@ -1112,6 +1525,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
               </td>
               <td><ToolIdentity tool={tool} /></td>
               <td><ToolDescription text={tool.finalSummary || toolSummaryText(tool, summaryOverrides, '暂无说明')} full onReveal={() => onRevealSummary(tool)} /></td>
+              <td><PurposeChips tags={tool.purposeTags} manual={tool.purposeTagsManuallySet} /></td>
               <td>{tool.evaluation?.evaluator || '暂无'}</td>
               <td>{formatMonthDay(tool.includedAt)}</td>
               <td>
@@ -1122,8 +1536,9 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
               </td>
               <td>
                 <div className="tools-row-actions">
-                  <button type="button" className="tools-link-action" onClick={() => onAction({ kind: 'team-edit', tool })}>编辑</button>
-                  <button type="button" className="tools-text-action danger" onClick={() => onAction({ kind: 'team-delete', tool })}>删除</button>
+                  <RowIconButton label="编辑" icon="✎" onClick={() => onAction({ kind: 'team-edit', tool })} />
+                  <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
+                  <RowIconButton label="删除" icon="⌫" danger onClick={() => onAction({ kind: 'team-delete', tool })} />
                 </div>
               </td>
             </tr>
@@ -1134,16 +1549,31 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
   )
 }
 
-function ToolActionPanel({ action, onCancel, onDone, onError }: {
+function RowIconButton({ label, icon, danger, onClick }: {
+  label: string
+  icon: string
+  danger?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button type="button" className={danger ? 'danger' : undefined} aria-label={label} title={label} onClick={onClick}>
+      <span aria-hidden>{icon}</span>
+    </button>
+  )
+}
+
+function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: {
   action: ToolAction
   onCancel: () => void
   onDone: (message: string) => Promise<void>
   onError: (v: string) => void
+  purposeOptions: string[]
 }) {
   const [evaluator, setEvaluator] = useState('')
   const [operator, setOperator] = useState('')
   const [cooperUrl, setCooperUrl] = useState(action.tool.evaluation?.cooperUrl ?? '')
   const [summary, setSummary] = useState(action.tool.finalSummary ?? action.tool.currentSummary ?? '')
+  const [purposeTags, setPurposeTags] = useState<string[]>(action.tool.purposeTags ?? [])
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [modalError, setModalError] = useState('')
@@ -1197,6 +1627,13 @@ function ToolActionPanel({ action, onCancel, onDone, onError }: {
           notIncludedReason: reason,
         })
         await onDone('已完成为不纳入')
+      } else if (action.kind === 'purpose') {
+        await updateToolPurposeTags({
+          toolId: action.tool.id,
+          actor: operator,
+          purposeTags,
+        })
+        await onDone('用途分类已更新')
       } else if (action.kind === 'team-edit') {
         await updateTeamTool({
           toolId: action.tool.id,
@@ -1222,6 +1659,7 @@ function ToolActionPanel({ action, onCancel, onDone, onError }: {
     cooper: '关联 Cooper 文档',
     include: '纳入团队工具',
     reject: '不纳入',
+    purpose: '修正用途分类',
     'team-edit': '编辑团队工具',
     'team-delete': '删除团队工具',
   }[action.kind]
@@ -1259,6 +1697,14 @@ function ToolActionPanel({ action, onCancel, onDone, onError }: {
             <span>团队使用说明</span>
             <textarea value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="它是什么、解决什么问题、适合什么场景" />
           </label>
+        )}
+        {action.kind === 'purpose' && (
+          <TagEditor
+            label="用途分类"
+            selected={purposeTags}
+            options={mergeTagOptions(purposeOptions, action.tool.purposeTags)}
+            onChange={setPurposeTags}
+          />
         )}
         {(action.kind === 'exclude' || action.kind === 'reject' || action.kind === 'team-delete') && (
           <label>
@@ -1518,7 +1964,7 @@ function BatchToolList({ tools }: { tools: ToolItem[] }) {
 function batchTitle(kind: BatchToolAction['kind']): string {
   return {
     'batch-start': '批量开始测评',
-    'batch-exclude': '批量删除已发现工具',
+    'batch-exclude': '批量删除工具百宝箱条目',
     'batch-include': '批量纳入团队工具',
     'batch-reject': '批量不纳入',
     'batch-team-edit': '批量修改团队工具',
@@ -1723,6 +2169,70 @@ function SourceChips({ tool }: { tool: ToolItem }) {
   )
 }
 
+function PurposeChips({ tags, manual }: { tags: string[]; manual: boolean }) {
+  const normalized = normalizeTags(tags)
+  if (!normalized.length) return <span className="tools-muted">未分类</span>
+  return (
+    <div className="tools-purpose-chips" title={manual ? '人工修正' : '自动分类'}>
+      {normalized.map((tag) => <span key={tag}>{tag}</span>)}
+    </div>
+  )
+}
+
+function TagEditor({
+  label,
+  selected,
+  options,
+  onChange,
+}: {
+  label: string
+  selected: string[]
+  options: string[]
+  onChange: (tags: string[]) => void
+}) {
+  const [selectedOption, setSelectedOption] = useState('')
+  const [customTag, setCustomTag] = useState('')
+  const normalizedSelected = normalizeTags(selected)
+  const availableOptions = mergeTagOptions(options).filter((tag) => !normalizedSelected.includes(tag))
+
+  function addTag(tag: string) {
+    const next = normalizeTag(tag)
+    if (!next || normalizedSelected.includes(next)) return
+    onChange([...normalizedSelected, next].slice(0, 8))
+    setSelectedOption('')
+    setCustomTag('')
+  }
+
+  function removeTag(tag: string) {
+    onChange(normalizedSelected.filter((item) => item !== tag))
+  }
+
+  return (
+    <div className="tools-tag-editor">
+      <span>{label}</span>
+      <div className="tools-tag-selected">
+        {normalizedSelected.length ? normalizedSelected.map((tag) => (
+          <button type="button" key={tag} onClick={() => removeTag(tag)} title="点击移除">
+            {tag}<i aria-hidden>×</i>
+          </button>
+        )) : <em>未分类</em>}
+      </div>
+      <div className="tools-tag-controls">
+        <select aria-label="选择用途分类" value={selectedOption} onChange={(e) => setSelectedOption(e.target.value)}>
+          <option value="">选择已有分类</option>
+          {availableOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+        </select>
+        <button type="button" className="tools-btn" onClick={() => addTag(selectedOption)} disabled={!selectedOption}>添加</button>
+      </div>
+      <div className="tools-tag-controls">
+        <input value={customTag} onChange={(e) => setCustomTag(e.target.value)} placeholder="新增分类，如：会议纪要" />
+        <button type="button" className="tools-btn" onClick={() => addTag(customTag)} disabled={!customTag.trim()}>新增</button>
+      </div>
+      <p className="tools-field-help">按使用场景分类；没有合适场景可以保持未分类。</p>
+    </div>
+  )
+}
+
 function ManualPreview({ preview }: { preview: GitHubRepositoryPreview }) {
   return (
     <div className="manual-preview-card">
@@ -1770,6 +2280,69 @@ function emptyConfigForm(actor: string): ConfigFormState {
     enabled: true,
     actor,
   }
+}
+
+function emptySettingsForm(actor: string, settings: ToolRuntimeSettings | null): SettingsFormState {
+  const safe = normalizeSettings(settings)
+  return {
+    githubTokensText: '',
+    clearGitHubTokens: false,
+    githubBaseUrl: safe.githubBaseUrl,
+    useEnterpriseGitHub: safe.githubBaseUrl !== '' && safe.githubBaseUrl !== 'https://api.github.com',
+    githubTokenStrategy: safe.githubTokenStrategy,
+    githubActiveTokenIndex: String(safe.githubActiveTokenIndex),
+    includeDefaultGitHubTokens: safe.includeDefaultGitHubTokens,
+    actor,
+  }
+}
+
+function normalizeSettings(settings: ToolRuntimeSettings | null | undefined): ToolRuntimeSettings {
+  return {
+    githubTokenCount: settings?.githubTokenCount ?? 0,
+    githubTokens: settings?.githubTokens ?? [],
+    defaultGitHubTokenCount: settings?.defaultGitHubTokenCount ?? 0,
+    defaultGitHubTokens: settings?.defaultGitHubTokens ?? [],
+    githubBaseUrl: settings?.githubBaseUrl ?? '',
+    githubTokenStrategy: normalizeGitHubTokenStrategy(settings?.githubTokenStrategy),
+    githubActiveTokenIndex: settings?.githubActiveTokenIndex ?? 0,
+    includeDefaultGitHubTokens: settings?.includeDefaultGitHubTokens ?? true,
+    githubMaxPages: settings?.githubMaxPages ?? 5,
+    githubPerPage: settings?.githubPerPage ?? 100,
+    githubRequestIntervalMs: settings?.githubRequestIntervalMs ?? 2000,
+    starSnapshotLimit: settings?.starSnapshotLimit ?? 200,
+    updatedBy: settings?.updatedBy,
+    updatedAt: settings?.updatedAt,
+  }
+}
+
+function splitRuntimeTokens(raw: string): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const token of raw.split(/[\n,;，；]/).map((item) => item.trim()).filter(Boolean)) {
+    if (seen.has(token)) continue
+    seen.add(token)
+    out.push(token)
+  }
+  return out
+}
+
+function normalizeGitHubTokenStrategy(value: unknown): GitHubTokenStrategy {
+  return value === 'fixed' || value === 'failover' || value === 'round_robin' ? value : 'round_robin'
+}
+
+function tokenStrategyLabel(value: GitHubTokenStrategy): string {
+  const found = GITHUB_TOKEN_STRATEGIES.find((item) => item.value === value)
+  return found?.label ?? '轮流使用'
+}
+
+function parseActiveTokenIndex(raw: string): number {
+  const n = Number(raw)
+  return Number.isInteger(n) && n >= 0 ? n : 0
+}
+
+function maskDraftToken(token: string): string {
+  const last4 = token.slice(-4)
+  return last4 ? `****${last4}` : '****'
 }
 
 function resolveConfigRunState(cfg: DiscoveryConfig, overrides: Record<string, ConfigRunState>): ConfigRunState {
@@ -1838,6 +2411,36 @@ function statusForSection(section: Exclude<ToolsSection, 'configs'>): ToolStatus
 
 function toolSummaryText(tool: ToolItem, summaryOverrides: Record<string, string>, fallback = '暂无描述'): string {
   return summaryOverrides[tool.id] || tool.currentSummary || tool.description || fallback
+}
+
+function mergePurposeOptions(tags: string[], tools: ToolItem[]): { key: PurposeFilter; label: string }[] {
+  const fromTools = tools.flatMap((tool) => tool.purposeTags ?? [])
+  const options = mergeTagOptions(['all'], DEFAULT_PURPOSE_TAGS, tags, fromTools)
+  return options.map((tag) => ({ key: tag, label: tag === 'all' ? '全部用途' : tag }))
+}
+
+function mergeTagOptions(...groups: Array<string[] | undefined>): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const group of groups) {
+    for (const raw of group ?? []) {
+      const tag = normalizeTag(raw)
+      if (!tag) continue
+      const key = tag.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(tag)
+    }
+  }
+  return out
+}
+
+function normalizeTags(tags: string[] | undefined): string[] {
+  return mergeTagOptions(tags).slice(0, 8)
+}
+
+function normalizeTag(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ').replace(/^[，,;；、]+|[，,;；、]+$/g, '').slice(0, 24)
 }
 
 function hasCJKText(text: string): boolean {

@@ -81,6 +81,7 @@
 | `status` | 可选，`discovered`、`evaluating`、`included`、`excluded`；默认 `discovered` |
 | `sort` | 可选，`latest`、`stars`、`stars7d`；默认 `latest` |
 | `source` | 可选，可重复，`keyword`、`topic`、`manual`；不传表示全部来源 |
+| `purposeTag` | 可选，可重复，按用途分类筛选；不传表示全部用途 |
 | `q` | 可选，按工具、仓库、来源、测评人或 Cooper 链接搜索 |
 | `take` | 可选，1-200，默认 50 |
 | `page` | 可选，从 1 开始的页码；不传默认第 1 页 |
@@ -88,11 +89,25 @@
 
 返回 `data.count` 是同一筛选条件下的工具总数，不受 `take`、`page`、`offset` 和排序方式影响；`data.items[]` 是当前排序下的当前页。返回里同时带 `page`、`pageSize`、`offset`、`take`，前端用它展示“第几条到第几条 / 共多少条”。发现工具、团队工具在切换 `latest`、`stars`、`stars7d` 时，统计口径保持一致，但列表行会按排序规则取当前页。
 
-返回 `data.stats`：`keywordSourceCount`、`topicSourceCount`、`manualSourceCount`、`linkedEvaluationCount`、`unlinkedEvaluationCount`、`evaluatorCount`、`latestUpdatedAt`。这些统计和 `count` 一样按完整筛选集合计算。
+返回 `data.stats`：`keywordSourceCount`、`topicSourceCount`、`manualSourceCount`、`linkedEvaluationCount`、`unlinkedEvaluationCount`、`evaluatorCount`、`latestUpdatedAt`、`purposeTags`。这些统计和 `count` 一样按完整筛选集合计算；`purposeTags` 是当前状态、搜索和来源条件下可选的用途分类集合，不受当前用途筛选影响。
 
-返回 `data.items[]`：GitHub 仓库事实、当前状态、当前说明、`summaryKey`、Stars、`stars7d`、发现来源 `sources[]`、测评摘要 `evaluation`。`stars7d` 优先使用 7 天前附近的快照计算；没有 7 天前快照时，用最近 7 天内最早且后续已有更新的快照计算；完全没有历史快照时为空。已发现、测评中、团队工具三个列表都使用同一套 `q`、`sort`、`source` 查询能力，其中团队工具页读取 `status=included`，测评中页读取 `status=evaluating`。
+返回 `data.items[]`：GitHub 仓库事实、当前状态、当前说明、`summaryKey`、Stars、`stars7d`、用途分类 `purposeTags`、是否人工修正 `purposeTagsManuallySet`、发现来源 `sources[]`、测评摘要 `evaluation`。`stars7d` 优先使用 7 天前附近的快照计算；没有 7 天前快照时，用最近 7 天内最早且后续已有更新的快照计算；完全没有历史快照时为空。已发现、测评中、团队工具三个列表都使用同一套 `q`、`sort`、`source`、`purposeTag` 查询能力，其中团队工具页读取 `status=included`，测评中页读取 `status=evaluating`。
 
 前端来源筛选使用下拉菜单：全部来源、关键词、Topic、手动添加。选择“全部来源”时不传 `source`。
+
+前端用途筛选同样使用下拉菜单：全部用途、代码开发、浏览器操作、深度研究等。选择“全部用途”时不传 `purposeTag`。如果自动分类没有命中，工具可以保持未分类；用户可以在列表里手动修正用途，也可以新增一个当前没有的用途标签。
+
+### POST `/api/tools/purpose-tags`
+
+手动修正工具用途分类。Body：
+
+| 字段 | 说明 |
+|---|---|
+| `toolId` | 必填，工具 ID |
+| `actor` | 必填，操作人 |
+| `purposeTags` | 可选，字符串数组；为空数组表示人工确认未分类 |
+
+提交成功后返回更新后的 `tool`，其中 `purposeTagsManuallySet=true`。后续自动发现再次命中该工具时，不会覆盖人工修正过的用途分类。
 
 ### 前端批量操作
 
@@ -100,8 +115,8 @@
 
 | 页面 | 批量动作 | 调用接口 |
 |---|---|---|
-| 已发现工具 | 批量测试 | 对每个工具调用 `POST /api/tools/evaluations/start`；测评人和操作人共用，Cooper 链接逐条填写且可为空 |
-| 已发现工具 | 批量删除 | 对每个工具调用 `POST /api/tools/discovered/exclude`；操作人和删除原因共用 |
+| 工具百宝箱 | 批量测试 | 对每个工具调用 `POST /api/tools/evaluations/start`；测评人和操作人共用，Cooper 链接逐条填写且可为空 |
+| 工具百宝箱 | 批量删除 | 对每个工具调用 `POST /api/tools/discovered/exclude`；操作人和删除原因共用 |
 | 测评中 | 批量纳入 | 如该工具还没有 Cooper 链接，先调用 `POST /api/tools/evaluations/cooper-url`；再调用 `POST /api/tools/evaluations/finish`，每个工具单独填写团队使用说明 |
 | 测评中 | 批量不纳入 | 对每个工具调用 `POST /api/tools/evaluations/finish`，`result=excluded`；每个工具单独填写不纳入原因 |
 | 团队工具 | 批量修改 | 对每个工具调用 `POST /api/tools/team/update`；操作人共用，Cooper 文档和团队使用说明逐条填写 |
@@ -123,7 +138,7 @@
 
 ### POST `/api/tools/manual/add`
 
-确认添加 GitHub 仓库。Body：`repoUrl`、`actor`。提交时按 GitHub `node_id` 去重，重复仓库会合并 `manual` 来源并返回已有工具。
+确认添加 GitHub 仓库。Body：`repoUrl`、`actor`、可选 `purposeTags`。提交时按 GitHub `node_id` 去重，重复仓库会合并 `manual` 来源并返回已有工具。如果 `purposeTags` 为空，后端优先用 AI 按仓库名、描述、Topics 和已有说明推断用途；AI 不可用或失败时用本地规则兜底。如果前端传入用途标签，则视为人工修正，不再被自动发现覆盖。
 
 ## 团队工具
 
@@ -139,6 +154,7 @@
 | `operator` | 必填，操作人 |
 | `cooperUrl` | 可选，Cooper 文档链接；只校验域名 |
 | `finalSummary` | 可选，团队使用说明，最多 1000 字 |
+| `purposeTags` | 可选，用途分类；为空时后端优先 AI 推断，失败时本地规则兜底 |
 
 提交时按 GitHub `node_id` 去重。新仓库会写入工具表、手动来源、Star 快照、已完成测评记录和状态事件；已存在仓库会更新为团队工具并追加操作记录。
 

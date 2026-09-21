@@ -118,7 +118,9 @@ func Run() error {
 			fmt.Printf("[ai tool] tools EnsureSchema failed: %v\n", err)
 		}
 	}
-	toolHandler := publicapi.NewToolAPIHandler(toolStore, newToolDiscoverer(toolsStore)).
+	toolDiscoverer := newToolDiscoverer(toolsStore)
+	reclassifyToolPurposeTags(toolDiscoverer)
+	toolHandler := publicapi.NewToolAPIHandler(toolStore, toolDiscoverer).
 		WithSummaryGenerator(newToolSummaryGenerator())
 	svr.AddHTTPHandle("/api/tools", toolHandler)
 	svr.AddHTTPHandle("/api/tools/", toolHandler)
@@ -174,10 +176,12 @@ func Run() error {
 
 func newToolDiscoverer(store *tools.Store) *tools.Discoverer {
 	client := tools.NewHTTPGitHubClient(os.Getenv("AI_TOOL_GITHUB_TOKEN"))
+	client.SetDefaultTokens(tools.SplitGitHubTokens(os.Getenv("AI_TOOL_GITHUB_TOKENS")))
 	if baseURL := os.Getenv("AI_TOOL_GITHUB_BASE_URL"); baseURL != "" {
 		client.BaseURL = baseURL
 	}
 	discoverer := tools.NewDiscoverer(store, client)
+	discoverer.PurposeClassifier = newToolPurposeClassifier()
 	if raw := os.Getenv("AI_TOOL_GITHUB_MAX_PAGES"); raw != "" {
 		maxPages, err := strconv.Atoi(raw)
 		if err != nil || maxPages <= 0 {
@@ -187,6 +191,42 @@ func newToolDiscoverer(store *tools.Store) *tools.Discoverer {
 		}
 	}
 	return discoverer
+}
+
+func newToolPurposeClassifier() tools.PurposeClassifier {
+	client, err := llm.NewTermsClientFromEnv()
+	if err != nil {
+		fmt.Printf("[ai tool] AI purpose classification disabled: %v\n", err)
+		return nil
+	}
+	return tools.NewLLMPurposeClassifier(client)
+}
+
+func reclassifyToolPurposeTags(discoverer *tools.Discoverer) {
+	if discoverer == nil || discoverer.Store == nil {
+		return
+	}
+	limit := 1000
+	if raw := os.Getenv("AI_TOOL_PURPOSE_RECLASSIFY_LIMIT"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			fmt.Printf("[ai tool] AI_TOOL_PURPOSE_RECLASSIFY_LIMIT ignored: must be a non-negative integer\n")
+		} else {
+			limit = parsed
+		}
+	}
+	if limit == 0 {
+		return
+	}
+	sum, err := discoverer.ReclassifyPurposeTags(context.Background(), limit)
+	if err != nil {
+		fmt.Printf("[ai tool] purpose reclassify failed: %v\n", err)
+		return
+	}
+	if sum.Attempted > 0 {
+		fmt.Printf("[ai tool] purpose reclassify: attempted=%d updated=%d skipped=%d failed=%d\n",
+			sum.Attempted, sum.Updated, sum.Skipped, sum.Failed)
+	}
 }
 
 func newToolSummaryGenerator() publicapi.ToolSummaryGenerator {

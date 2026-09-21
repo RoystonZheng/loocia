@@ -65,6 +65,8 @@ type ToolItem = {
   openIssues: number
   stars7d?: number
   topics: string[]
+  purposeTags: string[]
+  purposeTagsManuallySet: boolean
   licenseSpdx?: string
   defaultBranch?: string
   pushedAt?: string
@@ -214,12 +216,12 @@ test.describe('AI Tool 开发用例', () => {
     })
   })
 
-  test('TC-014~TC-024 已发现工具：排序、筛选、中文介绍、手动添加、单个测评/删除、跨页批量', async ({ page }) => {
+  test('TC-014~TC-025 工具百宝箱：排序、筛选、用途分类、中文介绍、手动添加、单个测评/删除、跨页批量', async ({ page }) => {
     const state = await installMockRoutes(page, createMockState({ discoveredCount: 105 }))
 
-    await test.step('TC-014 打开已发现工具并展示分页', async () => {
+    await test.step('TC-014 打开工具百宝箱并展示分页', async () => {
       await page.goto('/#tools-discovered')
-      await expect(page.getByRole('heading', { name: '已发现工具' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '工具百宝箱' })).toBeVisible()
       await expect(page.getByText(/第 1-50 条 \/ 共 105 条/)).toBeVisible()
       await expect(page.getByRole('button', { name: '下一页' })).toBeEnabled()
     })
@@ -243,13 +245,35 @@ test.describe('AI Tool 开发用例', () => {
       await sourceFilter(page).selectOption('all')
     })
 
-    await test.step('TC-017 搜索工具名称、仓库和来源关键词', async () => {
+    await test.step('TC-017 用途筛选和手动分类修正', async () => {
+      await purposeFilter(page).selectOption('深度研究')
+      await expect(toolName(page, 'DeepResearch AI')).toBeVisible()
+      await expect(toolName(page, 'Topic 命中工具')).toBeHidden()
+      expect(lastCall(state, '/api/tools/items')?.path).toBe('/api/tools/items')
+      await purposeFilter(page).selectOption('all')
+
+      await toolRow(page, 'DeepResearch AI').getByRole('button', { name: '分类' }).click()
+      const dialog = page.getByRole('dialog', { name: /修正用途分类/ })
+      await dialog.getByLabel('操作人').fill('郑睿涛')
+      await dialog.locator('.tools-tag-selected button').first().click()
+      await dialog.getByPlaceholder('新增分类，如：会议纪要').fill('工作流自动化')
+      await dialog.getByRole('button', { name: '新增' }).click()
+      await dialog.getByRole('button', { name: '提交' }).click()
+      await expect(page.getByText('用途分类已更新')).toBeVisible()
+      expect(lastCall(state, '/api/tools/purpose-tags')?.body).toMatchObject({
+        toolId: 'disc-deep',
+        actor: '郑睿涛',
+        purposeTags: ['工作流自动化'],
+      })
+    })
+
+    await test.step('TC-018 搜索工具名称、仓库和来源关键词', async () => {
       await runSearch(page, '搜索工具、仓库或发现来源', 'DeepResearch')
       await expect(page.getByText('DeepResearch AI')).toBeVisible()
       await expect(page.getByText(/1 个结果/)).toBeVisible()
     })
 
-    await test.step('TC-018 英文介绍自动走 url key 中文接口，悬浮展示完整介绍', async () => {
+    await test.step('TC-019 英文介绍自动走 url key 中文接口，悬浮展示完整介绍', async () => {
       await runSearch(page, '搜索工具、仓库或发现来源', 'DeepResearch')
       await expect(page.getByText('用于深度研究、资料整理和长文生成的中文说明。')).toBeVisible()
       await page.getByText('用于深度研究、资料整理和长文生成的中文说明。').hover()
@@ -257,11 +281,11 @@ test.describe('AI Tool 开发用例', () => {
       expect(state.calls.some((call) => call.path === '/api/tools/summaries/url-key')).toBe(true)
     })
 
-    await test.step('TC-019 真实 GitHub 工具名称可点击跳转到原仓库', async () => {
+    await test.step('TC-020 真实 GitHub 工具名称可点击跳转到原仓库', async () => {
       await expect(page.getByRole('link', { name: /打开 GitHub：Aryan-Pardeshi\/DeepResearch_AI/ })).toHaveAttribute('href', 'https://github.com/Aryan-Pardeshi/DeepResearch_AI')
     })
 
-    await test.step('TC-020 手动添加公开 GitHub 仓库', async () => {
+    await test.step('TC-021 手动添加公开 GitHub 仓库', async () => {
       await page.getByRole('button', { name: /手动添加/ }).click()
       const dialog = page.getByRole('dialog', { name: '手动添加 GitHub 工具' })
       await dialog.getByLabel('GitHub 仓库地址').fill('https://github.com/anthropics/skills')
@@ -274,7 +298,7 @@ test.describe('AI Tool 开发用例', () => {
       await expect(page.getByText('仓库已加入已发现列表')).toBeVisible()
     })
 
-    await test.step('TC-021 单个开始测评要求测评人和操作人', async () => {
+    await test.step('TC-022 单个开始测评要求测评人和操作人', async () => {
       await runSearch(page, '搜索工具、仓库或发现来源', 'DeepResearch')
       await page.getByRole('button', { name: '开始测评' }).click()
       const dialog = page.getByRole('dialog', { name: /开始测评/ })
@@ -289,7 +313,7 @@ test.describe('AI Tool 开发用例', () => {
       await expect(page.getByText('已开始测评')).toBeVisible()
     })
 
-    await test.step('TC-022 单个不处理必须写原因和操作人', async () => {
+    await test.step('TC-023 单个不处理必须写原因和操作人', async () => {
       await runSearch(page, '搜索工具、仓库或发现来源', 'Manual')
       await toolRow(page, '手动添加工具').getByRole('button', { name: '不处理' }).click()
       const dialog = page.getByRole('dialog', { name: /不处理/ })
@@ -303,7 +327,7 @@ test.describe('AI Tool 开发用例', () => {
       await expect(page.getByText('已标记不处理')).toBeVisible()
     })
 
-    await test.step('TC-023 跨页选择后批量测试分别保留所选工具', async () => {
+    await test.step('TC-024 跨页选择后批量测试分别保留所选工具', async () => {
       await runSearch(page, '搜索工具、仓库或发现来源', '')
       await page.getByRole('button', { name: /最新发现/ }).click()
       await page.getByLabel('选择 batch-owner-0/repo-0').check()
@@ -318,13 +342,13 @@ test.describe('AI Tool 开发用例', () => {
       await expect(page.getByText('批量测评完成：2 个工具')).toBeVisible()
     })
 
-    await test.step('TC-024 批量删除必须写删除原因', async () => {
+    await test.step('TC-025 批量删除必须写删除原因', async () => {
       await resetToolPage(page, '/#tools-discovered')
       await page.getByLabel('每页数量').selectOption('200')
       await page.getByLabel('选择 batch-owner-1/repo-1').check()
       await page.getByLabel('选择 batch-owner-2/repo-2').check()
       await page.getByRole('button', { name: '批量删除' }).click()
-      const dialog = page.getByRole('dialog', { name: /批量删除已发现工具/ })
+      const dialog = page.getByRole('dialog', { name: /批量删除工具百宝箱条目/ })
       await dialog.getByLabel('操作人').fill('郑睿涛')
       await dialog.getByRole('button', { name: '提交' }).click()
       await expect(dialog.getByText('请填写删除原因')).toBeVisible()
@@ -558,6 +582,7 @@ function createMockState(options: { discoveredCount?: number; includedCount?: nu
       firstDiscoveredAt: '2026-09-11T01:00:00Z',
       lastDiscoveredAt: '2026-09-11T01:00:00Z',
       pushedAt: '2026-09-11T00:00:00Z',
+      purposeTags: ['深度研究'],
       sources: [{ sourceType: 'keyword', term: 'DeepResearch', configId: 'cfg-keyword', lastSeenAt: now, hitCount: 1 }],
     }),
     makeTool('disc-growth', 'growth-labs/surge-agent', {
@@ -573,6 +598,7 @@ function createMockState(options: { discoveredCount?: number; includedCount?: nu
       currentSummary: '通过 Topic 发现的工具。',
       stars: 600,
       stars7d: 30,
+      purposeTags: ['Agent 编排'],
       sources: [{ sourceType: 'topic', term: 'ai-agents', configId: 'cfg-topic', lastSeenAt: now, hitCount: 1 }],
     }),
     makeTool('disc-manual', 'manual-labs/manual-agent', {
@@ -580,6 +606,7 @@ function createMockState(options: { discoveredCount?: number; includedCount?: nu
       currentSummary: '通过手动添加进入已发现列表。',
       stars: 300,
       stars7d: 10,
+      purposeTags: ['命令行效率'],
       sources: [{ sourceType: 'manual', term: 'manual-labs/manual-agent', lastSeenAt: now, hitCount: 1 }],
     }),
   ]
@@ -839,6 +866,7 @@ async function installMockRoutes(page: Page, state: MockState): Promise<MockStat
           forks: 10,
           openIssues: 1,
           topics: ['ai-agent'],
+          purposeTags: ['Agent 编排'],
           pushedAt: now,
         },
       })
@@ -846,7 +874,7 @@ async function installMockRoutes(page: Page, state: MockState): Promise<MockStat
     }
 
     if (path === '/api/tools/manual/add') {
-      const input = body as { repoUrl: string; actor?: string }
+      const input = body as { repoUrl: string; actor?: string; purposeTags?: string[] }
       if (!input.actor) return fail(route, 'actor is required')
       const repo = parseRepoURL(input.repoUrl)
       const existing = state.tools.find((tool) => tool.githubFullName === repo.fullName)
@@ -854,8 +882,14 @@ async function installMockRoutes(page: Page, state: MockState): Promise<MockStat
         name: previewName(repo.repo),
         status: 'discovered',
         currentSummary: '手动添加后的工具说明。',
+        purposeTags: input.purposeTags?.length ? input.purposeTags : ['Agent 编排'],
+        purposeTagsManuallySet: Boolean(input.purposeTags?.length),
         sources: [{ sourceType: 'manual', term: repo.fullName, lastSeenAt: now, hitCount: 1 }],
       })
+      if (existing && input.purposeTags) {
+        existing.purposeTags = input.purposeTags
+        existing.purposeTagsManuallySet = true
+      }
       if (!existing) state.tools.push(tool)
       await ok(route, { tool, created: !existing, duplicate: Boolean(existing) })
       return
@@ -916,16 +950,33 @@ async function installMockRoutes(page: Page, state: MockState): Promise<MockStat
       return
     }
 
+    if (path === '/api/tools/purpose-tags') {
+      const input = body as { toolId: string; actor?: string; purposeTags?: string[] }
+      if (!input.actor) return fail(route, 'actor is required')
+      const tool = toolByID(state, input.toolId)
+      tool.purposeTags = input.purposeTags ?? []
+      tool.purposeTagsManuallySet = true
+      tool.updatedAt = now
+      await ok(route, { tool })
+      return
+    }
+
     if (path === '/api/tools/team/import') {
-      const input = body as { repoUrl: string; operator: string; cooperUrl?: string; finalSummary?: string }
+      const input = body as { repoUrl: string; operator: string; cooperUrl?: string; finalSummary?: string; purposeTags?: string[] }
       if (!input.operator) return fail(route, 'actor is required')
       const repo = parseRepoURL(input.repoUrl)
       const existing = state.tools.find((tool) => tool.githubFullName === repo.fullName)
       const tool = existing ?? makeTool(`team-manual-${Date.now()}`, repo.fullName, {
         name: previewName(repo.repo),
         status: 'included',
+        purposeTags: input.purposeTags?.length ? input.purposeTags : ['Agent 编排'],
+        purposeTagsManuallySet: Boolean(input.purposeTags?.length),
         sources: [{ sourceType: 'manual', term: repo.fullName, lastSeenAt: now, hitCount: 1 }],
       })
+      if (existing && input.purposeTags) {
+        existing.purposeTags = input.purposeTags
+        existing.purposeTagsManuallySet = true
+      }
       tool.status = 'included'
       tool.finalSummary = input.finalSummary || tool.finalSummary || '手动导入团队工具。'
       tool.currentSummary = tool.finalSummary
@@ -1023,6 +1074,8 @@ function makeTool(id: string, fullName: string, overrides: Partial<ToolItem> = {
     openIssues: 1,
     stars7d: 0,
     topics: ['ai-agent'],
+    purposeTags: ['Agent 编排'],
+    purposeTagsManuallySet: false,
     licenseSpdx: 'MIT',
     defaultBranch: 'main',
     pushedAt: now,
@@ -1060,11 +1113,13 @@ function listTools(state: MockState, url: URL) {
   const status = (url.searchParams.get('status') || 'discovered') as ToolStatus
   const sort = (url.searchParams.get('sort') || 'latest') as ToolSort
   const sources = url.searchParams.getAll('source') as ToolSourceType[]
+  const purposeTags = url.searchParams.getAll('purposeTag')
   const q = (url.searchParams.get('q') || '').toLowerCase()
   const take = Number(url.searchParams.get('take') || 50)
   const offset = Number(url.searchParams.get('offset') || 0)
   let items = state.tools.filter((tool) => tool.status === status)
   if (sources.length) items = items.filter((tool) => tool.sources.some((source) => sources.includes(source.sourceType)))
+  if (purposeTags.length) items = items.filter((tool) => tool.purposeTags.some((tag) => purposeTags.includes(tag)))
   if (q) {
     items = items.filter((tool) => {
       const haystack = [
@@ -1074,6 +1129,7 @@ function listTools(state: MockState, url: URL) {
         tool.currentSummary,
         tool.finalSummary,
         tool.evaluation?.evaluator,
+        ...tool.purposeTags,
         ...tool.sources.map((source) => `${source.sourceType} ${source.term}`),
       ].filter(Boolean).join(' ').toLowerCase()
       return haystack.includes(q)
@@ -1111,6 +1167,7 @@ function statsFor(status: ToolStatus, items: ToolItem[]) {
     unlinkedEvaluationCount: items.filter((tool) => tool.evaluation && !tool.evaluation.cooperUrl).length,
     evaluatorCount: new Set(items.map((tool) => tool.evaluation?.evaluator).filter(Boolean)).size,
     latestUpdatedAt: now,
+    purposeTags: Array.from(new Set(items.flatMap((tool) => tool.purposeTags))).sort(),
   }
 }
 
@@ -1206,6 +1263,10 @@ function postBody(request: Request) {
 
 function sourceFilter(page: Page) {
   return page.getByLabel('来源', { exact: true })
+}
+
+function purposeFilter(page: Page) {
+  return page.getByLabel('用途', { exact: true })
 }
 
 function toolName(page: Page, name: string) {

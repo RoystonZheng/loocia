@@ -16,6 +16,7 @@ type PublicItem struct {
 	URL         string     `json:"url"`
 	Permalink   string     `json:"permalink"`
 	Source      string     `json:"source"`
+	SourceKind  string     `json:"sourceKind,omitempty"`
 	PublishedAt *time.Time `json:"publishedAt,omitempty"`
 	Summary     *string    `json:"summary,omitempty"`
 	ImageURL    *string    `json:"imageUrl,omitempty"`
@@ -41,6 +42,7 @@ func toPublic(it items.Item) PublicItem {
 		URL:         it.URL,
 		Permalink:   it.Permalink,
 		Source:      it.Source,
+		SourceKind:  it.SourceKind,
 		PublishedAt: it.PublishedAt,
 		Summary:     it.Summary,
 		ImageURL:    it.ImageURL,

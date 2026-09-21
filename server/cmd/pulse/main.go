@@ -68,4 +68,7 @@ func main() {
 	}
 	fmt.Printf("pulse: fetched=%d inserted=%d skipped=%d ageskip=%d srcerrs=%d enriched=%d failed=%d batches=%d\n",
 		sum.Fetched, sum.Inserted, sum.Skipped, sum.AgeSkipped, sum.SourceErrors, sum.Processed, sum.Failed, sum.Batches)
+	for _, sourceErr := range sum.SourceErrorDetails {
+		fmt.Fprintln(os.Stderr, "source error:", sourceErr)
+	}
 }

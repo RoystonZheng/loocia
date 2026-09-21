@@ -70,6 +70,39 @@ func TestListUnprocessedAndMarkProcessed(t *testing.T) {
 	}
 }
 
+func TestListUnprocessedPrioritizesAIHOT(t *testing.T) {
+	s := newTestRawStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	rss := sampleRaw("https://ex.com/old-rss", base)
+	if _, err := s.InsertRaw(ctx, rss); err != nil {
+		t.Fatal(err)
+	}
+	aihot := sampleRaw("https://ex.com/new-aihot", base.Add(time.Hour))
+	aihot.SourceKind = SourceKindAIHOT
+	if _, err := s.InsertRaw(ctx, aihot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE raw_items
+		SET fetched_at = CASE id WHEN $1 THEN $3::timestamptz ELSE $4::timestamptz END
+		WHERE id IN ($1, $2)`, rss.ID, aihot.ID, base, base.Add(time.Hour)); err != nil {
+		t.Fatalf("set fetched_at: %v", err)
+	}
+
+	un, err := s.ListUnprocessed(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListUnprocessed: %v", err)
+	}
+	if len(un) != 2 {
+		t.Fatalf("want 2 unprocessed, got %d", len(un))
+	}
+	if un[0].ID != aihot.ID {
+		t.Fatalf("AIHOT should be processed before older RSS backlog: got first=%s want=%s", un[0].ID, aihot.ID)
+	}
+}
+
 func TestInsertRawPersistsSourceRole(t *testing.T) {
 	s := newTestRawStore(t)
 	ctx := context.Background()

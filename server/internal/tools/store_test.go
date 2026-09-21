@@ -126,6 +126,9 @@ func TestUpsertFromGitHubCreatesAndMergesSourcesWithoutStatusRegression(t *testi
 	if !first.Created || first.Tool.Status != ToolDiscovered {
 		t.Fatalf("first upsert result mismatch: %+v", first)
 	}
+	if !containsTag(first.Tool.PurposeTags, "代码开发") || first.Tool.PurposeTagsManuallySet {
+		t.Fatalf("first upsert should auto-classify purpose tags: %+v manual=%t", first.Tool.PurposeTags, first.Tool.PurposeTagsManuallySet)
+	}
 
 	secondRepo := sampleRepo("node-1", "openai", "agents")
 	secondRepo.Stars = 125
@@ -205,6 +208,61 @@ func TestUpsertFromGitHubCreatesAndMergesSourcesWithoutStatusRegression(t *testi
 	}
 	if snapshotCount != 1 || snapshotStars != 130 {
 		t.Fatalf("daily snapshot should be upserted with latest facts, count=%d stars=%d", snapshotCount, snapshotStars)
+	}
+}
+
+func TestToolPurposeTagsCanBeManuallyCorrectedAndFiltered(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	repo := sampleRepo("node-purpose", "openai", "browser-agent")
+	repo.Description = "A browser automation agent for Playwright tasks"
+	repo.Topics = []string{"browser-automation", "ai-agents"}
+	upsert, err := s.UpsertFromGitHub(ctx, repo, DiscoverySource{
+		SourceType: SourceKeyword,
+		Term:       "browser agent",
+		Actor:      "alice",
+	})
+	if err != nil {
+		t.Fatalf("UpsertFromGitHub: %v", err)
+	}
+	if !containsTag(upsert.Tool.PurposeTags, "浏览器操作") {
+		t.Fatalf("tool should be auto-classified as browser scenario: %+v", upsert.Tool.PurposeTags)
+	}
+
+	if err := s.UpdateToolPurposeTags(ctx, upsert.Tool.ID, []string{"工作流自动化"}, true); err != nil {
+		t.Fatalf("UpdateToolPurposeTags: %v", err)
+	}
+	repo.Description = "A code review agent"
+	rediscovered, err := s.UpsertFromGitHub(ctx, repo, DiscoverySource{
+		SourceType: SourceTopic,
+		Term:       "ai-agents",
+		Actor:      "cron",
+	})
+	if err != nil {
+		t.Fatalf("rediscover: %v", err)
+	}
+	if !rediscovered.Tool.PurposeTagsManuallySet || len(rediscovered.Tool.PurposeTags) != 1 || rediscovered.Tool.PurposeTags[0] != "工作流自动化" {
+		t.Fatalf("manual purpose tags should not be overwritten: %+v manual=%t", rediscovered.Tool.PurposeTags, rediscovered.Tool.PurposeTagsManuallySet)
+	}
+
+	filtered, err := s.ListTools(ctx, ListToolsParams{
+		Status:      ToolDiscovered,
+		PurposeTags: []string{"工作流自动化"},
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("ListTools by purpose: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != upsert.Tool.ID {
+		t.Fatalf("purpose filter mismatch: %+v", filtered)
+	}
+	stats, err := s.ToolStats(ctx, ListToolsParams{Status: ToolDiscovered})
+	if err != nil {
+		t.Fatalf("ToolStats: %v", err)
+	}
+	if !containsTag(stats.PurposeTags, "工作流自动化") {
+		t.Fatalf("stats should expose purpose options: %+v", stats.PurposeTags)
 	}
 }
 

@@ -25,14 +25,15 @@ type Deps struct {
 
 // Summary reports one pulse run.
 type Summary struct {
-	Fetched      int
-	Inserted     int
-	Skipped      int
-	AgeSkipped   int
-	SourceErrors int
-	Processed    int
-	Failed       int
-	Batches      int
+	Fetched            int
+	Inserted           int
+	Skipped            int
+	AgeSkipped         int
+	SourceErrors       int
+	SourceErrorDetails []string
+	Processed          int
+	Failed             int
+	Batches            int
 }
 
 const (
@@ -72,6 +73,7 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 	sum.Fetched, sum.Inserted, sum.Skipped = res.Fetched, res.Inserted, res.Skipped
 	sum.AgeSkipped = res.AgeSkipped
 	sum.SourceErrors = len(res.Errors)
+	sum.SourceErrorDetails = sourceErrorMessages(res.Errors)
 
 	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricher(d.LLM)).
 		WithPageResolver(ingest.NewPageResolver()).
@@ -98,4 +100,14 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 		}
 	}
 	return sum, nil
+}
+
+func sourceErrorMessages(errs []error) []string {
+	out := make([]string, 0, len(errs))
+	for _, err := range errs {
+		if err != nil {
+			out = append(out, err.Error())
+		}
+	}
+	return out
 }

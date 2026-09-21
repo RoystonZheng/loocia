@@ -179,3 +179,31 @@ func TestHTTPGitHubClientSearchHeadersAndErrorClassification(t *testing.T) {
 		t.Fatalf("secondary rate limit classification mismatch: %#v", err)
 	}
 }
+
+func TestHTTPGitHubClientRotatesConfiguredTokens(t *testing.T) {
+	var authHeaders []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeaders = append(authHeaders, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"total_count":        0,
+			"incomplete_results": false,
+			"items":              []map[string]any{},
+		})
+	}))
+	defer srv.Close()
+
+	client := NewHTTPGitHubClient("")
+	client.BaseURL = srv.URL
+	client.SetTokens([]string{"token-a", "token-b"})
+	client.SetTokenSelection(GitHubTokenStrategyRoundRobin, 0, false)
+
+	for i := 0; i < 2; i++ {
+		if _, err := client.SearchRepositories(context.Background(), GitHubSearchRequest{Query: "x"}); err != nil {
+			t.Fatalf("SearchRepositories(%d): %v", i, err)
+		}
+	}
+	if got, want := strings.Join(authHeaders, ","), "Bearer token-a,Bearer token-b"; got != want {
+		t.Fatalf("authorization rotation = %q, want %q", got, want)
+	}
+}

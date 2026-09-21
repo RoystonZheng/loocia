@@ -42,6 +42,49 @@ func TestParseAnthropicNewsHTML(t *testing.T) {
 	}
 }
 
+func TestParseAnthropicNewsHTMLUsesVisibleDateWhenDatetimeIsMissing(t *testing.T) {
+	html := `<!doctype html><html><body>
+<article>
+  <a href="/news/visible-date">Visible date release</a>
+  <time>Sep 17, 2026</time>
+</article>
+</body></html>`
+
+	items, err := parseAnthropicNewsHTML([]byte(html), "https://www.anthropic.com/news", "Anthropic News", SourceKindHTML, SourceRoleOfficial, 10)
+	if err != nil {
+		t.Fatalf("parseAnthropicNewsHTML: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("want 1 news item, got %d", len(items))
+	}
+	want := time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC)
+	if items[0].PublishedAt == nil || !items[0].PublishedAt.Equal(want) {
+		t.Fatalf("published: got %v want %v", items[0].PublishedAt, want)
+	}
+}
+
+func TestParseAnthropicNewsHTMLExtractsTitleWithoutMetadata(t *testing.T) {
+	html := `<!doctype html><html><body>
+<article>
+  <a href="/news/title-with-meta">
+    <div class="meta"><time>Aug 14, 2026</time><span>Announcements</span></div>
+    <span class="PublicationList-module__title">How Claude's text watermark works</span>
+  </a>
+</article>
+</body></html>`
+
+	items, err := parseAnthropicNewsHTML([]byte(html), "https://www.anthropic.com/news", "Anthropic News", SourceKindHTML, SourceRoleOfficial, 10)
+	if err != nil {
+		t.Fatalf("parseAnthropicNewsHTML: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("want 1 news item, got %d", len(items))
+	}
+	if items[0].Title != "How Claude's text watermark works" {
+		t.Fatalf("title should exclude metadata: got %q", items[0].Title)
+	}
+}
+
 func TestParseAnthropicNewsHTMLLimitAndNoLinks(t *testing.T) {
 	items, err := parseAnthropicNewsHTML([]byte(anthropicHTML), "https://www.anthropic.com/news", "Anthropic News", SourceKindHTML, SourceRoleOfficial, 1)
 	if err != nil {

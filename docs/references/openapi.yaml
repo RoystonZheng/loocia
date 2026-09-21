@@ -91,6 +91,16 @@ paths:
             可选来源类型筛选。`rss` = RSS/Atom，`html` = 网页直采，
             `mp` = 公众号语料，`aihot` = AIHOT 补漏候选。未知值返回 400。
             `mp` 浏览历史语料时不加默认 7 天窗口；其它来源类型仍受默认窗口约束。
+        - name: score_min
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+          description: |
+            可选最低阅读评分。只返回 `score >= score_min` 的条目；评分为 1-5，
+            非整数或越界值返回 400。前端 AI 动态页的“精选”选项仍使用 `mode=selected`，
+            评分选项使用 `mode=all&score_min=N`。
         - name: since
           in: query
           schema:
@@ -164,7 +174,7 @@ paths:
                 type: string
         "400":
           description: |
-            参数不合法（mode / category / source_kind / since / take 越界、cursor 字符长度超限等）。
+            参数不合法（mode / category / source_kind / score_min / since / take 越界、cursor 字符长度超限等）。
             响应体 `{ "error": "<原因>" }`。
         "429":
           description: |
@@ -468,6 +478,12 @@ components:
           type: string
           description: |
             来源名(如 "OpenAI Blog" / "Anthropic 推特" / "X：Berry Xia (@berry_xia)")。
+        sourceKind:
+          type: string
+          enum: [rss, html, mp, aihot]
+          description: |
+            采集通道类型。`source` 仍表示原文来源 / 原始发布方；`sourceKind=aihot`
+            表示该条由 AIHOT 补漏通道发现，前端可据此展示 AIHOT 补漏标签。
             **始终是字符串**,不会是对象——把它当 string 渲染就行。
         publishedAt:
           type: [string, "null"]

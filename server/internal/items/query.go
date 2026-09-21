@@ -29,15 +29,18 @@ type Cursor struct {
 type ListParams struct {
 	Selected   *bool
 	Category   *string
-	SourceKind *string // "mp" | "rss"; nil = all sources
-	Since      *time.Time
-	Until      *time.Time // exclusive upper bound on published_at
+	SourceKind *string    // "rss" | "html" | "mp" | "aihot"; nil = all sources
+	Since      *time.Time // published_at, falling back to created_at when missing
+	Until      *time.Time // exclusive upper bound on published_at/created_at
 	Q          *string
+	ScoreMin   *int
 	After      *Cursor
 	Limit      int
 }
 
 // List returns items ordered by COALESCE(published_at,epoch) DESC, id DESC.
+// Freshness filters fall back to created_at when published_at is missing so
+// successfully ingested items remain discoverable.
 func (s *Store) List(ctx context.Context, p ListParams) ([]Item, error) {
 	limit := p.Limit
 	if limit <= 0 {
@@ -60,16 +63,17 @@ func (s *Store) List(ctx context.Context, p ListParams) ([]Item, error) {
 		  AND ($1::boolean IS NOT TRUE OR cluster_id IS NULL OR cluster_primary IS TRUE)
 		  AND ($2::text    IS NULL OR category = $2)
 		  AND ($9::text    IS NULL OR source_kind = $9)
-		  AND ($3::timestamptz IS NULL OR published_at >= $3)
-		  AND ($8::timestamptz IS NULL OR published_at < $8)
+		  AND ($3::timestamptz IS NULL OR COALESCE(published_at, created_at) >= $3)
+		  AND ($8::timestamptz IS NULL OR COALESCE(published_at, created_at) < $8)
 		  AND ($4::text IS NULL OR (
 		        title ILIKE '%'||$4||'%' OR title_en ILIKE '%'||$4||'%'
 		     OR summary ILIKE '%'||$4||'%' OR body ILIKE '%'||$4||'%'))
+		  AND ($10::int IS NULL OR score >= $10)
 		  AND ($5::timestamptz IS NULL OR $6::text IS NULL OR
 		       (COALESCE(published_at,'epoch'::timestamptz), id) < ($5, $6))
 		ORDER BY COALESCE(published_at,'epoch'::timestamptz) DESC, id DESC
 		LIMIT $7`,
-		p.Selected, p.Category, p.Since, p.Q, afterKey, afterID, limit, p.Until, p.SourceKind)
+		p.Selected, p.Category, p.Since, p.Q, afterKey, afterID, limit, p.Until, p.SourceKind, p.ScoreMin)
 	if err != nil {
 		return nil, err
 	}

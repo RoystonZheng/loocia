@@ -5,6 +5,7 @@ export interface PublicItem {
   url: string
   permalink: string
   source: string
+  sourceKind?: 'rss' | 'html' | 'mp' | 'aihot'
   publishedAt?: string
   summary?: string
   imageUrl?: string
@@ -26,6 +27,7 @@ export interface ListQuery {
   category?: string
   sourceKind?: 'rss' | 'html' | 'mp' | 'aihot'
   q?: string
+  scoreMin?: number
   take?: number
   cursor?: string
 }
@@ -36,6 +38,7 @@ export async function fetchItems(query: ListQuery): Promise<ItemList> {
   if (query.category) params.set('category', query.category)
   if (query.sourceKind) params.set('source_kind', query.sourceKind)
   if (query.q) params.set('q', query.q)
+  if (query.scoreMin != null) params.set('score_min', String(query.scoreMin))
   if (query.take != null) params.set('take', String(query.take))
   if (query.cursor) params.set('cursor', query.cursor)
 

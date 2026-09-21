@@ -16,6 +16,21 @@ const SOURCES: { key: SourceKind | undefined; label: string }[] = [
   { key: 'aihot', label: 'AIHOT补漏' },
 ]
 const PAGE_SIZE = 20
+type ArticleFilter = 'all' | 'selected' | 'score-3' | 'score-4' | 'score-5'
+
+const ARTICLE_FILTERS: { value: ArticleFilter; label: string }[] = [
+  { value: 'all', label: '全部文章' },
+  { value: 'selected', label: '精选' },
+  { value: 'score-3', label: '评分 3 分以上' },
+  { value: 'score-4', label: '评分 4 分以上' },
+  { value: 'score-5', label: '评分 5 分以上' },
+]
+
+function filterQuery(filter: ArticleFilter): { mode: 'selected' | 'all'; scoreMin?: number } {
+  if (filter === 'selected') return { mode: 'selected' }
+  if (filter.startsWith('score-')) return { mode: 'all', scoreMin: Number(filter.slice('score-'.length)) }
+  return { mode: 'all' }
+}
 
 export function Feed({ mode }: { mode: 'selected' | 'all' }) {
   const [items, setItems] = useState<PublicItem[]>([])
@@ -27,14 +42,16 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
   const [submittedQ, setSubmittedQ] = useState('')
   const [category, setCategory] = useState<string | undefined>(undefined)
   const [sourceKind, setSourceKind] = useState<SourceKind | undefined>(undefined)
+  const [articleFilter, setArticleFilter] = useState<ArticleFilter>(mode === 'selected' ? 'selected' : 'all')
 
   const load = useCallback(
     async (reset: boolean, curCursor: string | null) => {
       setLoading(true)
       setError(false)
       try {
+        const filter = filterQuery(articleFilter)
         const res = await fetchItems({
-          mode,
+          ...filter,
           take: PAGE_SIZE,
           q: submittedQ || undefined,
           category,
@@ -50,7 +67,7 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
         setLoading(false)
       }
     },
-    [mode, submittedQ, category, sourceKind],
+    [articleFilter, submittedQ, category, sourceKind],
   )
 
   useEffect(() => {
@@ -59,7 +76,7 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
 
   return (
     <div className="feed">
-      {mode === 'selected' && <HotTopics />}
+      <HotTopics />
 
       <div className="feed-controls">
         <div className="feed-sources">
@@ -90,22 +107,36 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
             </button>
           ))}
         </div>
-        <form
-          role="search"
-          className="feed-search"
-          onSubmit={(e) => {
-            e.preventDefault()
-            setSubmittedQ(q.trim())
-          }}
-        >
-          <input
-            type="search"
-            placeholder="搜索标题/摘要/正文…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <button type="submit">搜索</button>
-        </form>
+        <div className="feed-query-actions">
+          <label className="feed-filter">
+            <span>筛选</span>
+            <select
+              aria-label="资讯筛选"
+              value={articleFilter}
+              onChange={(e) => setArticleFilter(e.target.value as ArticleFilter)}
+            >
+              {ARTICLE_FILTERS.map((filter) => (
+                <option key={filter.value} value={filter.value}>{filter.label}</option>
+              ))}
+            </select>
+          </label>
+          <form
+            role="search"
+            className="feed-search"
+            onSubmit={(e) => {
+              e.preventDefault()
+              setSubmittedQ(q.trim())
+            }}
+          >
+            <input
+              type="search"
+              placeholder="搜索标题/摘要/正文…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            <button type="submit">搜索</button>
+          </form>
+        </div>
       </div>
 
       {error && <p className="feed-error">加载失败，请稍后重试。</p>}

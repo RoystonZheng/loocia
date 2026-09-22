@@ -15,6 +15,7 @@ type ListToolsParams struct {
 	SourceType  *SourceType
 	SourceTypes []SourceType
 	PurposeTags []string
+	Keyword     *string
 	After       *Cursor
 	Limit       int
 	Offset      int
@@ -32,11 +33,13 @@ type ToolListStats struct {
 	EvaluatorCount          int
 	LatestUpdatedAt         *time.Time
 	PurposeTags             []string
+	Keywords                []string
 }
 
 type ToolListItem struct {
 	Tool
 	Sources    []ToolSourceSummary
+	Reviews    []MemberReviewSummary
 	Stars7D    *int
 	Evaluation *EvaluationSummary
 }
@@ -59,4 +62,21 @@ type EvaluationSummary struct {
 	Result            *EvaluationResult
 	FinalSummary      *string
 	NotIncludedReason *string
+}
+
+type MemberReview struct {
+	ID        string
+	ToolID    string
+	Reviewer  string
+	Operator  string
+	Content   string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type MemberReviewSummary struct {
+	ID        string
+	Reviewer  string
+	Content   string
+	CreatedAt time.Time
 }

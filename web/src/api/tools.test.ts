@@ -52,17 +52,19 @@ describe('tools api client', () => {
       pageSize: 20,
       offset: 40,
       take: 20,
-      stats: { status: 'discovered', keywordSourceCount: 0, topicSourceCount: 0, manualSourceCount: 0, linkedEvaluationCount: 0, unlinkedEvaluationCount: 0, evaluatorCount: 0 },
+      stats: { status: 'discovered', keywordSourceCount: 0, topicSourceCount: 0, manualSourceCount: 0, linkedEvaluationCount: 0, unlinkedEvaluationCount: 0, evaluatorCount: 0, purposeTags: [], keywords: [] },
       items: [],
     })) as unknown as typeof fetch
-    await fetchTools({ status: 'discovered', sort: 'stars7d', sources: ['keyword', 'manual'], purposeTags: ['浏览器操作'], q: 'agent', take: 20, offset: 40, page: 3 })
+    await fetchTools({ status: 'discovered', sort: 'stars7d', sources: ['keyword', 'manual'], purposeTags: ['浏览器操作'], keyword: 'browser agent', q: 'agent', take: 20, offset: 40, page: 3 })
     const url = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    const parsed = new URL(url, 'http://localhost')
     expect(url).toContain('/api/tools/items?')
     expect(url).toContain('status=discovered')
     expect(url).toContain('sort=stars7d')
     expect(url).toContain('source=keyword')
     expect(url).toContain('source=manual')
     expect(url).toContain('purposeTag=%E6%B5%8F%E8%A7%88%E5%99%A8%E6%93%8D%E4%BD%9C')
+    expect(parsed.searchParams.get('keyword')).toBe('browser agent')
     expect(url).toContain('q=agent')
     expect(url).toContain('take=20')
     expect(url).toContain('offset=40')

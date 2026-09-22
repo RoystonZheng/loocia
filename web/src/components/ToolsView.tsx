@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   ToolApiError,
   addManualTool,
+  addToolMemberReview,
   checkGitHubSettings,
   deleteGitHubToken,
   deleteTeamTool,
@@ -13,6 +14,7 @@ import {
   fetchToolSummaryByURLKey,
   fetchTools,
   finishToolEvaluation,
+  includeDiscoveredAsTeamTool,
   importTeamTool,
   pauseToolConfig,
   previewManualTool,
@@ -25,6 +27,7 @@ import {
   startToolEvaluation,
   testGitHubToken,
   updateTeamTool,
+  updateToolMetadata,
   updateToolPurposeTags,
   updateToolEvaluationCooperURL,
   type ConfigList,
@@ -35,6 +38,7 @@ import {
   type GitHubTokenStrategy,
   type ToolItem,
   type ToolList,
+  type ToolMemberReview,
   type ToolSort,
   type ToolSourceType,
   type ToolStatus,
@@ -56,6 +60,7 @@ const SECTION_META: Record<ToolsSection, { title: string; sub: string; search: s
 
 type SourceFilter = ToolSourceType | 'all'
 type PurposeFilter = string
+type KeywordFilter = string
 type ManualPurposeMode = 'ai' | 'manual'
 type ConfigMethodFilter = DiscoveryMethod | 'all'
 type ConfigTriggerFilter = TriggerMode | 'all'
@@ -92,8 +97,6 @@ const GITHUB_TOKEN_STRATEGIES: { value: GitHubTokenStrategy; label: string; desc
   { value: 'failover', label: '额度不足时切换', desc: '优先使用第一个可选账号，限流后切换' },
 ]
 
-const PAGE_SIZE_OPTIONS = [50, 100, 200] as const
-
 const DEFAULT_PURPOSE_TAGS = [
   '代码开发',
   '浏览器操作',
@@ -113,6 +116,9 @@ const DEFAULT_PURPOSE_TAGS = [
 
 type ToolAction =
   | { kind: 'start'; tool: ToolItem }
+  | { kind: 'edit'; tool: ToolItem }
+  | { kind: 'include-team'; tool: ToolItem }
+  | { kind: 'review'; tool: ToolItem }
   | { kind: 'exclude'; tool: ToolItem }
   | { kind: 'cooper'; tool: ToolItem }
   | { kind: 'include'; tool: ToolItem }
@@ -274,6 +280,7 @@ function ConfigPanel({
   const [triggerFilter, setTriggerFilter] = useState<ConfigTriggerFilter>('all')
   const [configRunOverrides, setConfigRunOverrides] = useState<Record<string, ConfigRunState>>({})
   const [formOpen, setFormOpen] = useState(false)
+  const [modalError, setModalError] = useState('')
   const [form, setForm] = useState<ConfigFormState>(emptyConfigForm(''))
 
   const load = useCallback(async (silent = false) => {
@@ -320,10 +327,11 @@ function ConfigPanel({
   async function submit(e: FormEvent) {
     e.preventDefault()
     onError('')
+    setModalError('')
     const existingConfig = form.id ? data?.items.find((cfg) => cfg.id === form.id) : undefined
     const actor = actorForConfigAction(existingConfig)
     if (!actor) {
-      onError('请先填写操作人')
+      setModalError('请先填写操作人')
       return
     }
     try {
@@ -349,7 +357,7 @@ function ConfigPanel({
       setFormOpen(false)
       await load()
     } catch (err) {
-      onError(formatToolError(err))
+      setModalError(formatToolError(err))
     }
   }
 
@@ -435,6 +443,7 @@ function ConfigPanel({
 
   function openNewConfig() {
     setForm(emptyConfigForm(form.actor))
+    setModalError('')
     setFormOpen(true)
   }
 
@@ -448,6 +457,7 @@ function ConfigPanel({
       enabled: cfg.enabled,
       actor: form.actor.trim() || cfg.updatedBy || cfg.createdBy,
     })
+    setModalError('')
     onNotice('正在编辑配置')
     setFormOpen(true)
   }
@@ -504,8 +514,15 @@ function ConfigPanel({
       </div>
 
       {formOpen && (
-        <ToolModal title={form.id ? '编辑发现配置' : '新增发现配置'} onClose={() => setFormOpen(false)}>
+        <ToolModal
+          title={form.id ? '编辑发现配置' : '新增发现配置'}
+          onClose={() => {
+            setModalError('')
+            setFormOpen(false)
+          }}
+        >
           <form className="tools-modal-form" onSubmit={submit}>
+            {modalError && <p className="tools-modal-error">{modalError}</p>}
             <label>
               <span>配置名称</span>
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="如：浏览器操作工具发现" />
@@ -1056,14 +1073,17 @@ function ToolListPanel({
   const [submittedQ, setSubmittedQ] = useState('')
   const [sort, setSort] = useState<ToolSort>('latest')
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [keywordFilter, setKeywordFilter] = useState<KeywordFilter>('all')
   const [purposeFilter, setPurposeFilter] = useState<PurposeFilter>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [summaryOverrides, setSummaryOverrides] = useState<Record<string, string>>({})
   const summaryRequestIdsRef = useRef<Set<string>>(new Set())
+  const selectionRequestIdRef = useRef(0)
   const [action, setAction] = useState<ToolAction | null>(null)
   const [batchAction, setBatchAction] = useState<BatchToolAction | null>(null)
   const [selectedToolMap, setSelectedToolMap] = useState<Record<string, ToolItem>>({})
+  const [selectingAllResults, setSelectingAllResults] = useState(false)
   const [manualOpen, setManualOpen] = useState(false)
   const [manualRepoURL, setManualRepoURL] = useState('')
   const [manualActor, setManualActor] = useState('')
@@ -1080,11 +1100,13 @@ function ToolListPanel({
     onError('')
     try {
       const sources = sourceFilter === 'all' ? undefined : [sourceFilter]
+      const keyword = keywordFilter === 'all' ? undefined : keywordFilter
       const purposeTags = purposeFilter === 'all' ? undefined : [purposeFilter]
       const next = await fetchTools({
         status,
         sort,
         sources,
+        keyword,
         purposeTags,
         q: submittedQ || undefined,
         take: pageSize,
@@ -1110,7 +1132,7 @@ function ToolListPanel({
     } finally {
       setLoading(false)
     }
-  }, [onError, page, pageSize, purposeFilter, sort, sourceFilter, status, submittedQ])
+  }, [keywordFilter, onError, page, pageSize, purposeFilter, sort, sourceFilter, status, submittedQ])
 
   useEffect(() => {
     setAction(null)
@@ -1120,6 +1142,7 @@ function ToolListPanel({
     setPreview(null)
     setManualOpen(false)
     setSourceFilter('all')
+    setKeywordFilter('all')
     setPurposeFilter('all')
     setManualCooperUrl('')
     setManualSummary('')
@@ -1141,8 +1164,10 @@ function ToolListPanel({
   const selectedIds = useMemo(() => Object.keys(selectedToolMap), [selectedToolMap])
 
   function resetListPosition() {
+    selectionRequestIdRef.current += 1
     setPage(1)
     setSelectedToolMap({})
+    setSelectingAllResults(false)
   }
 
   function toggleSelected(toolID: string, checked: boolean) {
@@ -1169,6 +1194,63 @@ function ToolListPanel({
       }
       return next
     })
+  }
+
+  async function selectMatchingResultCount(rawCount: number, options: { showBusy?: boolean } = {}) {
+    const showBusy = options.showBusy ?? true
+    const requestId = selectionRequestIdRef.current + 1
+    selectionRequestIdRef.current = requestId
+    const total = data?.count ?? 0
+    const targetCount = Math.min(Math.max(Math.trunc(rawCount), 0), total)
+    if (targetCount === 0 || total <= 0) {
+      setSelectedToolMap({})
+      setSelectingAllResults(false)
+      onNotice('已取消选择')
+      return
+    }
+    if (showBusy) setSelectingAllResults(true)
+    try {
+      const sources = sourceFilter === 'all' ? undefined : [sourceFilter]
+      const keyword = keywordFilter === 'all' ? undefined : keywordFilter
+      const purposeTags = purposeFilter === 'all' ? undefined : [purposeFilter]
+      const next = await fetchTools({
+        status,
+        sort,
+        sources,
+        keyword,
+        purposeTags,
+        q: submittedQ || undefined,
+        take: targetCount,
+        offset: 0,
+      })
+      if (selectionRequestIdRef.current !== requestId) return
+      const nextSelected: Record<string, ToolItem> = {}
+      for (const tool of next.items) nextSelected[tool.id] = tool
+      setSelectedToolMap(nextSelected)
+      onNotice(`已选择 ${next.items.length} 个结果`)
+    } catch (err) {
+      if (selectionRequestIdRef.current === requestId) onError(formatToolError(err))
+    } finally {
+      if (showBusy && selectionRequestIdRef.current === requestId) setSelectingAllResults(false)
+    }
+  }
+
+  async function selectAllMatchingResults() {
+    const total = data?.count ?? 0
+    if (total <= 0) return
+    await selectMatchingResultCount(total)
+  }
+
+  async function adjustSelectedResultCount(nextCount: number) {
+    if (selectingAllResults) return
+    await selectMatchingResultCount(nextCount, { showBusy: false })
+  }
+
+  function clearSelection() {
+    selectionRequestIdRef.current += 1
+    setSelectedToolMap({})
+    setSelectingAllResults(false)
+    onNotice('')
   }
 
   useEffect(() => {
@@ -1262,6 +1344,19 @@ function ToolListPanel({
   }
 
   const stats = data?.stats
+  const keywordOptions = useMemo(() => {
+    const keywords = new Set(stats?.keywords ?? [])
+    if (keywordFilter !== 'all') keywords.add(keywordFilter)
+    for (const tool of visibleTools) {
+      for (const source of tool.sources) {
+        if (source.sourceType === 'keyword' && source.term.trim()) keywords.add(source.term)
+      }
+    }
+    return [
+      { key: 'all', label: '全部关键词' },
+      ...Array.from(keywords).sort((a, b) => a.localeCompare(b)).map((keyword) => ({ key: keyword, label: keyword })),
+    ]
+  }, [keywordFilter, stats?.keywords, visibleTools])
   const purposeOptions = useMemo(() => mergePurposeOptions(stats?.purposeTags ?? [], visibleTools), [stats?.purposeTags, visibleTools])
   const allPurposeTags = useMemo(
     () => mergeTagOptions(
@@ -1348,9 +1443,21 @@ function ToolListPanel({
             value={sourceFilter}
             onChange={(next) => {
               setSourceFilter(next)
+              setKeywordFilter('all')
               resetListPosition()
             }}
           />
+          {section === 'discovered' && (
+            <SelectFilter
+              label="关键词"
+              options={keywordOptions}
+              value={keywordFilter}
+              onChange={(next) => {
+                setKeywordFilter(next)
+                resetListPosition()
+              }}
+            />
+          )}
           <SelectFilter
             label="用途"
             options={purposeOptions}
@@ -1363,8 +1470,12 @@ function ToolListPanel({
           <BatchActionBar
             section={section}
             selectedTools={selectedTools}
+            totalCount={data?.count ?? 0}
+            selectingAllResults={selectingAllResults}
+            onSelectResultCount={adjustSelectedResultCount}
+            onSelectAllResults={selectAllMatchingResults}
             onBatchAction={setBatchAction}
-            onClear={() => setSelectedToolMap({})}
+            onClear={clearSelection}
           />
           <span className="tools-result-count">{data?.count ?? 0} 个结果</span>
         </div>
@@ -1516,9 +1627,19 @@ function PaginationBar({ count, page, pageSize, selectedCount, onPage, onPageSiz
       <div className="tools-pagination-controls">
         <label>
           <span>每页</span>
-          <select aria-label="每页数量" value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))}>
-            {PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}</option>)}
-          </select>
+          <input
+            aria-label="每页数量"
+            type="number"
+            min={1}
+            max={200}
+            step={1}
+            value={pageSize}
+            onChange={(e) => {
+              const next = Number(e.target.value)
+              if (!Number.isFinite(next)) return
+              onPageSize(Math.min(200, Math.max(1, Math.trunc(next))))
+            }}
+          />
         </label>
         <button type="button" disabled={safePage <= 1} onClick={() => onPage(safePage - 1)}>上一页</button>
         <span>第 {safePage} / {totalPages} 页</span>
@@ -1528,16 +1649,77 @@ function PaginationBar({ count, page, pageSize, selectedCount, onPage, onPageSiz
   )
 }
 
-function BatchActionBar({ section, selectedTools, onBatchAction, onClear }: {
+function BatchActionBar({ section, selectedTools, totalCount, selectingAllResults, onSelectResultCount, onSelectAllResults, onBatchAction, onClear }: {
   section: Exclude<ToolsSection, 'configs'>
   selectedTools: ToolItem[]
+  totalCount: number
+  selectingAllResults: boolean
+  onSelectResultCount: (count: number) => void
+  onSelectAllResults: () => void
   onBatchAction: (action: BatchToolAction) => void
   onClear: () => void
 }) {
-  if (!selectedTools.length) return null
+  const selectedCount = selectedTools.length
+  const [draftCount, setDraftCount] = useState(String(selectedCount))
+
+  useEffect(() => {
+    setDraftCount(String(selectedCount))
+  }, [selectedCount])
+
+  if (!selectedCount) return null
+  const canSelectAllResults = totalCount > selectedCount
+
+  function normalizedDraftCount(raw: string): number {
+    const n = Number(raw)
+    if (!Number.isFinite(n)) return selectedCount
+    return Math.min(Math.max(Math.trunc(n), 0), totalCount)
+  }
+
+  function commitDraftCount(raw: string) {
+    const nextCount = normalizedDraftCount(raw)
+    setDraftCount(String(nextCount))
+    if (nextCount !== selectedCount) onSelectResultCount(nextCount)
+  }
+
+  function stepCount(delta: number) {
+    const baseCount = normalizedDraftCount(draftCount)
+    const nextCount = Math.min(Math.max(baseCount + delta, 0), totalCount)
+    setDraftCount(String(nextCount))
+    if (nextCount !== selectedCount) onSelectResultCount(nextCount)
+  }
+
   return (
     <div className="tools-batch-actions" aria-label="批量操作">
-      <span>{selectedTools.length} 已选</span>
+      <span className="tools-selected-count">{selectedCount} 已选</span>
+      <label className="tools-select-count-control">
+        <span>已选</span>
+        <input
+          aria-label="选择数量"
+          type="number"
+          min={0}
+          max={totalCount}
+          value={draftCount}
+          disabled={selectingAllResults}
+          onChange={(e) => setDraftCount(e.target.value)}
+          onBlur={(e) => commitDraftCount(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitDraftCount(e.currentTarget.value)
+            }
+          }}
+        />
+        <span>个</span>
+        <div className="tools-select-count-steps">
+          <button type="button" aria-label="增加一个选择" disabled={selectingAllResults || selectedCount >= totalCount} onClick={() => stepCount(1)}>▲</button>
+          <button type="button" aria-label="减少一个选择" disabled={selectingAllResults || selectedCount <= 0} onClick={() => stepCount(-1)}>▼</button>
+        </div>
+      </label>
+      {canSelectAllResults && (
+        <button type="button" onClick={onSelectAllResults} disabled={selectingAllResults}>
+          {selectingAllResults ? '选择中...' : `选择全部 ${totalCount} 个结果`}
+        </button>
+      )}
       {section === 'discovered' && (
         <>
           <button type="button" onClick={() => onBatchAction({ kind: 'batch-start', tools: selectedTools })}>批量测试</button>
@@ -1588,6 +1770,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
               <th>介绍</th>
               <th>用途</th>
               <th>发现来源</th>
+              <th>Cooper 文档</th>
               <th>Stars</th>
               <th>7 日增长</th>
               <th>最近提交</th>
@@ -1601,14 +1784,18 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                   <input type="checkbox" aria-label={`选择 ${tool.githubFullName}`} checked={selected.has(tool.id)} onChange={(e) => onSelectTool(tool.id, e.target.checked)} />
                 </td>
                 <td><ToolIdentity tool={tool} /></td>
-                <td><ToolDescription text={toolSummaryText(tool, summaryOverrides)} onReveal={() => onRevealSummary(tool)} /></td>
+                <td><DescriptionWithReviews text={toolSummaryText(tool, summaryOverrides)} reviews={tool.reviews ?? []} onReveal={() => onRevealSummary(tool)} /></td>
                 <td><PurposeChips tags={tool.purposeTags} manual={tool.purposeTagsManuallySet} /></td>
                 <td><SourceChips tool={tool} /></td>
+                <td><ToolCooperLink tool={tool} /></td>
                 <td className="tools-strong">{formatCompactNumber(tool.stars)}</td>
                 <td className={tool.stars7d ? 'tools-growth' : 'tools-muted'}>{formatGrowth(tool.stars7d)}</td>
                 <td><DateStack main={formatPushedAt(tool.pushedAt)} sub={`发现 ${formatShortDateTime(tool.firstDiscoveredAt)}`} /></td>
                 <td>
                   <div className="tools-row-actions">
+                    <RowIconButton label="加入团队工具" icon="✓" onClick={() => onAction({ kind: 'include-team', tool })} />
+                    <RowIconButton label="编辑" icon="✎" onClick={() => onAction({ kind: 'edit', tool })} />
+                    <RowIconButton label="评价" icon="☷" onClick={() => onAction({ kind: 'review', tool })} />
                     <RowIconButton label="开始测评" icon="☑" onClick={() => onAction({ kind: 'start', tool })} />
                     <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
                     <RowIconButton label="不处理" icon="⌫" danger onClick={() => onAction({ kind: 'exclude', tool })} />
@@ -1646,7 +1833,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                   <input type="checkbox" aria-label={`选择 ${tool.githubFullName}`} checked={selected.has(tool.id)} onChange={(e) => onSelectTool(tool.id, e.target.checked)} />
                 </td>
                 <td><ToolIdentity tool={tool} /></td>
-                <td><ToolDescription text={toolSummaryText(tool, summaryOverrides)} onReveal={() => onRevealSummary(tool)} /></td>
+                <td><DescriptionWithReviews text={toolSummaryText(tool, summaryOverrides)} reviews={tool.reviews ?? []} onReveal={() => onRevealSummary(tool)} /></td>
                 <td><PurposeChips tags={tool.purposeTags} manual={tool.purposeTagsManuallySet} /></td>
                 <td><EvaluatorBadge name={tool.evaluation?.evaluator || '待填写'} /></td>
                 <td>
@@ -1660,6 +1847,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                 <td>
                   <div className="tools-row-actions">
                     <RowIconButton label="✓ 纳入" icon="✓" onClick={() => onAction({ kind: 'include', tool })} />
+                    <RowIconButton label="评价" icon="☷" onClick={() => onAction({ kind: 'review', tool })} />
                     <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
                     <RowIconButton label="不纳入" icon="×" danger onClick={() => onAction({ kind: 'reject', tool })} />
                   </div>
@@ -1695,7 +1883,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                 <input type="checkbox" aria-label={`选择 ${tool.githubFullName}`} checked={selected.has(tool.id)} onChange={(e) => onSelectTool(tool.id, e.target.checked)} />
               </td>
               <td><ToolIdentity tool={tool} /></td>
-              <td><ToolDescription text={tool.finalSummary || toolSummaryText(tool, summaryOverrides, '暂无说明')} full onReveal={() => onRevealSummary(tool)} /></td>
+              <td><DescriptionWithReviews text={tool.finalSummary || toolSummaryText(tool, summaryOverrides, '暂无说明')} reviews={tool.reviews ?? []} full onReveal={() => onRevealSummary(tool)} /></td>
               <td><PurposeChips tags={tool.purposeTags} manual={tool.purposeTagsManuallySet} /></td>
               <td>{tool.evaluation?.evaluator || '暂无'}</td>
               <td>{formatMonthDay(tool.includedAt)}</td>
@@ -1708,6 +1896,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
               <td>
                 <div className="tools-row-actions">
                   <RowIconButton label="编辑" icon="✎" onClick={() => onAction({ kind: 'team-edit', tool })} />
+                  <RowIconButton label="评价" icon="☷" onClick={() => onAction({ kind: 'review', tool })} />
                   <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
                   <RowIconButton label="删除" icon="⌫" danger onClick={() => onAction({ kind: 'team-delete', tool })} />
                 </div>
@@ -1742,12 +1931,15 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
 }) {
   const [evaluator, setEvaluator] = useState('')
   const [operator, setOperator] = useState('')
+  const [reviewer, setReviewer] = useState('')
+  const [reviewContent, setReviewContent] = useState('')
   const [cooperUrl, setCooperUrl] = useState(action.tool.evaluation?.cooperUrl ?? '')
   const [summary, setSummary] = useState(action.tool.finalSummary ?? action.tool.currentSummary ?? '')
   const [purposeTags, setPurposeTags] = useState<string[]>(action.tool.purposeTags ?? [])
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [modalError, setModalError] = useState('')
+  const includeDate = useMemo(() => formatBeijingTime(new Date().toISOString()), [])
 
   useEffect(() => {
     if (!modalError) return
@@ -1764,8 +1956,14 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
   async function submit(e: FormEvent) {
     e.preventDefault()
     if ((action.kind === 'start') && !requireModalField(evaluator, '请填写测评人')) return
-    if (!requireModalField(operator, '请填写操作人')) return
+    if (action.kind === 'review') {
+      if (!requireModalField(reviewer, '请填写评价人')) return
+      if (!requireModalField(reviewContent, '请填写评价内容')) return
+    } else if (!requireModalField(operator, '请填写操作人')) {
+      return
+    }
     if (action.kind === 'cooper' && !requireModalField(cooperUrl, '请填写 Cooper 链接')) return
+    if (action.kind === 'include-team' && !requireModalField(summary, '请填写团队使用说明')) return
     if ((action.kind === 'exclude' || action.kind === 'reject' || action.kind === 'team-delete') && !requireModalField(reason, '请填写原因')) return
     setBusy(true)
     onError('')
@@ -1773,6 +1971,30 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
       if (action.kind === 'start') {
         await startToolEvaluation({ toolId: action.tool.id, evaluator, operator, cooperUrl })
         await onDone('已开始测评')
+      } else if (action.kind === 'edit') {
+        await updateToolMetadata({
+          toolId: action.tool.id,
+          operator,
+          cooperUrl: cooperUrl.trim() || undefined,
+          purposeTags,
+        })
+        await onDone('工具信息已更新')
+      } else if (action.kind === 'include-team') {
+        await includeDiscoveredAsTeamTool({
+          toolId: action.tool.id,
+          operator,
+          cooperUrl: cooperUrl.trim() || undefined,
+          finalSummary: summary.trim(),
+          purposeTags,
+        })
+        await onDone('已加入团队工具')
+      } else if (action.kind === 'review') {
+        await addToolMemberReview({
+          toolId: action.tool.id,
+          reviewer,
+          content: reviewContent.trim(),
+        })
+        await onDone('团队评价已提交')
       } else if (action.kind === 'exclude') {
         if (!window.confirm(`确认不处理「${action.tool.name}」？`)) return
         await excludeDiscoveredTool(action.tool.id, reason, operator)
@@ -1811,6 +2033,7 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
           operator,
           cooperUrl,
           finalSummary: summary,
+          purposeTags,
         })
         await onDone('团队工具已更新')
       } else {
@@ -1826,6 +2049,9 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
 
   const title = {
     start: '开始测评',
+    edit: '编辑工具',
+    'include-team': '加入团队工具',
+    review: '写团队评价',
     exclude: '不处理',
     cooper: '关联 Cooper 文档',
     include: '纳入团队工具',
@@ -1839,6 +2065,18 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
     <ToolModal title={`${title} · ${action.tool.githubFullName}`} onClose={onCancel}>
       <form className="tools-modal-form" onSubmit={submit}>
         {modalError && <p className="tools-modal-error">{modalError}</p>}
+        {action.kind === 'review' && (
+          <>
+            <label>
+              <span>评价人</span>
+              <input aria-label="评价人" value={reviewer} onChange={(e) => setReviewer(e.target.value)} placeholder="手动填写" />
+            </label>
+            <label>
+              <span>团队评价</span>
+              <textarea aria-label="团队评价" value={reviewContent} onChange={(e) => setReviewContent(e.target.value)} placeholder="记录使用体验、适用场景或注意事项" />
+            </label>
+          </>
+        )}
         {action.kind === 'start' && (
           <div className="tools-form-grid">
             <label>
@@ -1851,27 +2089,30 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
             </label>
           </div>
         )}
-        {action.kind !== 'start' && (
+        {action.kind !== 'start' && action.kind !== 'review' && (
           <label>
             <span>操作人</span>
             <input value={operator} onChange={(e) => setOperator(e.target.value)} placeholder="手动填写" />
           </label>
         )}
-        {(action.kind === 'start' || action.kind === 'cooper' || action.kind === 'team-edit') && (
+        {action.kind === 'include-team' && (
+          <p className="tools-field-help tools-auto-date">纳入日期：{includeDate}</p>
+        )}
+        {(action.kind === 'start' || action.kind === 'cooper' || action.kind === 'edit' || action.kind === 'include-team' || action.kind === 'team-edit') && (
           <label>
-            <span>{action.kind === 'team-edit' ? 'Cooper 文档' : 'Cooper 链接'}</span>
-            <input value={cooperUrl} onChange={(e) => setCooperUrl(e.target.value)} placeholder="https://cooper.didichuxing.com/didocs/..." />
+            <span>{action.kind === 'start' || action.kind === 'cooper' ? 'Cooper 链接' : 'Cooper 文档（可选）'}</span>
+            <input aria-label={action.kind === 'start' || action.kind === 'cooper' ? 'Cooper 链接' : 'Cooper 文档'} value={cooperUrl} onChange={(e) => setCooperUrl(e.target.value)} placeholder={action.kind === 'start' || action.kind === 'cooper' ? 'https://cooper.didichuxing.com/didocs/...' : '可选，https://cooper.didichuxing.com/didocs/...'} />
           </label>
         )}
-        {(action.kind === 'include' || action.kind === 'team-edit') && (
+        {(action.kind === 'include' || action.kind === 'include-team' || action.kind === 'team-edit') && (
           <label>
-            <span>团队使用说明</span>
+            <span>{action.kind === 'include-team' ? '使用说明' : '团队使用说明'}</span>
             <textarea value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="它是什么、解决什么问题、适合什么场景" />
           </label>
         )}
-        {action.kind === 'purpose' && (
+        {(action.kind === 'edit' || action.kind === 'include-team' || action.kind === 'purpose' || action.kind === 'team-edit') && (
           <TagEditor
-            label="用途分类"
+            label={action.kind === 'purpose' ? '用途分类' : '用途'}
             selected={purposeTags}
             options={mergeTagOptions(purposeOptions, action.tool.purposeTags)}
             onChange={setPurposeTags}
@@ -2048,7 +2289,7 @@ function BatchActionPanel({ action, onCancel, onRefresh, onDone, onError }: {
 
   const title = batchTitle(action.kind)
   return (
-    <ToolModal title={`${title} · ${action.tools.length} 个工具`} onClose={onCancel}>
+    <ToolModal className="tools-batch-window" title={`${title} · ${action.tools.length} 个工具`} onClose={onCancel}>
       <form className="tools-modal-form tools-batch-modal" onSubmit={submit}>
         {modalError && <p className="tools-modal-error">{modalError}</p>}
         {(action.kind === 'batch-start') && (
@@ -2154,14 +2395,15 @@ function batchDoneLabel(kind: BatchToolAction['kind']): string {
   }[kind]
 }
 
-function ToolModal({ title, onClose, children }: {
+function ToolModal({ title, onClose, children, className }: {
   title: string
   onClose: () => void
   children: ReactNode
+  className?: string
 }) {
   return (
     <div className="tools-modal-backdrop">
-      <section className="tools-modal" role="dialog" aria-modal="true" aria-label={title}>
+      <section className={`tools-modal${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <header className="tools-modal-head">
           <h2>{title}</h2>
           <button type="button" className="tools-modal-close" aria-label="关闭" onClick={onClose}>×</button>
@@ -2320,6 +2562,103 @@ function ToolDescription({ text, full = false, onReveal }: {
         document.body,
       )}
     </>
+  )
+}
+
+function DescriptionWithReviews({ text, reviews, full = false, onReveal }: {
+  text: string
+  reviews: ToolMemberReview[]
+  full?: boolean
+  onReveal: () => void
+}) {
+  return (
+    <div className="tools-desc-stack">
+      <ToolDescription text={text} full={full} onReveal={onReveal} />
+      <ToolReviewPeek reviews={reviews} />
+    </div>
+  )
+}
+
+function ToolReviewPeek({ reviews }: { reviews: ToolMemberReview[] }) {
+  const ref = useRef<HTMLButtonElement | null>(null)
+  const hideTimer = useRef<number | null>(null)
+  const [tooltip, setTooltip] = useState<{ left: number; top: number; width: number; above: boolean } | null>(null)
+  if (!reviews.length) return null
+
+  function clearHideTimer() {
+    if (hideTimer.current == null) return
+    window.clearTimeout(hideTimer.current)
+    hideTimer.current = null
+  }
+
+  function hideLater() {
+    clearHideTimer()
+    hideTimer.current = window.setTimeout(() => setTooltip(null), 140)
+  }
+
+  function reveal() {
+    clearHideTimer()
+    const rect = ref.current?.getBoundingClientRect()
+    if (!rect || typeof window === 'undefined') return
+    const width = Math.min(420, Math.max(280, rect.width || 280))
+    const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - width - 12))
+    const above = rect.bottom + 220 > window.innerHeight && rect.top > 220
+    setTooltip({
+      left,
+      top: above ? rect.top - 8 : rect.bottom + 8,
+      width,
+      above,
+    })
+  }
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className="tools-review-peek"
+        title="悬浮查看全部评价"
+        onFocus={reveal}
+        onBlur={hideLater}
+        onMouseEnter={reveal}
+        onMouseLeave={hideLater}
+      >
+        团队评价 {reviews.length} 条 · {reviews[0].reviewer}：{reviews[0].content}
+      </button>
+      {tooltip && typeof document !== 'undefined' && createPortal(
+        <div
+          className="tools-floating-tooltip tools-review-tooltip"
+          style={{
+            left: tooltip.left,
+            top: tooltip.top,
+            width: tooltip.width,
+            transform: tooltip.above ? 'translateY(-100%)' : undefined,
+          }}
+          onMouseEnter={clearHideTimer}
+          onMouseLeave={hideLater}
+        >
+          {reviews.map((review) => (
+            <article className="tools-review-item" key={review.id}>
+              <div>
+                <strong>{review.reviewer}</strong>
+                <span>{formatShortDateTime(review.createdAt)}</span>
+              </div>
+              <p>{review.content}</p>
+            </article>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
+function ToolCooperLink({ tool }: { tool: ToolItem }) {
+  if (!tool.evaluation?.cooperUrl) return <span className="tools-muted">未关联</span>
+  return (
+    <a className="tools-doc-link" href={tool.evaluation.cooperUrl} target="_blank" rel="noreferrer">
+      Cooper 文档 ↗
+    </a>
   )
 }
 

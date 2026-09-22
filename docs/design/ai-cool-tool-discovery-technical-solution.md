@@ -18,10 +18,11 @@
   -> 生成候选工具
   -> 按 GitHub repository node_id 去重并合并来源
   -> 工具百宝箱
-  -> 发起测评，手填测评人和操作人
-  -> 关联外部 Cooper 测评文档链接
+  -> 发起测评，或直接纳入团队工具
+  -> 关联外部 Cooper 测评文档链接、填写用途和团队说明
   -> 完成测评：纳入团队工具 / 不纳入
   -> 团队工具页只展示已纳入工具
+  -> 任意工具可追加团队评价
 ```
 
 本期以 Cooper 第 5 部分为准。旧方案里的“首期只读”“Git Markdown 报告导入”“GitHub Trending 自动发现”不作为本期范围。
@@ -78,9 +79,9 @@ Cooper 测评文档由用户自己创建和维护。AI Cool 只保存 Cooper URL
 | 页面 | 入口 | 首期能力 |
 |---|---|---|
 | 发现配置 | `#tools-configs` | 配置列表、新建、编辑、启停、软删除、手动执行 |
-| 工具百宝箱 | `#tools-discovered` | 候选列表、搜索、来源筛选、排序、手动添加、开始测评、不处理 |
-| 测评中 | `#tools-evaluating` | 查看测评人、操作人、Cooper 链接，补链接，完成测评 |
-| 团队工具 | `#tools-team` | 只展示 `included` 工具，支持搜索和基础统计 |
+| 工具百宝箱 | `#tools-discovered` | 候选列表、搜索、来源筛选、关键词筛选、用途筛选、排序、手动添加、直接纳入、编辑、评价、开始测评、不处理 |
+| 测评中 | `#tools-evaluating` | 查看测评人、操作人、Cooper 链接，补链接、编辑、评价，完成测评 |
+| 团队工具 | `#tools-team` | 只展示 `included` 工具，支持搜索、基础统计、编辑、评价和删除 |
 
 ## 2. 实现方案
 
@@ -122,6 +123,7 @@ server/cmd/discovertools
 | `tools` | 工具主表，按 GitHub `node_id` 唯一去重 |
 | `tool_discovery_sources` | 工具来源，记录关键词、Topic 或手动添加 |
 | `tool_evaluations` | 测评记录，保存测评人、操作人、Cooper URL 和结论 |
+| `tool_member_reviews` | 团队评价，保存评价人、评价内容和创建时间 |
 | `tool_status_events` | 状态变化审计 |
 | `tool_star_snapshots` | Stars 快照，用于计算近 7 天增长 |
 
@@ -168,8 +170,12 @@ server/cmd/discovertools
 | `POST /api/tools/evaluations/finish` | 完成测评 |
 | `POST /api/tools/discovered/exclude` | 已发现阶段不处理 |
 | `POST /api/tools/purpose-tags` | 手动修正工具用途分类 |
+| `POST /api/tools/items/update` | 编辑工具 Cooper 链接和用途分类 |
+| `POST /api/tools/reviews/add` | 添加团队评价 |
+| `POST /api/tools/team/include` | 从工具百宝箱直接纳入团队工具 |
+| `POST /api/tools/team/update` | 编辑团队工具说明、Cooper 链接和用途分类 |
 
-写接口必须带 `actor`。开始测评必须带 `evaluator`。完成测评前必须已有 Cooper URL。
+写接口必须带操作人或评价人。开始测评必须带 `evaluator`。完成测评前必须已有 Cooper URL；工具百宝箱直接纳入时 Cooper URL 可选。
 
 常用错误码：
 
@@ -201,9 +207,9 @@ web/src/api/tools.test.ts
 | 页面 | 主要接口 |
 |---|---|
 | 发现配置 | `GET /api/tools/configs`、`POST /api/tools/configs`、`POST /api/tools/configs/enable`、`POST /api/tools/configs/delete`、`POST /api/tools/configs/run` |
-| 工具百宝箱 | `GET /api/tools/items?status=discovered`、`POST /api/tools/manual/preview`、`POST /api/tools/manual/add`、`POST /api/tools/evaluations/start`、`POST /api/tools/discovered/exclude` |
-| 测评中 | `GET /api/tools/items?status=evaluating`、`POST /api/tools/evaluations/cooper-url`、`POST /api/tools/evaluations/finish` |
-| 团队工具 | `GET /api/tools/items?status=included` |
+| 工具百宝箱 | `GET /api/tools/items?status=discovered`、`POST /api/tools/manual/preview`、`POST /api/tools/manual/add`、`POST /api/tools/team/include`、`POST /api/tools/items/update`、`POST /api/tools/reviews/add`、`POST /api/tools/evaluations/start`、`POST /api/tools/discovered/exclude` |
+| 测评中 | `GET /api/tools/items?status=evaluating`、`POST /api/tools/evaluations/cooper-url`、`POST /api/tools/items/update`、`POST /api/tools/reviews/add`、`POST /api/tools/evaluations/finish` |
+| 团队工具 | `GET /api/tools/items?status=included`、`POST /api/tools/team/update`、`POST /api/tools/team/delete`、`POST /api/tools/reviews/add` |
 
 三个工具列表共用用途筛选和分类修正能力：
 
@@ -211,6 +217,9 @@ web/src/api/tools.test.ts
 - 列表行展示用途标签；没有分类时展示“未分类”。
 - “分类”操作打开弹窗，操作人必填，可以选择已有分类或新增分类，也可以清空为未分类。
 - 搜索命中范围包含用途标签，便于按场景检索工具池。
+- 工具行支持直接添加 Cooper 文档和团队评价；评价摘要显示在工具说明下方，悬浮窗口固定尺寸并支持滚动查看全部评价。
+- 工具百宝箱支持直接纳入团队工具，纳入时填写操作人和团队使用说明，纳入日期由服务端生成，Cooper 文档可选。
+- 批量选择支持数量输入和数字框右侧的加减按键；批量测试、批量删除弹窗固定尺寸，仅内部工具列表滚动。
 
 前端状态：
 
@@ -229,6 +238,7 @@ web/src/api/tools.test.ts
 ```text
 discovered -> evaluating
 discovered -> excluded
+discovered -> included
 evaluating -> included
 evaluating -> excluded
 ```

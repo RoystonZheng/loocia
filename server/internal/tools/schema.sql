@@ -231,6 +231,16 @@ CREATE TABLE IF NOT EXISTS tool_status_events (
     occurred_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS tool_member_reviews (
+    id         TEXT PRIMARY KEY,
+    tool_id    TEXT NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
+    reviewer   TEXT NOT NULL,
+    operator   TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS tool_star_snapshots (
     id          TEXT PRIMARY KEY,
     tool_id     TEXT NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
@@ -292,6 +302,9 @@ CREATE INDEX IF NOT EXISTS tools_name_trgm_idx
 
 CREATE INDEX IF NOT EXISTS tools_purpose_tags_idx
     ON tools USING gin (purpose_tags);
+
+CREATE INDEX IF NOT EXISTS tool_member_reviews_tool_latest_idx
+    ON tool_member_reviews (tool_id, created_at DESC, id DESC);
 
 CREATE INDEX IF NOT EXISTS tool_star_snapshots_lookup_idx
     ON tool_star_snapshots (tool_id, snapshot_at DESC);

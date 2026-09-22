@@ -207,6 +207,13 @@ export interface ToolEvaluation {
   notIncludedReason?: string
 }
 
+export interface ToolMemberReview {
+  id: string
+  reviewer: string
+  content: string
+  createdAt: string
+}
+
 export interface ToolItem {
   id: string
   name: string
@@ -243,6 +250,7 @@ export interface ToolItem {
   summaryKey: string
   sources: ToolSource[]
   evaluation?: ToolEvaluation
+  reviews?: ToolMemberReview[]
   createdAt: string
   updatedAt: string
 }
@@ -257,6 +265,7 @@ export interface ToolListStats {
   evaluatorCount: number
   latestUpdatedAt?: string
   purposeTags: string[]
+  keywords: string[]
 }
 
 export interface ToolList {
@@ -275,6 +284,7 @@ export interface ListToolsQuery {
   source?: ToolSourceType
   sources?: ToolSourceType[]
   purposeTags?: string[]
+  keyword?: string
   q?: string
   take?: number
   offset?: number
@@ -394,6 +404,7 @@ export function fetchTools(query: ListToolsQuery): Promise<ToolList> {
   const sources = query.sources ?? (query.source ? [query.source] : [])
   for (const source of sources) params.append('source', source)
   for (const tag of query.purposeTags ?? []) params.append('purposeTag', tag)
+  if (query.keyword) params.set('keyword', query.keyword)
   if (query.q) params.set('q', query.q)
   if (query.take != null) params.set('take', String(query.take))
   if (query.offset != null) params.set('offset', String(query.offset))
@@ -433,11 +444,40 @@ export function updateToolPurposeTags(input: {
   return postToolAPI('/api/tools/purpose-tags', input)
 }
 
+export function updateToolMetadata(input: {
+  toolId: string
+  operator: string
+  cooperUrl?: string
+  purposeTags?: string[]
+}): Promise<{ updated: boolean }> {
+  return postToolAPI('/api/tools/items/update', input)
+}
+
+export async function addToolMemberReview(input: {
+  toolId: string
+  reviewer: string
+  content: string
+}): Promise<ToolMemberReview> {
+  const data = await postToolAPI<{ review: ToolMemberReview }>('/api/tools/reviews/add', input)
+  return data.review
+}
+
+export function includeDiscoveredAsTeamTool(input: {
+  toolId: string
+  operator: string
+  cooperUrl?: string
+  finalSummary: string
+  purposeTags?: string[]
+}): Promise<{ included: boolean }> {
+  return postToolAPI('/api/tools/team/include', input)
+}
+
 export function updateTeamTool(input: {
   toolId: string
   operator: string
   cooperUrl?: string
   finalSummary?: string
+  purposeTags?: string[]
 }): Promise<{ updated: boolean }> {
   return postToolAPI('/api/tools/team/update', input)
 }

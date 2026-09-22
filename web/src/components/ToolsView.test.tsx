@@ -53,6 +53,9 @@ function ok(data: unknown) {
 }
 
 function toolList(status: string, items: unknown[], overrides: Record<string, unknown> = {}) {
+  const typedItems = items as Array<{ sources?: Array<{ sourceType: string; term: string }>; purposeTags?: string[] }>
+  const sourceCount = (sourceType: string) => typedItems.filter((item) => item.sources?.some((source) => source.sourceType === sourceType)).length
+  const keywords = Array.from(new Set(typedItems.flatMap((item) => item.sources?.filter((source) => source.sourceType === 'keyword').map((source) => source.term) ?? []))).sort()
   return {
     count: items.length,
     page: 1,
@@ -61,14 +64,15 @@ function toolList(status: string, items: unknown[], overrides: Record<string, un
     take: 50,
     stats: {
       status,
-      keywordSourceCount: 0,
-      topicSourceCount: 0,
-      manualSourceCount: items.length,
+      keywordSourceCount: sourceCount('keyword'),
+      topicSourceCount: sourceCount('topic'),
+      manualSourceCount: sourceCount('manual'),
       linkedEvaluationCount: items.filter((item) => Boolean((item as { evaluation?: { cooperUrl?: string } }).evaluation?.cooperUrl)).length,
       unlinkedEvaluationCount: items.filter((item) => Boolean((item as { evaluation?: unknown }).evaluation)).length,
       evaluatorCount: 1,
       latestUpdatedAt: now,
-      purposeTags: ['浏览器操作'],
+      purposeTags: Array.from(new Set(typedItems.flatMap((item) => item.purposeTags ?? []))),
+      keywords,
     },
     items,
     ...overrides,
@@ -185,6 +189,28 @@ describe('ToolsView', () => {
 
     await waitFor(() => expect(screen.getByText('配置已创建')).toBeInTheDocument())
     expect(fetchMock.mock.calls.some((call) => call[0] === '/api/tools/configs' && call[1]?.method === 'POST')).toBe(true)
+  })
+
+  it('shows missing required-field errors inside the new config modal', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/tools/configs' && init?.method === 'POST') {
+        throw new Error('create config should be blocked by client validation')
+      }
+      if (url.startsWith('/api/tools/configs')) return ok(configList([]))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="configs" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: '发现配置' })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /新增配置/ }))
+    const dialog = screen.getByRole('dialog', { name: '新增发现配置' })
+    fireEvent.click(screen.getByRole('button', { name: '创建配置' }))
+
+    await waitFor(() => expect(dialog).toHaveTextContent('请先填写操作人'))
+    expect(document.querySelector('.tools-error')).toBeNull()
+    expect(fetchMock.mock.calls.some((call) => call[0] === '/api/tools/configs' && call[1]?.method === 'POST')).toBe(false)
   })
 
   it('filters discovery configs by method and trigger mode', async () => {
@@ -511,6 +537,164 @@ describe('ToolsView', () => {
       toolId: 'tool1',
       actor: '李四',
       purposeTags: ['工作流自动化'],
+    })
+  })
+
+  it('filters discovered tools by keyword source', async () => {
+    const browserTool = makeTool('tool-browser', 'openai/browser-agent', {
+      name: 'Browser Agent',
+      sources: [{ sourceType: 'keyword', term: 'browser agent', lastSeenAt: now, hitCount: 1 }],
+    })
+    const codingTool = makeTool('tool-coding', 'openai/coding-agent', {
+      name: 'Coding Agent',
+      sources: [{ sourceType: 'keyword', term: 'coding agent', lastSeenAt: now, hitCount: 1 }],
+    })
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [browserTool, codingTool]))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="discovered" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('Browser Agent')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('关键词'), { target: { value: 'browser agent' } })
+    await waitFor(() => {
+      const listRequest = fetchMock.mock.calls
+        .map((call) => String(call[0]))
+        .find((url) => url.startsWith('/api/tools/items') && new URL(url, 'http://localhost').searchParams.get('keyword') === 'browser agent')
+      expect(listRequest).toBeDefined()
+    })
+  })
+
+  it('clears a keyword filter when the source filter changes', async () => {
+    const browserTool = makeTool('tool-browser', 'openai/browser-agent', {
+      name: 'Browser Agent',
+      sources: [{ sourceType: 'keyword', term: 'browser agent', lastSeenAt: now, hitCount: 1 }],
+    })
+    const manualTool = makeTool('tool-manual', 'openai/manual-agent', {
+      name: 'Manual Agent',
+      sources: [{ sourceType: 'manual', term: 'openai/manual-agent', lastSeenAt: now, hitCount: 1 }],
+    })
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [browserTool, manualTool]))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="discovered" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('Browser Agent')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('关键词'), { target: { value: 'browser agent' } })
+    await waitFor(() => {
+      const request = fetchMock.mock.calls
+        .map((call) => String(call[0]))
+        .find((url) => url.startsWith('/api/tools/items') && new URL(url, 'http://localhost').searchParams.get('keyword') === 'browser agent')
+      expect(request).toBeDefined()
+    })
+
+    fireEvent.change(screen.getByLabelText('来源'), { target: { value: 'manual' } })
+    await waitFor(() => {
+      const request = fetchMock.mock.calls
+        .map((call) => String(call[0]))
+        .find((url) => {
+          const parsed = new URL(url, 'http://localhost')
+          return parsed.pathname === '/api/tools/items' && parsed.searchParams.get('source') === 'manual' && !parsed.searchParams.has('keyword')
+        })
+      expect(request).toBeDefined()
+    })
+    expect(screen.getByLabelText('关键词')).toHaveValue('all')
+  })
+
+  it('allows entering the number of tools shown for batch selection', async () => {
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [baseTool]))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="discovered" onSection={vi.fn()} />)
+    const pageSize = await screen.findByLabelText('每页数量')
+    expect(pageSize).toHaveAttribute('type', 'number')
+    expect(pageSize).toHaveAttribute('min', '1')
+    expect(pageSize).toHaveAttribute('max', '200')
+
+    fireEvent.change(pageSize, { target: { value: '100' } })
+    await waitFor(() => {
+      const request = fetchMock.mock.calls
+        .map((call) => String(call[0]))
+        .find((url) => url.startsWith('/api/tools/items') && new URL(url, 'http://localhost').searchParams.get('take') === '100')
+      expect(request).toBeDefined()
+    })
+  })
+
+  it('restores the batch selection count input and step controls', async () => {
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [baseTool], { count: 3 }))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="discovered" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('openai/browser-agent')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 openai/browser-agent' }))
+
+    expect(screen.getByLabelText('选择数量')).toHaveValue(1)
+    expect(screen.getByRole('button', { name: '增加一个选择' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '减少一个选择' })).toBeInTheDocument()
+  })
+
+  it('restores direct team inclusion and member review actions for each discovered tool', async () => {
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (url === '/api/tools/team/include') return ok({ included: true })
+      if (url === '/api/tools/reviews/add') return ok({ review: { id: 'review1', reviewer: '张三', content: '适合团队浏览器自动化任务。', createdAt: now } })
+      if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [baseTool]))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="discovered" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('openai/browser-agent')).toBeInTheDocument())
+
+    expect(screen.getByRole('button', { name: '加入团队工具' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '评价' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '评价' }))
+    fireEvent.change(screen.getByLabelText('评价人'), { target: { value: '张三' } })
+    fireEvent.change(screen.getByLabelText('团队评价'), { target: { value: '适合团队浏览器自动化任务。' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => expect(screen.getByText('团队评价已提交')).toBeInTheDocument())
+    expect(fetchMock.mock.calls.some((call) => call[0] === '/api/tools/reviews/add')).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: '加入团队工具' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    expect(screen.getByText('请填写操作人')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('操作人'), { target: { value: '李四' } })
+    fireEvent.change(screen.getByLabelText('Cooper 文档'), { target: { value: 'https://cooper.didichuxing.com/didocs/2' } })
+    fireEvent.change(screen.getByLabelText('使用说明'), { target: { value: '团队直接使用它处理浏览器自动化任务。' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    await waitFor(() => expect(screen.getByText('已加入团队工具')).toBeInTheDocument())
+    const includeCall = fetchMock.mock.calls.find((call) => call[0] === '/api/tools/team/include')
+    expect(JSON.parse(String(includeCall?.[1]?.body))).toMatchObject({
+      toolId: 'tool1',
+      operator: '李四',
+      cooperUrl: 'https://cooper.didichuxing.com/didocs/2',
+      finalSummary: '团队直接使用它处理浏览器自动化任务。',
+      purposeTags: ['浏览器操作'],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    fireEvent.change(screen.getByLabelText('操作人'), { target: { value: '王五' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await waitFor(() => expect(screen.getByText('工具信息已更新')).toBeInTheDocument())
+    const editCall = fetchMock.mock.calls.find((call) => call[0] === '/api/tools/items/update')
+    expect(JSON.parse(String(editCall?.[1]?.body))).toMatchObject({
+      toolId: 'tool1',
+      operator: '王五',
+      purposeTags: ['浏览器操作'],
     })
   })
 

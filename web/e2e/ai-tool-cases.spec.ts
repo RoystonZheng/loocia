@@ -133,7 +133,8 @@ test.describe('AI Tool 开发用例', () => {
       await dialog.getByLabel('配置名称').fill('Playwright 配置')
       await dialog.getByLabel('检索词').fill('playwright agent')
       await dialog.getByRole('button', { name: '创建配置' }).click()
-      await expect(page.getByText('请先填写操作人')).toBeVisible()
+      await expect(dialog.getByText('请先填写操作人')).toBeVisible()
+      await expect(page.locator('.tools-error')).toHaveCount(0)
       await dialog.getByLabel('操作人').fill('郑睿涛')
       await dialog.getByRole('button', { name: '创建配置' }).click()
       await expect(page.getByText('配置已创建')).toBeVisible()
@@ -252,6 +253,11 @@ test.describe('AI Tool 开发用例', () => {
       expect(lastCall(state, '/api/tools/items')?.path).toBe('/api/tools/items')
       await purposeFilter(page).selectOption('all')
 
+      await keywordFilter(page).selectOption('DeepResearch')
+      await expect(toolName(page, 'DeepResearch AI')).toBeVisible()
+      await expect(toolName(page, '增长爆发工具')).toBeHidden()
+      await keywordFilter(page).selectOption('all')
+
       await toolRow(page, 'DeepResearch AI').getByRole('button', { name: '分类' }).click()
       const dialog = page.getByRole('dialog', { name: /修正用途分类/ })
       await dialog.getByLabel('操作人').fill('郑睿涛')
@@ -344,7 +350,8 @@ test.describe('AI Tool 开发用例', () => {
 
     await test.step('TC-025 批量删除必须写删除原因', async () => {
       await resetToolPage(page, '/#tools-discovered')
-      await page.getByLabel('每页数量').selectOption('200')
+      await page.getByLabel('每页数量').fill('200')
+      await page.getByLabel('每页数量').press('Enter')
       await page.getByLabel('选择 batch-owner-1/repo-1').check()
       await page.getByLabel('选择 batch-owner-2/repo-2').check()
       await page.getByRole('button', { name: '批量删除' }).click()
@@ -500,7 +507,9 @@ test.describe('AI Tool 开发用例', () => {
 
     await test.step('TC-037 编辑团队工具要求操作人并保存说明', async () => {
       await runSearch(page, '搜索团队工具', 'Context7')
-      await page.getByRole('button', { name: '编辑' }).click()
+      const row = toolRow(page, 'upstash/context7')
+      await expect(row).toBeVisible()
+      await row.getByRole('button', { name: '编辑' }).click()
       const dialog = page.getByRole('dialog', { name: /编辑团队工具/ })
       await dialog.getByRole('button', { name: '提交' }).click()
       await expect(dialog.getByText('请填写操作人')).toBeVisible()
@@ -513,7 +522,9 @@ test.describe('AI Tool 开发用例', () => {
     await test.step('TC-038 删除团队工具必须写删除原因且保留记录', async () => {
       await page.goto('/#tools-team')
       await runSearch(page, '搜索团队工具', 'Playwright MCP')
-      await page.getByRole('button', { name: '删除' }).click()
+      const row = toolRow(page, 'microsoft/playwright-mcp')
+      await expect(row).toBeVisible()
+      await row.getByRole('button', { name: '删除' }).click()
       const dialog = page.getByRole('dialog', { name: /删除团队工具/ })
       await dialog.getByLabel('操作人').fill('郑睿涛')
       await dialog.getByRole('button', { name: '提交' }).click()
@@ -1114,12 +1125,14 @@ function listTools(state: MockState, url: URL) {
   const sort = (url.searchParams.get('sort') || 'latest') as ToolSort
   const sources = url.searchParams.getAll('source') as ToolSourceType[]
   const purposeTags = url.searchParams.getAll('purposeTag')
+  const keyword = url.searchParams.get('keyword')
   const q = (url.searchParams.get('q') || '').toLowerCase()
   const take = Number(url.searchParams.get('take') || 50)
   const offset = Number(url.searchParams.get('offset') || 0)
   let items = state.tools.filter((tool) => tool.status === status)
   if (sources.length) items = items.filter((tool) => tool.sources.some((source) => sources.includes(source.sourceType)))
   if (purposeTags.length) items = items.filter((tool) => tool.purposeTags.some((tag) => purposeTags.includes(tag)))
+  if (keyword) items = items.filter((tool) => tool.sources.some((source) => source.sourceType === 'keyword' && source.term === keyword))
   if (q) {
     items = items.filter((tool) => {
       const haystack = [
@@ -1168,6 +1181,7 @@ function statsFor(status: ToolStatus, items: ToolItem[]) {
     evaluatorCount: new Set(items.map((tool) => tool.evaluation?.evaluator).filter(Boolean)).size,
     latestUpdatedAt: now,
     purposeTags: Array.from(new Set(items.flatMap((tool) => tool.purposeTags))).sort(),
+    keywords: Array.from(new Set(items.flatMap((tool) => tool.sources.filter((source) => source.sourceType === 'keyword').map((source) => source.term)))).sort(),
   }
 }
 
@@ -1267,6 +1281,10 @@ function sourceFilter(page: Page) {
 
 function purposeFilter(page: Page) {
   return page.getByLabel('用途', { exact: true })
+}
+
+function keywordFilter(page: Page) {
+  return page.getByLabel('关键词', { exact: true })
 }
 
 function toolName(page: Page, name: string) {

@@ -293,6 +293,8 @@ function emptyToolList() {
       linkedEvaluationCount: 0,
       unlinkedEvaluationCount: 0,
       evaluatorCount: 0,
+      purposeTags: [],
+      keywords: [],
     },
     items: [],
   }

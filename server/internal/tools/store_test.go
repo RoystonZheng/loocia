@@ -266,6 +266,157 @@ func TestToolPurposeTagsCanBeManuallyCorrectedAndFiltered(t *testing.T) {
 	}
 }
 
+func TestToolKeywordFilterAndOptions(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.UpsertConfig(ctx, DiscoveryConfig{
+		ID:          "cfg-keywords",
+		Name:        "Keyword options",
+		Method:      DiscoveryKeyword,
+		Terms:       []string{"browser agent", "coding agent", "unconnected keyword"},
+		TriggerMode: TriggerManual,
+		Enabled:     true,
+		CreatedBy:   "alice",
+		UpdatedBy:   "alice",
+	}); err != nil {
+		t.Fatalf("keyword config upsert: %v", err)
+	}
+	browser, err := s.UpsertFromGitHub(ctx, sampleRepo("node-browser", "openai", "browser-agent"), DiscoverySource{
+		SourceType: SourceKeyword,
+		Term:       "browser agent",
+		Actor:      "alice",
+	})
+	if err != nil {
+		t.Fatalf("browser upsert: %v", err)
+	}
+	if _, err := s.UpsertFromGitHub(ctx, sampleRepo("node-coding", "openai", "coding-agent"), DiscoverySource{
+		SourceType: SourceKeyword,
+		Term:       "coding agent",
+		Actor:      "alice",
+	}); err != nil {
+		t.Fatalf("coding upsert: %v", err)
+	}
+	if _, err := s.UpsertFromGitHub(ctx, sampleRepo("node-topic", "openai", "agent-topics"), DiscoverySource{
+		SourceType: SourceTopic,
+		Term:       "ai-agents",
+		Actor:      "alice",
+	}); err != nil {
+		t.Fatalf("topic upsert: %v", err)
+	}
+
+	keyword := "browser agent"
+	filtered, err := s.ListTools(ctx, ListToolsParams{
+		Status:  ToolDiscovered,
+		Keyword: &keyword,
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatalf("ListTools by keyword: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != browser.Tool.ID {
+		t.Fatalf("keyword filter mismatch: %+v", filtered)
+	}
+
+	stats, err := s.ToolStats(ctx, ListToolsParams{Status: ToolDiscovered, Keyword: &keyword})
+	if err != nil {
+		t.Fatalf("ToolStats by keyword: %v", err)
+	}
+	if stats.Count != 1 {
+		t.Fatalf("keyword stats count mismatch: %+v", stats)
+	}
+	if len(stats.Keywords) != 3 || stats.Keywords[0] != "browser agent" || stats.Keywords[1] != "coding agent" || stats.Keywords[2] != "unconnected keyword" {
+		t.Fatalf("keyword stats options mismatch: %+v", stats.Keywords)
+	}
+}
+
+func TestToolKeywordFilterComposesWithSourcePurposeAndSearch(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	browser, err := s.UpsertFromGitHub(ctx, sampleRepo("node-browser-combo", "openai", "browser-agent"), DiscoverySource{
+		SourceType: SourceKeyword,
+		Term:       "browser agent",
+		Actor:      "alice",
+	})
+	if err != nil {
+		t.Fatalf("browser upsert: %v", err)
+	}
+	if err := s.UpdateToolPurposeTags(ctx, browser.Tool.ID, []string{"浏览器操作"}, true); err != nil {
+		t.Fatalf("browser purpose tags: %v", err)
+	}
+
+	coding, err := s.UpsertFromGitHub(ctx, sampleRepo("node-coding-combo", "openai", "coding-agent"), DiscoverySource{
+		SourceType: SourceKeyword,
+		Term:       "coding agent",
+		Actor:      "alice",
+	})
+	if err != nil {
+		t.Fatalf("coding upsert: %v", err)
+	}
+	if err := s.UpdateToolPurposeTags(ctx, coding.Tool.ID, []string{"代码开发"}, true); err != nil {
+		t.Fatalf("coding purpose tags: %v", err)
+	}
+
+	topic, err := s.UpsertFromGitHub(ctx, sampleRepo("node-topic-combo", "openai", "browser-topic"), DiscoverySource{
+		SourceType: SourceTopic,
+		Term:       "browser-automation",
+		Actor:      "alice",
+	})
+	if err != nil {
+		t.Fatalf("topic upsert: %v", err)
+	}
+	if err := s.UpdateToolPurposeTags(ctx, topic.Tool.ID, []string{"浏览器操作"}, true); err != nil {
+		t.Fatalf("topic purpose tags: %v", err)
+	}
+
+	keyword := "browser agent"
+	sourceTypes := []SourceType{SourceKeyword}
+	query := "browser-agent"
+	filtered, err := s.ListTools(ctx, ListToolsParams{
+		Status:      ToolDiscovered,
+		Q:           &query,
+		SourceTypes: sourceTypes,
+		PurposeTags: []string{"浏览器操作"},
+		Keyword:     &keyword,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("ListTools with combined filters: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != browser.Tool.ID {
+		t.Fatalf("combined filters should return only browser keyword tool: %+v", filtered)
+	}
+
+	stats, err := s.ToolStats(ctx, ListToolsParams{
+		Status:      ToolDiscovered,
+		SourceTypes: sourceTypes,
+		PurposeTags: []string{"浏览器操作"},
+		Keyword:     &keyword,
+	})
+	if err != nil {
+		t.Fatalf("ToolStats with combined filters: %v", err)
+	}
+	if stats.Count != 1 || stats.KeywordSourceCount != 1 || stats.TopicSourceCount != 0 || stats.ManualSourceCount != 0 {
+		t.Fatalf("combined stats mismatch: %+v", stats)
+	}
+
+	wrongKeyword := "coding agent"
+	wrong, err := s.ListTools(ctx, ListToolsParams{
+		Status:      ToolDiscovered,
+		SourceTypes: sourceTypes,
+		PurposeTags: []string{"浏览器操作"},
+		Keyword:     &wrongKeyword,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("ListTools with non-matching keyword: %v", err)
+	}
+	if len(wrong) != 0 {
+		t.Fatalf("non-matching keyword should return no tools: %+v", wrong)
+	}
+}
+
 func TestRunsAndStarSnapshotsRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

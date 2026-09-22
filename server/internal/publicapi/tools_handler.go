@@ -40,7 +40,10 @@ type ToolStore interface {
 	UpdateEvaluationCooperURL(ctx context.Context, toolID, cooperURL, actor string) error
 	ExcludeDiscovered(ctx context.Context, toolID, reason, actor string) error
 	FinishEvaluation(ctx context.Context, req tools.FinishEvaluationRequest) error
-	UpdateTeamTool(ctx context.Context, toolID, operator, finalSummary, cooperURL string) error
+	UpdateToolMetadata(ctx context.Context, toolID, operator, cooperURL string, purposeTags []string) error
+	AddMemberReview(ctx context.Context, toolID, reviewer, content string) (tools.MemberReview, error)
+	IncludeDiscoveredAsTeamTool(ctx context.Context, toolID, operator, finalSummary, cooperURL string, purposeTags ...[]string) error
+	UpdateTeamTool(ctx context.Context, toolID, operator, finalSummary, cooperURL string, purposeTags ...[]string) error
 	DeleteTeamTool(ctx context.Context, toolID, reason, operator string) error
 }
 
@@ -102,6 +105,10 @@ func (h *ToolAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleResumeConfig(w, r)
 	case path == "items" && r.Method == http.MethodGet:
 		h.handleListTools(w, r)
+	case path == "items/update" && r.Method == http.MethodPost:
+		h.handleUpdateToolMetadata(w, r)
+	case path == "reviews/add" && r.Method == http.MethodPost:
+		h.handleAddMemberReview(w, r)
 	case path == "summaries/url-key" && r.Method == http.MethodPost:
 		h.handleToolSummaryByURLKey(w, r)
 	case path == "purpose-tags" && r.Method == http.MethodPost:
@@ -112,6 +119,8 @@ func (h *ToolAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleManualAdd(w, r)
 	case path == "team/import" && r.Method == http.MethodPost:
 		h.handleTeamImport(w, r)
+	case path == "team/include" && r.Method == http.MethodPost:
+		h.handleTeamInclude(w, r)
 	case path == "team/update" && r.Method == http.MethodPost:
 		h.handleTeamUpdate(w, r)
 	case path == "team/delete" && r.Method == http.MethodPost:
@@ -1100,6 +1109,7 @@ type toolListStats struct {
 	EvaluatorCount          int        `json:"evaluatorCount"`
 	LatestUpdatedAt         *time.Time `json:"latestUpdatedAt,omitempty"`
 	PurposeTags             []string   `json:"purposeTags"`
+	Keywords                []string   `json:"keywords"`
 }
 
 type toolItemJSON struct {
@@ -1138,6 +1148,7 @@ type toolItemJSON struct {
 	SummaryKey             string                 `json:"summaryKey"`
 	Sources                []toolSourceJSON       `json:"sources"`
 	Evaluation             *evaluationSummaryJSON `json:"evaluation,omitempty"`
+	Reviews                []memberReviewJSON     `json:"reviews"`
 	CreatedAt              time.Time              `json:"createdAt"`
 	UpdatedAt              time.Time              `json:"updatedAt"`
 }
@@ -1160,6 +1171,13 @@ type evaluationSummaryJSON struct {
 	Result            *string    `json:"result,omitempty"`
 	FinalSummary      *string    `json:"finalSummary,omitempty"`
 	NotIncludedReason *string    `json:"notIncludedReason,omitempty"`
+}
+
+type memberReviewJSON struct {
+	ID        string    `json:"id"`
+	Reviewer  string    `json:"reviewer"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 func (h *ToolAPIHandler) handleListTools(w http.ResponseWriter, r *http.Request) {
@@ -1194,12 +1212,14 @@ func (h *ToolAPIHandler) handleListTools(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	q := nullableToolQuery(r.URL.Query().Get("q"))
+	keyword := nullableToolQuery(r.URL.Query().Get("keyword"))
 	params := tools.ListToolsParams{
 		Status:      status,
 		Sort:        sortMode,
 		Q:           q,
 		SourceTypes: sourceTypes,
 		PurposeTags: purposeTags,
+		Keyword:     keyword,
 		Limit:       limit,
 		Offset:      offset,
 		Now:         time.Now().UTC(),
@@ -1228,6 +1248,69 @@ func (h *ToolAPIHandler) handleListTools(w http.ResponseWriter, r *http.Request)
 		env.Items = append(env.Items, j)
 	}
 	writeToolOK(w, env)
+}
+
+type updateToolMetadataRequest struct {
+	ToolID      string   `json:"toolId"`
+	Operator    string   `json:"operator"`
+	CooperURL   string   `json:"cooperUrl"`
+	PurposeTags []string `json:"purposeTags"`
+}
+
+func (h *ToolAPIHandler) handleUpdateToolMetadata(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req updateToolMetadataRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	toolID, err := requireToolText(req.ToolID, "toolId", 120)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	operator, err := requireToolText(req.Operator, "operator", 80)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	if err := h.store.UpdateToolMetadata(r.Context(), toolID, operator, req.CooperURL, req.PurposeTags); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	writeToolOK(w, map[string]bool{"updated": true})
+}
+
+type addMemberReviewRequest struct {
+	ToolID   string `json:"toolId"`
+	Reviewer string `json:"reviewer"`
+	Content  string `json:"content"`
+}
+
+func (h *ToolAPIHandler) handleAddMemberReview(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req addMemberReviewRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	toolID, err := requireToolText(req.ToolID, "toolId", 120)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	review, err := h.store.AddMemberReview(r.Context(), toolID, req.Reviewer, req.Content)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	writeToolOK(w, map[string]any{"review": toMemberReviewJSON(review)})
 }
 
 type manualRepoRequest struct {
@@ -1289,7 +1372,7 @@ func (h *ToolAPIHandler) handleUpdatePurposeTags(w http.ResponseWriter, r *http.
 		writeToolErr(w, err)
 		return
 	}
-	writeToolOK(w, map[string]any{"tool": toToolJSON(tool, nil, nil)})
+	writeToolOK(w, map[string]any{"tool": toToolJSON(tool, nil, nil, nil)})
 }
 
 func (h *ToolAPIHandler) handleManualAdd(w http.ResponseWriter, r *http.Request) {
@@ -1319,7 +1402,7 @@ func (h *ToolAPIHandler) handleManualAdd(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeToolOK(w, map[string]any{
-		"tool":      toToolJSON(result.Tool, nil, nil),
+		"tool":      toToolJSON(result.Tool, nil, nil, nil),
 		"created":   result.Created,
 		"duplicate": result.Duplicate,
 	})
@@ -1360,17 +1443,53 @@ func (h *ToolAPIHandler) handleTeamImport(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeToolOK(w, map[string]any{
-		"tool":      toToolJSON(result.Tool, nil, nil),
+		"tool":      toToolJSON(result.Tool, nil, nil, nil),
 		"created":   result.Created,
 		"duplicate": result.Duplicate,
 	})
 }
 
 type teamUpdateRequest struct {
-	ToolID       string `json:"toolId"`
-	Operator     string `json:"operator"`
-	CooperURL    string `json:"cooperUrl"`
-	FinalSummary string `json:"finalSummary"`
+	ToolID       string    `json:"toolId"`
+	Operator     string    `json:"operator"`
+	CooperURL    string    `json:"cooperUrl"`
+	FinalSummary string    `json:"finalSummary"`
+	PurposeTags  *[]string `json:"purposeTags"`
+}
+
+type teamIncludeRequest struct {
+	ToolID       string   `json:"toolId"`
+	Operator     string   `json:"operator"`
+	CooperURL    string   `json:"cooperUrl"`
+	FinalSummary string   `json:"finalSummary"`
+	PurposeTags  []string `json:"purposeTags"`
+}
+
+func (h *ToolAPIHandler) handleTeamInclude(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req teamIncludeRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	toolID, err := requireToolText(req.ToolID, "toolId", 120)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	operator, err := requireToolText(req.Operator, "operator", 80)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	if err := h.store.IncludeDiscoveredAsTeamTool(r.Context(), toolID, operator, req.FinalSummary, req.CooperURL, req.PurposeTags); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	writeToolOK(w, map[string]bool{"included": true})
 }
 
 func (h *ToolAPIHandler) handleTeamUpdate(w http.ResponseWriter, r *http.Request) {
@@ -1393,7 +1512,12 @@ func (h *ToolAPIHandler) handleTeamUpdate(w http.ResponseWriter, r *http.Request
 		writeToolErr(w, err)
 		return
 	}
-	if err := h.store.UpdateTeamTool(r.Context(), toolID, operator, req.FinalSummary, req.CooperURL); err != nil {
+	if req.PurposeTags != nil {
+		if err := h.store.UpdateTeamTool(r.Context(), toolID, operator, req.FinalSummary, req.CooperURL, *req.PurposeTags); err != nil {
+			writeToolErr(w, err)
+			return
+		}
+	} else if err := h.store.UpdateTeamTool(r.Context(), toolID, operator, req.FinalSummary, req.CooperURL); err != nil {
 		writeToolErr(w, err)
 		return
 	}
@@ -1789,6 +1913,10 @@ func toToolListStatsJSON(stats tools.ToolListStats) toolListStats {
 	if purposeTags == nil {
 		purposeTags = []string{}
 	}
+	keywords := stats.Keywords
+	if keywords == nil {
+		keywords = []string{}
+	}
 	return toolListStats{
 		Status:                  string(stats.Status),
 		KeywordSourceCount:      stats.KeywordSourceCount,
@@ -1799,6 +1927,7 @@ func toToolListStatsJSON(stats tools.ToolListStats) toolListStats {
 		EvaluatorCount:          stats.EvaluatorCount,
 		LatestUpdatedAt:         stats.LatestUpdatedAt,
 		PurposeTags:             purposeTags,
+		Keywords:                keywords,
 	}
 }
 
@@ -1895,10 +2024,10 @@ func toGitHubRepoJSON(repo tools.GitHubRepo) githubRepoJSON {
 }
 
 func toToolItemJSON(item tools.ToolListItem) toolItemJSON {
-	return toToolJSON(item.Tool, item.Sources, item.Evaluation).withStars7D(item.Stars7D)
+	return toToolJSON(item.Tool, item.Sources, item.Evaluation, item.Reviews).withStars7D(item.Stars7D)
 }
 
-func toToolJSON(tool tools.Tool, sources []tools.ToolSourceSummary, eval *tools.EvaluationSummary) toolItemJSON {
+func toToolJSON(tool tools.Tool, sources []tools.ToolSourceSummary, eval *tools.EvaluationSummary, reviews []tools.MemberReviewSummary) toolItemJSON {
 	currentSummary, currentSummarySource := currentToolSummary(tool)
 	out := toolItemJSON{
 		ID:                     tool.ID,
@@ -1934,6 +2063,7 @@ func toToolJSON(tool tools.Tool, sources []tools.ToolSourceSummary, eval *tools.
 		StatusVersion:          tool.StatusVersion,
 		SummaryKey:             toolURLKey(tool.GitHubURL),
 		Sources:                make([]toolSourceJSON, 0, len(sources)),
+		Reviews:                make([]memberReviewJSON, 0, len(reviews)),
 		CreatedAt:              tool.CreatedAt,
 		UpdatedAt:              tool.UpdatedAt,
 	}
@@ -1954,6 +2084,9 @@ func toToolJSON(tool tools.Tool, sources []tools.ToolSourceSummary, eval *tools.
 	}
 	if eval != nil {
 		out.Evaluation = toEvaluationSummaryJSON(eval)
+	}
+	for _, review := range reviews {
+		out.Reviews = append(out.Reviews, toMemberReviewSummaryJSON(review))
 	}
 	return out
 }
@@ -2042,6 +2175,24 @@ func toEvaluationJSON(eval tools.Evaluation) evaluationSummaryJSON {
 		Result:            result,
 		FinalSummary:      eval.FinalSummary,
 		NotIncludedReason: eval.NotIncludedReason,
+	}
+}
+
+func toMemberReviewJSON(review tools.MemberReview) memberReviewJSON {
+	return memberReviewJSON{
+		ID:        review.ID,
+		Reviewer:  review.Reviewer,
+		Content:   review.Content,
+		CreatedAt: review.CreatedAt,
+	}
+}
+
+func toMemberReviewSummaryJSON(review tools.MemberReviewSummary) memberReviewJSON {
+	return memberReviewJSON{
+		ID:        review.ID,
+		Reviewer:  review.Reviewer,
+		Content:   review.Content,
+		CreatedAt: review.CreatedAt,
 	}
 }
 

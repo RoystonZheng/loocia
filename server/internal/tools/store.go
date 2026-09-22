@@ -795,7 +795,7 @@ func (s *Store) ImportTeamTool(ctx context.Context, repo GitHubRepo, operator, f
 	return UpsertResult{Tool: updated, Created: created}, nil
 }
 
-func (s *Store) UpdateTeamTool(ctx context.Context, toolID, operator, finalSummary, cooperURL string) error {
+func (s *Store) UpdateTeamTool(ctx context.Context, toolID, operator, finalSummary, cooperURL string, purposeTags ...[]string) error {
 	operator, err := requireText(operator, "operator", 80)
 	if err != nil {
 		return err
@@ -818,6 +818,11 @@ func (s *Store) UpdateTeamTool(ctx context.Context, toolID, operator, finalSumma
 	if _, err := includeTeamTool(ctx, tx, toolID, summary, false); err != nil {
 		return err
 	}
+	if len(purposeTags) > 0 {
+		if err := updatePurposeTagsTx(ctx, tx, toolID, purposeTags[0]); err != nil {
+			return err
+		}
+	}
 	evalID := newID("eval")
 	if err := insertCompletedIncludedEvaluation(ctx, tx, evalID, toolID, operator, cooper, summary); err != nil {
 		return err
@@ -826,6 +831,147 @@ func (s *Store) UpdateTeamTool(ctx context.Context, toolID, operator, finalSumma
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func (s *Store) IncludeDiscoveredAsTeamTool(ctx context.Context, toolID, operator, finalSummary, cooperURL string, purposeTags ...[]string) error {
+	operator, err := requireText(operator, "operator", 80)
+	if err != nil {
+		return err
+	}
+	summary, err := requireText(finalSummary, "final_summary", 1000)
+	if err != nil {
+		return err
+	}
+	cooper, err := validateOptionalCooperURL(cooperURL)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollback(ctx, tx)
+
+	var fromStatus ToolStatus
+	if err := tx.QueryRow(ctx, `SELECT status FROM tools WHERE id=$1 FOR UPDATE`, toolID).Scan(&fromStatus); err != nil {
+		if err == pgx.ErrNoRows {
+			return statusConflict("tool cannot be included as a team tool")
+		}
+		return err
+	}
+	if fromStatus != ToolDiscovered {
+		return statusConflict("tool is not in discovered status")
+	}
+
+	evalID := newID("eval")
+	if _, err := includeTeamTool(ctx, tx, toolID, &summary, false); err != nil {
+		return err
+	}
+	if len(purposeTags) > 0 {
+		if err := updatePurposeTagsTx(ctx, tx, toolID, purposeTags[0]); err != nil {
+			return err
+		}
+	}
+	if err := insertCompletedIncludedEvaluation(ctx, tx, evalID, toolID, operator, cooper, &summary); err != nil {
+		return err
+	}
+	if err := insertStatusEvent(ctx, tx, toolID, fromStatus, ToolIncluded, operator, "team_include", evalID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) UpdateToolMetadata(ctx context.Context, toolID, operator, cooperURL string, purposeTags []string) error {
+	operator, err := requireText(operator, "operator", 80)
+	if err != nil {
+		return err
+	}
+	cooper, err := validateOptionalCooperURL(cooperURL)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollback(ctx, tx)
+
+	if err := updatePurposeTagsTx(ctx, tx, toolID, purposeTags); err != nil {
+		return err
+	}
+
+	var status ToolStatus
+	if err := tx.QueryRow(ctx, `SELECT status FROM tools WHERE id=$1`, toolID).Scan(&status); err != nil {
+		return err
+	}
+
+	evaluationID := ""
+	if cooper != nil {
+		var updatedID string
+		err := tx.QueryRow(ctx, `
+			UPDATE tool_evaluations
+			SET cooper_url=$2, operator=$3, updated_at=now()
+			WHERE id = (
+				SELECT id
+				FROM tool_evaluations
+				WHERE tool_id=$1 AND completed_at IS NULL
+				ORDER BY started_at DESC, id DESC
+				LIMIT 1
+			)
+			RETURNING id`, toolID, cooper, operator).Scan(&updatedID)
+		if err != nil && err != pgx.ErrNoRows {
+			return err
+		}
+		if err == nil {
+			evaluationID = updatedID
+		} else {
+			evaluationID = newID("eval")
+			var result *string
+			if status == ToolIncluded {
+				included := string(EvaluationIncluded)
+				result = &included
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO tool_evaluations (
+					id, tool_id, evaluator, operator, cooper_url,
+					completed_at, result
+				) VALUES ($1,$2,$3,$4,$5,now(),$6)`,
+				evaluationID, toolID, operator, operator, cooper, result); err != nil {
+				return err
+			}
+		}
+	}
+	if err := insertStatusEvent(ctx, tx, toolID, status, status, operator, "tool_metadata_update", evaluationID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) AddMemberReview(ctx context.Context, toolID, reviewer, content string) (MemberReview, error) {
+	reviewer, err := requireText(reviewer, "reviewer", 80)
+	if err != nil {
+		return MemberReview{}, err
+	}
+	content, err = requireTextRange(content, "review", 2, 1000)
+	if err != nil {
+		return MemberReview{}, err
+	}
+	var review MemberReview
+	err = s.pool.QueryRow(ctx, `
+		INSERT INTO tool_member_reviews (
+			id, tool_id, reviewer, operator, content
+		) VALUES ($1,$2,$3,$4,$5)
+		RETURNING id, tool_id, reviewer, operator, content, created_at, updated_at`,
+		newID("review"), toolID, reviewer, reviewer, content).Scan(
+		&review.ID, &review.ToolID, &review.Reviewer, &review.Operator,
+		&review.Content, &review.CreatedAt, &review.UpdatedAt,
+	)
+	if err != nil {
+		return MemberReview{}, err
+	}
+	return review, nil
 }
 
 func (s *Store) DeleteTeamTool(ctx context.Context, toolID, reason, operator string) error {
@@ -1061,6 +1207,13 @@ func (s *Store) ListTools(ctx context.Context, p ListToolsParams) ([]ToolListIte
 		    OR ev.cooper_url ILIKE '%'||$4||'%'
 		    OR EXISTS (
 		        SELECT 1
+		        FROM tool_member_reviews search_review
+		        WHERE search_review.tool_id=t.id
+		          AND (search_review.reviewer ILIKE '%'||$4||'%'
+		           OR search_review.content ILIKE '%'||$4||'%')
+		    )
+		    OR EXISTS (
+		        SELECT 1
 		        FROM tool_discovery_sources s
 		        WHERE s.tool_id=t.id
 		          AND (s.term ILIKE '%'||$4||'%'
@@ -1076,9 +1229,16 @@ func (s *Store) ListTools(ctx context.Context, p ListToolsParams) ([]ToolListIte
 		      FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
 		      WHERE purpose.tag = ANY($7::text[])
 		  ))
+		  AND ($8::text IS NULL OR EXISTS (
+		      SELECT 1
+		      FROM tool_discovery_sources s
+		      WHERE s.tool_id=t.id
+		        AND s.source_type=$9
+		        AND s.term=$8
+		  ))
 		ORDER BY `+order+`
 		LIMIT $2 OFFSET $6`,
-		status, p.Limit, p.Now.UTC(), p.Q, listToolSourceTypesArg(p), p.Offset, listPurposeTagsArg(p))
+		status, p.Limit, p.Now.UTC(), p.Q, listToolSourceTypesArg(p), p.Offset, listPurposeTagsArg(p), p.Keyword, SourceKeyword)
 	if err != nil {
 		return nil, err
 	}
@@ -1101,6 +1261,11 @@ func (s *Store) ListTools(ctx context.Context, p ListToolsParams) ([]ToolListIte
 			return nil, err
 		}
 		out[i].Sources = sources
+		reviews, err := s.listMemberReviews(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Reviews = reviews
 	}
 	return out, nil
 }
@@ -1248,12 +1413,19 @@ func (s *Store) ToolStats(ctx context.Context, p ListToolsParams) (ToolListStats
 		        SELECT 1
 		        FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
 		        WHERE purpose.tag ILIKE '%'||$2||'%'
-		    )
-		    OR ev.evaluator ILIKE '%'||$2||'%'
-		    OR ev.cooper_url ILIKE '%'||$2||'%'
-		    OR EXISTS (
-		        SELECT 1
-		        FROM tool_discovery_sources s
+			    )
+			    OR ev.evaluator ILIKE '%'||$2||'%'
+			    OR ev.cooper_url ILIKE '%'||$2||'%'
+			    OR EXISTS (
+			        SELECT 1
+			        FROM tool_member_reviews search_review
+			        WHERE search_review.tool_id=t.id
+			          AND (search_review.reviewer ILIKE '%'||$2||'%'
+			           OR search_review.content ILIKE '%'||$2||'%')
+			    )
+			    OR EXISTS (
+			        SELECT 1
+			        FROM tool_discovery_sources s
 		        WHERE s.tool_id=t.id
 		          AND (s.term ILIKE '%'||$2||'%'
 		           OR s.source_type ILIKE '%'||$2||'%')
@@ -1267,8 +1439,15 @@ func (s *Store) ToolStats(ctx context.Context, p ListToolsParams) (ToolListStats
 		      SELECT 1
 		      FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
 		      WHERE purpose.tag = ANY($7::text[])
+		  ))
+		  AND ($8::text IS NULL OR EXISTS (
+		      SELECT 1
+		      FROM tool_discovery_sources s
+		      WHERE s.tool_id=t.id
+		        AND s.source_type=$9
+		        AND s.term=$8
 		  ))`,
-		status, p.Q, listToolSourceTypesArg(p), SourceKeyword, SourceTopic, SourceManual, listPurposeTagsArg(p))
+		status, p.Q, listToolSourceTypesArg(p), SourceKeyword, SourceTopic, SourceManual, listPurposeTagsArg(p), p.Keyword, SourceKeyword)
 	if err := row.Scan(
 		&stats.Count,
 		&stats.KeywordSourceCount,
@@ -1286,11 +1465,23 @@ func (s *Store) ToolStats(ctx context.Context, p ListToolsParams) (ToolListStats
 		Q:           p.Q,
 		SourceType:  p.SourceType,
 		SourceTypes: p.SourceTypes,
+		Keyword:     p.Keyword,
 	})
 	if err != nil {
 		return ToolListStats{}, err
 	}
 	stats.PurposeTags = tags
+	keywords, err := s.ListKeywords(ctx, ListToolsParams{
+		Status:      status,
+		Q:           p.Q,
+		SourceType:  p.SourceType,
+		SourceTypes: p.SourceTypes,
+		PurposeTags: p.PurposeTags,
+	})
+	if err != nil {
+		return ToolListStats{}, err
+	}
+	stats.Keywords = keywords
 	return stats, nil
 }
 
@@ -1354,8 +1545,15 @@ func (s *Store) ListPurposeTags(ctx context.Context, p ListToolsParams) ([]strin
 		      FROM tool_discovery_sources s
 		      WHERE s.tool_id=t.id AND s.source_type = ANY($3::text[])
 		  ))
+		  AND ($4::text IS NULL OR EXISTS (
+		      SELECT 1
+		      FROM tool_discovery_sources s
+		      WHERE s.tool_id=t.id
+		        AND s.source_type=$5
+		        AND s.term=$4
+		  ))
 		ORDER BY purpose.tag ASC`,
-		status, p.Q, listToolSourceTypesArg(p))
+		status, p.Q, listToolSourceTypesArg(p), p.Keyword, SourceKeyword)
 	if err != nil {
 		return nil, err
 	}
@@ -1368,6 +1566,89 @@ func (s *Store) ListPurposeTags(ctx context.Context, p ListToolsParams) ([]strin
 			return nil, err
 		}
 		out = append(out, tag)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListKeywords(ctx context.Context, p ListToolsParams) ([]string, error) {
+	status := p.Status
+	if status == "" {
+		status = ToolDiscovered
+	}
+	rows, err := s.pool.Query(ctx, `
+		WITH source_keywords AS (
+			SELECT DISTINCT source.term AS keyword
+			FROM tools t
+			JOIN tool_discovery_sources source
+			  ON source.tool_id=t.id
+			 AND source.source_type=$4
+			LEFT JOIN LATERAL (
+				SELECT e.id, e.evaluator, e.cooper_url
+				FROM tool_evaluations e
+				WHERE e.tool_id = t.id
+				ORDER BY (e.completed_at IS NULL) DESC, e.started_at DESC, e.id DESC
+				LIMIT 1
+			) ev ON true
+			WHERE t.status = $1
+			  AND source.term <> ''
+			  AND ($2::text IS NULL OR (
+			       t.github_full_name ILIKE '%'||$2||'%'
+			    OR t.description ILIKE '%'||$2||'%'
+			    OR t.temporary_summary ILIKE '%'||$2||'%'
+			    OR t.final_summary ILIKE '%'||$2||'%'
+			    OR EXISTS (
+			        SELECT 1
+			        FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
+			        WHERE purpose.tag ILIKE '%'||$2||'%'
+			    )
+			    OR ev.evaluator ILIKE '%'||$2||'%'
+			    OR ev.cooper_url ILIKE '%'||$2||'%'
+			    OR EXISTS (
+			        SELECT 1
+			        FROM tool_discovery_sources search_source
+			        WHERE search_source.tool_id=t.id
+			          AND (search_source.term ILIKE '%'||$2||'%'
+			           OR search_source.source_type ILIKE '%'||$2||'%')
+			    )))
+			  AND ($3::text[] IS NULL OR EXISTS (
+			      SELECT 1
+			      FROM tool_discovery_sources filter_source
+			      WHERE filter_source.tool_id=t.id
+			        AND filter_source.source_type = ANY($3::text[])
+			  ))
+			  AND ($5::text[] IS NULL OR EXISTS (
+			      SELECT 1
+			      FROM jsonb_array_elements_text(t.purpose_tags) purpose(tag)
+			      WHERE purpose.tag = ANY($5::text[])
+			  ))
+		),
+		configured_keywords AS (
+			SELECT DISTINCT jsonb_array_elements_text(c.terms) AS keyword
+			FROM tool_discovery_configs c
+			WHERE c.deleted_at IS NULL
+			  AND c.method = 'keyword'
+		)
+		SELECT DISTINCT keyword
+		FROM (
+			SELECT keyword FROM source_keywords
+			UNION ALL
+			SELECT keyword FROM configured_keywords
+		) options
+		WHERE btrim(keyword) <> ''
+		ORDER BY keyword`,
+		status, p.Q, listToolSourceTypesArg(p), SourceKeyword, listPurposeTagsArg(p))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var keyword string
+		if err := rows.Scan(&keyword); err != nil {
+			return nil, err
+		}
+		out = append(out, keyword)
 	}
 	return out, rows.Err()
 }
@@ -1710,6 +1991,28 @@ func upsertSource(ctx context.Context, tx pgx.Tx, toolID string, source Discover
 	return err
 }
 
+func updatePurposeTagsTx(ctx context.Context, tx pgx.Tx, toolID string, purposeTags []string) error {
+	tagsRaw, err := json.Marshal(NormalizePurposeTags(purposeTags))
+	if err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE tools
+		SET purpose_tags=$2::jsonb,
+		    purpose_tags_manually_set=TRUE,
+		    status_version=status_version+1,
+		    updated_at=now()
+		WHERE id=$1`,
+		toolID, string(tagsRaw))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func includeTeamTool(ctx context.Context, tx pgx.Tx, toolID string, summary *string, preserveSummary bool) (Tool, error) {
 	summaryExpr := "$2"
 	if preserveSummary {
@@ -1765,6 +2068,29 @@ func (s *Store) listSources(ctx context.Context, toolID string) ([]ToolSourceSum
 	for rows.Next() {
 		var item ToolSourceSummary
 		if err := rows.Scan(&item.SourceType, &item.Term, &item.ConfigID, &item.LastSeenAt, &item.HitCount); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) listMemberReviews(ctx context.Context, toolID string) ([]MemberReviewSummary, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, reviewer, content, created_at
+		FROM tool_member_reviews
+		WHERE tool_id=$1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 20`, toolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []MemberReviewSummary
+	for rows.Next() {
+		var item MemberReviewSummary
+		if err := rows.Scan(&item.ID, &item.Reviewer, &item.Content, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, item)

@@ -122,21 +122,26 @@ GitHub 返回 401 `Bad credentials` 时，执行器会跳过失效 Token，继�
 | `status` | 可选，`discovered`、`evaluating`、`included`、`excluded`；默认 `discovered` |
 | `sort` | 可选，`latest`、`stars`、`stars7d`；默认 `latest` |
 | `source` | 可选，可重复，`keyword`、`topic`、`manual`；不传表示全部来源 |
+| `keyword` | 可选，按关键词发现来源的 `term` 精确筛选；不传表示全部关键词 |
 | `purposeTag` | 可选，可重复，按用途分类筛选；不传表示全部用途 |
-| `q` | 可选，按工具、仓库、来源、测评人或 Cooper 链接搜索 |
-| `take` | 可选，1-200，默认 50 |
+| `q` | 可选，按工具、仓库、来源、测评人、评价内容或 Cooper 链接搜索 |
+| `take` | 可选，1-200，默认 50；工具百宝箱前端允许直接输入每页数量，输入框带原生上下加减控件 |
 | `page` | 可选，从 1 开始的页码；不传默认第 1 页 |
 | `offset` | 可选，从 0 开始的偏移量；如果同时传 `offset` 和 `page`，后端优先使用 `offset` |
 
 返回 `data.count` 是同一筛选条件下的工具总数，不受 `take`、`page`、`offset` 和排序方式影响；`data.items[]` 是当前排序下的当前页。返回里同时带 `page`、`pageSize`、`offset`、`take`，前端用它展示“第几条到第几条 / 共多少条”。发现工具、团队工具在切换 `latest`、`stars`、`stars7d` 时，统计口径保持一致，但列表行会按排序规则取当前页。
 
-返回 `data.stats`：`keywordSourceCount`、`topicSourceCount`、`manualSourceCount`、`linkedEvaluationCount`、`unlinkedEvaluationCount`、`evaluatorCount`、`latestUpdatedAt`、`purposeTags`。这些统计和 `count` 一样按完整筛选集合计算；`purposeTags` 是当前状态、搜索和来源条件下可选的用途分类集合，不受当前用途筛选影响。
+返回 `data.stats`：`keywordSourceCount`、`topicSourceCount`、`manualSourceCount`、`linkedEvaluationCount`、`unlinkedEvaluationCount`、`evaluatorCount`、`latestUpdatedAt`、`purposeTags`、`keywords`。这些统计和 `count` 一样按完整筛选集合计算；`purposeTags` 是当前状态、搜索、来源和关键词条件下可选的用途分类集合，不受当前用途筛选影响；`keywords` 是当前状态、搜索、来源和用途条件下可选的关键词集合，不受当前关键词筛选影响。
 
-返回 `data.items[]`：GitHub 仓库事实、当前状态、当前说明、`summaryKey`、Stars、`stars7d`、用途分类 `purposeTags`、是否人工修正 `purposeTagsManuallySet`、发现来源 `sources[]`、测评摘要 `evaluation`。`stars7d` 优先使用 7 天前附近的快照计算；没有 7 天前快照时，用最近 7 天内最早且后续已有更新的快照计算；完全没有历史快照时为空。已发现、测评中、团队工具三个列表都使用同一套 `q`、`sort`、`source`、`purposeTag` 查询能力，其中团队工具页读取 `status=included`，测评中页读取 `status=evaluating`。
+返回 `data.items[]`：GitHub 仓库事实、当前状态、当前说明、`summaryKey`、Stars、`stars7d`、用途分类 `purposeTags`、是否人工修正 `purposeTagsManuallySet`、发现来源 `sources[]`、测评摘要 `evaluation` 和最近 20 条团队评价 `reviews[]`。`reviews[]` 每项包含 `id`、`reviewer`、`content`、`createdAt`。`stars7d` 优先使用 7 天前附近的快照计算；没有 7 天前快照时，用最近 7 天内最早且后续已有更新的快照计算；完全没有历史快照时为空。已发现、测评中、团队工具三个列表都使用同一套 `q`、`sort`、`source`、`purposeTag` 查询能力，其中团队工具页读取 `status=included`，测评中页读取 `status=evaluating`。
 
 前端来源筛选使用下拉菜单：全部来源、关键词、Topic、手动添加。选择“全部来源”时不传 `source`。
 
+工具百宝箱额外提供关键词筛选，下拉选项来自发现来源的 `term`，选择“全部关键词”时不传 `keyword`。它和来源、用途筛选可以组合使用。
+
 前端用途筛选同样使用下拉菜单：全部用途、代码开发、浏览器操作、深度研究等。选择“全部用途”时不传 `purposeTag`。如果自动分类没有命中，工具可以保持未分类；用户可以在列表里手动修正用途，也可以新增一个当前没有的用途标签。
+
+工具列表中的说明下方会显示已有团队评价；评价内容较长时只展示摘要，鼠标悬浮后在固定大小、可滚动的窗口中查看完整内容。Cooper 文档链接也可以在工具行内直接打开。
 
 ### POST `/api/tools/purpose-tags`
 
@@ -149,6 +154,31 @@ GitHub 返回 401 `Bad credentials` 时，执行器会跳过失效 Token，继�
 | `purposeTags` | 可选，字符串数组；为空数组表示人工确认未分类 |
 
 提交成功后返回更新后的 `tool`，其中 `purposeTagsManuallySet=true`。后续自动发现再次命中该工具时，不会覆盖人工修正过的用途分类。
+
+### POST `/api/tools/items/update`
+
+直接编辑工具元数据。Body：
+
+| 字段 | 说明 |
+|---|---|
+| `toolId` | 必填，工具 ID |
+| `operator` | 必填，操作人 |
+| `cooperUrl` | 可选，Cooper 文档链接；只校验域名 |
+| `purposeTags` | 可选，用途分类数组；传空数组表示人工确认未分类 |
+
+成功返回 `data.updated=true`。编辑会记录操作人和状态事件；如果填写 Cooper 链接，会更新当前测评记录或创建一条已完成的关联记录。
+
+### POST `/api/tools/reviews/add`
+
+给任意工具添加团队评价。Body：
+
+| 字段 | 说明 |
+|---|---|
+| `toolId` | 必填，工具 ID |
+| `reviewer` | 必填，评价人 |
+| `content` | 必填，评价内容，2-1000 字 |
+
+成功返回 `data.review`，并在后续工具列表中通过 `reviews[]` 返回。评价创建日期由服务端自动生成。
 
 ### 前端批量操作
 
@@ -164,6 +194,8 @@ GitHub 返回 401 `Bad credentials` 时，执行器会跳过失效 Token，继�
 | 团队工具 | 批量删除 | 对每个工具调用 `POST /api/tools/team/delete`；操作人和删除原因共用 |
 
 批量纳入前，前端会校验：操作人必填；Cooper 链接必须已存在或本次填写；团队使用说明必须 20-1000 字。团队工具批量删除仍是软删除，状态变为 `excluded`，保留来源、测评和状态事件。
+
+工具百宝箱的批量选择支持直接输入数量，也支持数量框右侧的加减按键；“选择全部”按当前搜索、来源、关键词、用途和排序条件选择完整结果集。批量测试和批量删除弹窗保持固定尺寸，工具较多时只在弹窗内的工具展示框滚动。
 
 ### POST `/api/tools/summaries/url-key`
 
@@ -185,6 +217,20 @@ GitHub 返回 401 `Bad credentials` 时，执行器会跳过失效 Token，继�
 
 团队工具是 `status=included` 的工具。前端通过 `GET /api/tools/items?status=included` 查询，支持同样的 `q`、`sort`、`source` 和 `take` 参数。搜索覆盖工具名、仓库名、描述、团队使用说明、测评人、Cooper 链接和发现来源关键词。
 
+### POST `/api/tools/team/include`
+
+把工具百宝箱中的候选工具直接纳入团队工具。Body：
+
+| 字段 | 说明 |
+|---|---|
+| `toolId` | 必填，工具 ID |
+| `operator` | 必填，操作人 |
+| `finalSummary` | 必填，团队使用说明，最多 1000 字 |
+| `cooperUrl` | 可选，Cooper 文档链接；只校验域名 |
+| `purposeTags` | 可选，用途分类数组 |
+
+只允许从 `discovered` 状态触发。成功后状态变为 `included`，纳入日期由服务端自动生成，并写入已完成的纳入记录和状态事件。
+
 ### POST `/api/tools/team/import`
 
 手动导入团队工具。Body：
@@ -201,7 +247,7 @@ GitHub 返回 401 `Bad credentials` 时，执行器会跳过失效 Token，继�
 
 ### POST `/api/tools/team/update`
 
-编辑团队工具。Body：`toolId`、`operator`、可选 `cooperUrl`、可选 `finalSummary`。仅允许编辑已纳入团队工具；每次编辑都会新增一条已完成测评记录，并写入状态事件，便于追溯是谁更新了文档或说明。
+编辑团队工具。Body：`toolId`、`operator`、可选 `cooperUrl`、可选 `finalSummary`、可选 `purposeTags`。仅允许编辑已纳入团队工具；每次编辑都会新增一条已完成测评记录，并写入状态事件，便于追溯是谁更新了文档、说明或用途分类。
 
 ### POST `/api/tools/team/delete`
 

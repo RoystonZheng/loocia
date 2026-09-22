@@ -312,6 +312,15 @@ func TestToolAPIManualAddAndEvaluationClosure(t *testing.T) {
 		t.Fatalf("preview should include auto purpose tags: %+v", preview.Data.Repository.PurposeTags)
 	}
 
+	keywordRepo := sampleToolRepo("node-browser-keyword", "openai", "browser-keyword")
+	if _, err := store.UpsertFromGitHub(context.Background(), keywordRepo, tools.DiscoverySource{
+		SourceType: tools.SourceKeyword,
+		Term:       "browser agent",
+		Actor:      "alice",
+	}); err != nil {
+		t.Fatalf("keyword upsert: %v", err)
+	}
+
 	type manualData struct {
 		Tool      toolItemJSON `json:"tool"`
 		Created   bool         `json:"created"`
@@ -332,6 +341,10 @@ func TestToolAPIManualAddAndEvaluationClosure(t *testing.T) {
 	discovered := doToolAPI[toolListEnvelope](t, h, http.MethodGet, "/api/tools/items?status=discovered&source=manual&purposeTag=%E6%B5%8F%E8%A7%88%E5%99%A8%E6%93%8D%E4%BD%9C", nil, http.StatusOK)
 	if discovered.Data.Count != 1 || discovered.Data.Stats.ManualSourceCount != 1 || len(discovered.Data.Stats.PurposeTags) == 0 {
 		t.Fatalf("discovered list mismatch: %+v", discovered.Data)
+	}
+	keywordFiltered := doToolAPI[toolListEnvelope](t, h, http.MethodGet, "/api/tools/items?status=discovered&keyword=browser%20agent", nil, http.StatusOK)
+	if keywordFiltered.Data.Count != 1 || len(keywordFiltered.Data.Stats.Keywords) == 0 || keywordFiltered.Data.Stats.Keywords[0] != "browser agent" {
+		t.Fatalf("keyword filtered list mismatch: %+v", keywordFiltered.Data)
 	}
 
 	missingActor := doToolAPI[toolAPIErrorData](t, h, http.MethodPost, "/api/tools/purpose-tags", map[string]any{
@@ -588,6 +601,59 @@ func TestToolAPIListToolsPagination(t *testing.T) {
 	}
 	if len(listed.Data.Items) != 1 || listed.Data.Items[0].GitHubFullName != "openai/api-page-mid" {
 		t.Fatalf("page 2 should return second item after star sorting: %+v", listed.Data.Items)
+	}
+}
+
+func TestToolAPIKeywordFilterKeepsItemsAndStatsAligned(t *testing.T) {
+	store := liveToolAPIStore(t)
+	h := newToolAPITestHandler(store, nil)
+	ctx := context.Background()
+
+	browser, err := store.UpsertFromGitHub(ctx, sampleToolRepo("node-api-browser", "openai", "browser-agent"), tools.DiscoverySource{
+		SourceType: tools.SourceKeyword,
+		Term:       "browser agent",
+		Actor:      "alice",
+	})
+	if err != nil {
+		t.Fatalf("browser upsert: %v", err)
+	}
+	if err := store.UpdateToolPurposeTags(ctx, browser.Tool.ID, []string{"浏览器操作"}, true); err != nil {
+		t.Fatalf("browser purpose tags: %v", err)
+	}
+
+	coding, err := store.UpsertFromGitHub(ctx, sampleToolRepo("node-api-coding", "openai", "coding-agent"), tools.DiscoverySource{
+		SourceType: tools.SourceKeyword,
+		Term:       "coding agent",
+		Actor:      "alice",
+	})
+	if err != nil {
+		t.Fatalf("coding upsert: %v", err)
+	}
+	if err := store.UpdateToolPurposeTags(ctx, coding.Tool.ID, []string{"代码开发"}, true); err != nil {
+		t.Fatalf("coding purpose tags: %v", err)
+	}
+
+	filtered := doToolAPI[toolListEnvelope](t, h, http.MethodGet,
+		"/api/tools/items?status=discovered&source=keyword&purposeTag=%E6%B5%8F%E8%A7%88%E5%99%A8%E6%93%8D%E4%BD%9C&keyword=browser%20agent",
+		nil, http.StatusOK)
+	if filtered.Data.Count != 1 || len(filtered.Data.Items) != 1 || filtered.Data.Items[0].ID != browser.Tool.ID {
+		t.Fatalf("filtered items mismatch: %+v", filtered.Data)
+	}
+	if filtered.Data.Stats.KeywordSourceCount != 1 || filtered.Data.Stats.TopicSourceCount != 0 || filtered.Data.Stats.ManualSourceCount != 0 {
+		t.Fatalf("filtered source stats mismatch: %+v", filtered.Data.Stats)
+	}
+	if len(filtered.Data.Stats.Keywords) != 1 || filtered.Data.Stats.Keywords[0] != "browser agent" {
+		t.Fatalf("filtered keyword options mismatch: %+v", filtered.Data.Stats.Keywords)
+	}
+
+	empty := doToolAPI[toolListEnvelope](t, h, http.MethodGet,
+		"/api/tools/items?status=discovered&keyword=missing%20keyword",
+		nil, http.StatusOK)
+	if empty.Data.Count != 0 || len(empty.Data.Items) != 0 {
+		t.Fatalf("missing keyword should return an empty page: %+v", empty.Data)
+	}
+	if len(empty.Data.Stats.Keywords) != 2 || empty.Data.Stats.Keywords[0] != "browser agent" || empty.Data.Stats.Keywords[1] != "coding agent" {
+		t.Fatalf("empty result should retain available keyword options: %+v", empty.Data.Stats.Keywords)
 	}
 }
 

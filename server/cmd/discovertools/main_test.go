@@ -28,6 +28,9 @@ func TestRunWeeklyCommandExecutesConfiguredDiscovery(t *testing.T) {
 	if err := store.EnsureSchema(ctx); err != nil {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
+	if _, err := pool.Exec(ctx, `TRUNCATE tool_runtime_settings`); err != nil {
+		t.Fatalf("truncate runtime settings: %v", err)
+	}
 	if _, err := pool.Exec(ctx, `
 		TRUNCATE tool_status_events, tool_star_snapshots, tool_evaluations,
 			tool_discovery_sources, tool_discovery_runs, tools,

@@ -177,7 +177,7 @@ func TestUpsertFromGitHubCreatesAndMergesSourcesWithoutStatusRegression(t *testi
 		t.Fatalf("dedupe/source merge mismatch: tools=%d sources=%d", toolCount, sourceCount)
 	}
 	filtered, err := s.ListTools(ctx, ListToolsParams{
-		Status:      ToolDiscovered,
+		Status:      ToolEvaluating,
 		SourceTypes: []SourceType{SourceKeyword, SourceTopic},
 		Limit:       10,
 	})
@@ -188,7 +188,7 @@ func TestUpsertFromGitHubCreatesAndMergesSourcesWithoutStatusRegression(t *testi
 		t.Fatalf("multi-source filter should include merged tool: %+v", filtered)
 	}
 	manualOnly, err := s.ListTools(ctx, ListToolsParams{
-		Status:      ToolDiscovered,
+		Status:      ToolEvaluating,
 		SourceTypes: []SourceType{SourceManual},
 		Limit:       10,
 	})

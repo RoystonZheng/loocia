@@ -85,6 +85,9 @@ func liveToolAPIStore(t *testing.T) *tools.Store {
 	if err := s.EnsureSchema(context.Background()); err != nil {
 		t.Fatalf("EnsureSchema: %v", err)
 	}
+	if _, err := pool.Exec(context.Background(), `TRUNCATE tool_runtime_settings`); err != nil {
+		t.Fatalf("truncate runtime settings: %v", err)
+	}
 	if _, err := pool.Exec(context.Background(), `
 		TRUNCATE tool_status_events, tool_star_snapshots, tool_evaluations,
 			tool_discovery_sources, tool_discovery_runs, tools,
@@ -95,7 +98,10 @@ func liveToolAPIStore(t *testing.T) *tools.Store {
 }
 
 func newToolAPITestHandler(store *tools.Store, repos map[string]tools.GitHubRepo) *ToolAPIHandler {
-	return NewToolAPIHandler(store, tools.NewDiscoverer(store, fakeToolGitHub{repos: repos}))
+	discoverer := tools.NewDiscoverer(store, fakeToolGitHub{repos: repos})
+	// Keep async API lifecycle tests independent from the production request throttle.
+	discoverer.RequestInterval = 0
+	return NewToolAPIHandler(store, discoverer)
 }
 
 func doToolAPI[T any](t *testing.T, h http.Handler, method, path string, body any, wantCode int) toolEnvelopeForTest[T] {

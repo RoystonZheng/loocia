@@ -207,3 +207,67 @@ func TestHTTPGitHubClientRotatesConfiguredTokens(t *testing.T) {
 		t.Fatalf("authorization rotation = %q, want %q", got, want)
 	}
 }
+
+func TestHTTPGitHubClientSkipsInvalidCredentialsAndFallsBackToAnonymous(t *testing.T) {
+	t.Run("uses the next configured token", func(t *testing.T) {
+		var authHeaders []string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeaders = append(authHeaders, r.Header.Get("Authorization"))
+			if r.Header.Get("Authorization") == "Bearer expired-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"message":"Bad credentials","status":"401"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total_count":        0,
+				"incomplete_results": false,
+				"items":              []map[string]any{},
+			})
+		}))
+		defer srv.Close()
+
+		client := NewHTTPGitHubClient("")
+		client.BaseURL = srv.URL
+		client.SetTokens([]string{"expired-token", "valid-token"})
+		client.SetTokenSelection(GitHubTokenStrategyFailover, 0, false)
+
+		if _, err := client.SearchRepositories(context.Background(), GitHubSearchRequest{Query: "x"}); err != nil {
+			t.Fatalf("SearchRepositories: %v", err)
+		}
+		if got, want := strings.Join(authHeaders, ","), "Bearer expired-token,Bearer valid-token"; got != want {
+			t.Fatalf("authorization fallback = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("uses anonymous access when every token is invalid", func(t *testing.T) {
+		var authHeaders []string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeaders = append(authHeaders, r.Header.Get("Authorization"))
+			if r.Header.Get("Authorization") != "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"message":"Bad credentials","status":"401"}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total_count":        0,
+				"incomplete_results": false,
+				"items":              []map[string]any{},
+			})
+		}))
+		defer srv.Close()
+
+		client := NewHTTPGitHubClient("")
+		client.BaseURL = srv.URL
+		client.SetTokens([]string{"expired-token"})
+		client.SetTokenSelection(GitHubTokenStrategyFixed, 0, false)
+
+		if _, err := client.SearchRepositories(context.Background(), GitHubSearchRequest{Query: "x"}); err != nil {
+			t.Fatalf("SearchRepositories: %v", err)
+		}
+		if got, want := strings.Join(authHeaders, ","), "Bearer expired-token,"; got != want {
+			t.Fatalf("anonymous fallback = %q, want %q", got, want)
+		}
+	})
+}

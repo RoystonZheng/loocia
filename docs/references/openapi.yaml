@@ -30,9 +30,10 @@ paths:
   /api/public/items:
     get:
       operationId: listItems
-      summary: AI HOT items (selected / all / by category)
+      summary: AI HOT items (selected / all / by topic)
       description: |
-        全部 AI 动态。可按精选 / 全部、按分类、按时间筛选。匿名只读，nginx proxy_cache 5 分钟。
+        全部 AI 动态。可按精选 / 全部、按主题、按来源、按时间筛选。主题和来源参数均支持
+        repeated query values；同一组内 OR，主题组与来源组之间 AND。匿名只读，nginx proxy_cache 5 分钟。
 
         **排序契约**：本接口按 `publishedAt`（真实发布时间）倒序，**不**按 timeline anchor。
         因此跟 `/api/public/feed`（按 timelineAt 倒序）在慢推 RSS 源上可能有时间撕裂；
@@ -69,11 +70,17 @@ paths:
             - arxiv 论文源(arxiv-anthropic/deepmind/deepseek/openai) → 不返回(论文流量大会刷屏"全部";要论文走 `category=paper`)
         - name: category
           in: query
+          style: form
+          explode: true
           schema:
-            type: string
-            enum: ["ai-models", "ai-products", "industry", "paper", "tip"]
+            type: array
+            uniqueItems: true
+            items:
+              type: string
+              enum: ["ai-models", "ai-products", "industry", "paper", "tip"]
           description: |
-            可选分类(英文 slug)。跟 `/api/public/daily` 返回的 `sections[].label`(中文) 对照:
+            可选主题(英文 slug)，可重复传多个 `category`；同组内 OR。单值写法继续兼容。
+            跟 `/api/public/daily` 返回的 `sections[].label`(中文) 对照:
 
             | items API `category` | daily API section `label` |
             |---|---|
@@ -84,13 +91,19 @@ paths:
             | `tip` | 技巧与观点 |
         - name: source_kind
           in: query
+          style: form
+          explode: true
           schema:
-            type: string
-            enum: ["rss", "html", "mp", "aihot"]
+            type: array
+            uniqueItems: true
+            items:
+              type: string
+              enum: ["rss", "html", "mp", "aihot"]
           description: |
-            可选来源类型筛选。`rss` = RSS/Atom，`html` = 网页直采，
-            `mp` = 公众号语料，`aihot` = AIHOT 补漏候选。未知值返回 400。
-            `mp` 浏览历史语料时不加默认 7 天窗口；其它来源类型仍受默认窗口约束。
+            可选来源类型筛选，可重复传多个 `source_kind`；同组内 OR，单值写法继续兼容。
+            `rss` = RSS/Atom，`html` = 网页直采，`mp` = 公众号语料，`aihot` = AIHOT 补漏候选。
+            未知值返回 400。`mp` 浏览历史语料时不加默认 7 天窗口；多选中包含 `mp` 时同样打开归档，
+            其它来源类型仍受默认窗口约束。
         - name: score_min
           in: query
           schema:
@@ -149,7 +162,7 @@ paths:
               description: |
                 Weak ETag,基于**整页内容**(count + nextCursor + 每条 item 的全部字段)的 SHA1 短哈希。
                 示例:`W/"items-d0112022d1961325"`。新条目入库、**已有条目被原地编辑(改摘要/分类/标题)**、
-                或 query 参数变化(mode/category/since/q/take/cursor) 时 ETag 都会变化,客户端应
+                或 query 参数变化(mode/category/source_kind/since/q/take/cursor) 时 ETag 都会变化,客户端应
                 **每个 query 组合各存一份 last-ETag**(典型用 query 的 hash 作 key)。
             Cache-Control:
               schema:

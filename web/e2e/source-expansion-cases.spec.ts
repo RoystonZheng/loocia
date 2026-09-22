@@ -59,7 +59,7 @@ test.describe('AI Cool 第四部分：信息源扩展 Playwright 验收', () => 
     }
   })
 
-  test('TC-FE-001~TC-FE-005 前端来源筛选：全部/RSS/HTML/MP/AIHOT 与错误态', async ({ page }) => {
+  test('TC-FE-001~TC-FE-007 前端来源与主题筛选：多选、清空与错误态', async ({ page }) => {
     const calls = await installSourceExpansionRoutes(page)
 
     await test.step('打开全部动态并展示来源分组', async () => {
@@ -68,37 +68,51 @@ test.describe('AI Cool 第四部分：信息源扩展 Playwright 验收', () => 
       for (const label of ['全部来源', 'RSS/Atom', '网页直采', '公众号', 'AIHOT补漏']) {
         await expect(page.getByRole('button', { name: label })).toBeVisible()
       }
+      await expect(page.getByRole('button', { name: '全部主题' })).toBeVisible()
       await expect(page.getByRole('link', { name: '全部来源汇总' })).toBeVisible()
       expect(calls.items.at(-1)).not.toContain('source_kind=')
+    })
+
+    await test.step('主题支持多选，并可点击全部主题清空', async () => {
+      await page.getByRole('button', { name: '模型发布/更新' }).click()
+      await page.getByRole('button', { name: '论文研究' }).click()
+      const topicParams = new URL(calls.items.at(-1)!, 'http://localhost').searchParams
+      expect(topicParams.getAll('category')).toEqual(['ai-models', 'paper'])
+
+      await page.getByRole('button', { name: '全部主题' }).click()
+      const clearedParams = new URL(calls.items.at(-1)!, 'http://localhost').searchParams
+      expect(clearedParams.getAll('category')).toEqual([])
     })
 
     await test.step('点击 RSS/Atom 后请求 source_kind=rss 并重置列表', async () => {
       await page.getByRole('button', { name: 'RSS/Atom' }).click()
       await expect(page.getByRole('link', { name: 'RSS 官方资讯' })).toBeVisible()
       await expect(page.getByRole('link', { name: '全部来源汇总' })).toBeHidden()
-      expect(calls.items.at(-1)).toContain('source_kind=rss')
+      expect(new URL(calls.items.at(-1)!, 'http://localhost').searchParams.getAll('source_kind')).toEqual(['rss'])
     })
 
-    await test.step('点击网页直采后请求 source_kind=html', async () => {
+    await test.step('点击网页直采后与 RSS 合并为多选来源', async () => {
       await page.getByRole('button', { name: '网页直采' }).click()
-      await expect(page.getByRole('link', { name: 'HTML 网页直采资讯' })).toBeVisible()
-      expect(calls.items.at(-1)).toContain('source_kind=html')
+      expect(new URL(calls.items.at(-1)!, 'http://localhost').searchParams.getAll('source_kind')).toEqual(['rss', 'html'])
     })
 
-    await test.step('点击公众号后请求 source_kind=mp', async () => {
+    await test.step('点击全部来源清空后可选择公众号', async () => {
+      await page.getByRole('button', { name: '全部来源' }).click()
+      const clearedParams = new URL(calls.items.at(-1)!, 'http://localhost').searchParams
+      expect(clearedParams.getAll('source_kind')).toEqual([])
+
       await page.getByRole('button', { name: '公众号' }).click()
       await expect(page.getByRole('link', { name: '公众号语料资讯' })).toBeVisible()
-      await expect(page.getByRole('link', { name: 'HTML 网页直采资讯' })).toBeHidden()
-      expect(calls.items.at(-1)).toContain('source_kind=mp')
+      expect(new URL(calls.items.at(-1)!, 'http://localhost').searchParams.getAll('source_kind')).toEqual(['mp'])
     })
 
-    await test.step('点击 AIHOT 补漏后请求 source_kind=aihot，且不展示内部 source_role', async () => {
+    await test.step('点击 AIHOT 补漏后与公众号合并，且不展示内部 source_role', async () => {
       await page.getByRole('button', { name: 'AIHOT补漏' }).click()
       await expect(page.getByRole('link', { name: 'AIHOT 二手补漏资讯' })).toBeVisible()
       await expect(page.getByText('AIHOT · 二手线索')).toBeVisible()
       await expect(page.locator('.badge-source-kind')).toHaveText('AIHOT补漏')
       await expect(page.getByText('discovery')).toBeHidden()
-      expect(calls.items.at(-1)).toContain('source_kind=aihot')
+      expect(new URL(calls.items.at(-1)!, 'http://localhost').searchParams.getAll('source_kind')).toEqual(['mp', 'aihot'])
     })
 
     await test.step('接口失败时展示错误态', async () => {
@@ -210,28 +224,32 @@ async function installSourceExpansionRoutes(page: Page) {
     }
     const url = new URL(route.request().url())
     calls.items.push(url.search)
-    const sourceKind = url.searchParams.get('source_kind') ?? 'all'
+    const sourceKinds = url.searchParams.getAll('source_kind')
     return fulfill(route, {
       count: 1,
       hasNext: false,
       nextCursor: null,
-      items: [itemForSource(sourceKind)],
+      items: [itemForSource(sourceKinds)],
     })
   })
 
   return calls
 }
 
-function itemForSource(sourceKind: string): PublicItem {
-  switch (sourceKind) {
+function itemForSource(sourceKinds: string[]): PublicItem {
+  if (sourceKinds.includes('aihot')) {
+    return item('aihot-1', 'AIHOT 二手补漏资讯', 'AIHOT · 二手线索', false, 'discovery')
+  }
+  if (sourceKinds.length > 1) {
+    return item('rss-1', 'RSS 官方资讯', 'OpenAI Blog', true, 'official')
+  }
+  switch (sourceKinds[0] ?? 'all') {
     case 'rss':
       return item('rss-1', 'RSS 官方资讯', 'OpenAI Blog', true, 'official')
     case 'html':
       return item('html-1', 'HTML 网页直采资讯', 'Anthropic News', true, 'official')
     case 'mp':
       return item('mp-1', '公众号语料资讯', 'WeChat MP', true, 'professional')
-    case 'aihot':
-      return item('aihot-1', 'AIHOT 二手补漏资讯', 'AIHOT · 二手线索', false, 'discovery')
     default:
       return item('all-1', '全部来源汇总', 'AI Cool', true, 'discovery')
   }

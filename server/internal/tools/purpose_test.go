@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -73,6 +74,20 @@ func TestDiscovererPurposeClassifierFallbackAndNoForce(t *testing.T) {
 	got := d.classifyPurposeTags(context.Background(), repo)
 	if !containsTag(got, "浏览器操作") {
 		t.Fatalf("LLM failure should fall back to rules, got %+v", got)
+	}
+}
+
+func TestNormalizedPurposeTagsForStorageUsesAnEmptyArrayWhenUnclassified(t *testing.T) {
+	tags := normalizedPurposeTagsForStorage(GitHubRepo{
+		FullName:    "example/plain-repo",
+		Description: "tiny utility",
+	})
+	raw, err := json.Marshal(tags)
+	if err != nil {
+		t.Fatalf("marshal purpose tags: %v", err)
+	}
+	if string(raw) != "[]" {
+		t.Fatalf("unclassified purpose tags = %s, want []", raw)
 	}
 }
 

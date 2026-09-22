@@ -40,8 +40,12 @@ func TestParseModeAll(t *testing.T) {
 
 func TestParseCategoryValidAndInvalid(t *testing.T) {
 	p, err := parseListParams(vals("category=paper"), refNow)
-	if err != nil || p.Category == nil || *p.Category != "paper" {
-		t.Fatalf("valid category: %+v err=%v", p.Category, err)
+	if err != nil || !equalStrings(p.Categories, []string{"paper"}) {
+		t.Fatalf("valid category: %+v err=%v", p.Categories, err)
+	}
+	p, err = parseListParams(vals("category=paper&category=ai-models&category=paper"), refNow)
+	if err != nil || !equalStrings(p.Categories, []string{"paper", "ai-models"}) {
+		t.Fatalf("repeated categories should dedupe while preserving order: %+v err=%v", p.Categories, err)
 	}
 	if _, err := parseListParams(vals("category=nope"), refNow); err == nil {
 		t.Fatal("invalid category should 400")
@@ -144,8 +148,8 @@ func TestParseSourceKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source_kind=mp: %v", err)
 	}
-	if p.SourceKind == nil || *p.SourceKind != "mp" {
-		t.Fatalf("SourceKind: %v", p.SourceKind)
+	if !equalStrings(p.SourceKinds, []string{"mp"}) {
+		t.Fatalf("SourceKinds: %v", p.SourceKinds)
 	}
 	if p.Since != nil {
 		t.Fatalf("mp browse should have no since floor, got %v", p.Since)
@@ -155,8 +159,8 @@ func TestParseSourceKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("source_kind=rss: %v", err)
 	}
-	if p.SourceKind == nil || *p.SourceKind != "rss" {
-		t.Fatalf("SourceKind: %v", p.SourceKind)
+	if !equalStrings(p.SourceKinds, []string{"rss"}) {
+		t.Fatalf("SourceKinds: %v", p.SourceKinds)
 	}
 	if p.Since == nil || !p.Since.Equal(refNow.Add(-7*24*time.Hour)) {
 		t.Fatalf("rss should keep 7d window: %v", p.Since)
@@ -166,17 +170,36 @@ func TestParseSourceKind(t *testing.T) {
 		if err != nil {
 			t.Fatalf("source_kind=%s: %v", kind, err)
 		}
-		if p.SourceKind == nil || *p.SourceKind != kind {
-			t.Fatalf("SourceKind for %s: %v", kind, p.SourceKind)
+		if !equalStrings(p.SourceKinds, []string{kind}) {
+			t.Fatalf("SourceKinds for %s: %v", kind, p.SourceKinds)
 		}
 		if p.Since == nil || !p.Since.Equal(refNow.Add(-7*24*time.Hour)) {
 			t.Fatalf("%s should keep 7d window: %v", kind, p.Since)
 		}
 	}
+	p, err = parseListParams(vals("source_kind=mp&source_kind=rss&source_kind=mp"), refNow)
+	if err != nil || !equalStrings(p.SourceKinds, []string{"mp", "rss"}) {
+		t.Fatalf("repeated source kinds should dedupe while preserving order: %v err=%v", p.SourceKinds, err)
+	}
+	if p.Since != nil {
+		t.Fatalf("mixed source browse containing mp should open the archive, got %v", p.Since)
+	}
 	// Invalid value → 400.
 	if _, err := parseListParams(vals("source_kind=email"), refNow); err == nil {
 		t.Fatal("invalid source_kind should 400")
 	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func lenPtr(s *string) int {

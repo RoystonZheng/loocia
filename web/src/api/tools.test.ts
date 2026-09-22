@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ToolApiError,
   addManualTool,
+  deleteGitHubToken,
   deleteToolConfig,
   excludeDiscoveredTool,
   fetchToolConfigs,
@@ -12,9 +13,11 @@ import {
   previewManualTool,
   resumeToolConfig,
   runToolConfig,
+  saveGitHubToken,
   saveToolConfig,
   setToolConfigEnabled,
   startToolEvaluation,
+  testGitHubToken,
   updateToolEvaluationCooperURL,
   updateToolPurposeTags,
 } from './tools'
@@ -74,6 +77,44 @@ describe('tools api client', () => {
     expect(call[0]).toBe('/api/tools/summaries/url-key')
     expect(call[1]?.method).toBe('POST')
     expect(JSON.parse(String(call[1]?.body))).toEqual({ toolId: 'tool1', urlKey: 'url-key' })
+  })
+
+  it('posts token metadata and never changes the documented endpoints', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(ok({
+        token: { id: 'token-1', name: '主账号', description: '日常发现', testUrl: 'https://api.github.com/rate_limit', index: 0, masked: '****abcd', last4: 'abcd', source: 'saved' },
+        settings: { githubTokenCount: 1, githubTokens: [], defaultGitHubTokenCount: 0, defaultGitHubTokens: [], githubBaseUrl: '', githubTokenStrategy: 'round_robin', githubActiveTokenIndex: 0, includeDefaultGitHubTokens: false, githubMaxPages: 5, githubPerPage: 100, githubRequestIntervalMs: 2000, starSnapshotLimit: 200 },
+      }))
+      .mockResolvedValueOnce(ok({
+        token: { id: 'token-1', name: '主账号', masked: '****abcd', last4: 'abcd', source: 'saved', ok: true, limit: 5000, remaining: 4999 },
+      }))
+      .mockResolvedValueOnce(ok({ deleted: true }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await saveGitHubToken({
+      id: 'token-1',
+      name: '主账号',
+      description: '日常发现',
+      testUrl: 'https://api.github.com/rate_limit',
+      token: 'ghp_secret',
+      actor: 'alice',
+    })
+    await testGitHubToken({ id: 'token-1' })
+    await deleteGitHubToken('token-1', 'alice')
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      '/api/tools/settings/tokens',
+      '/api/tools/settings/tokens/test',
+      '/api/tools/settings/tokens/delete',
+    ])
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      id: 'token-1',
+      name: '主账号',
+      description: '日常发现',
+      testUrl: 'https://api.github.com/rate_limit',
+      token: 'ghp_secret',
+      actor: 'alice',
+    })
   })
 
   it('posts config and state mutations to the documented endpoints', async () => {

@@ -43,6 +43,7 @@ func DefaultRuntimeSettings() ToolRuntimeSettings {
 	return ToolRuntimeSettings{
 		ID:                         defaultRuntimeSettingsID,
 		GitHubTokens:               []string{},
+		GitHubTokenCredentials:     []GitHubTokenCredential{},
 		GitHubTokenStrategy:        GitHubTokenStrategyRoundRobin,
 		IncludeDefaultGitHubTokens: true,
 		GitHubMaxPages:             DefaultGitHubMaxPages,
@@ -86,7 +87,12 @@ func (s *Store) UpsertRuntimeSettings(ctx context.Context, settings ToolRuntimeS
 	if settings.ID == "" {
 		settings.ID = defaultRuntimeSettingsID
 	}
-	settings.GitHubTokens = NormalizeGitHubTokens(settings.GitHubTokens)
+	if settings.GitHubTokenCredentials == nil {
+		settings.GitHubTokenCredentials = GitHubTokenCredentialsFromValues(settings.GitHubTokens)
+	} else {
+		settings.GitHubTokenCredentials = NormalizeGitHubTokenCredentials(settings.GitHubTokenCredentials)
+	}
+	settings.GitHubTokens = GitHubTokenValues(settings.GitHubTokenCredentials)
 	if strings.TrimSpace(settings.CreatedBy) == "" {
 		settings.CreatedBy = settings.UpdatedBy
 	}
@@ -96,7 +102,7 @@ func (s *Store) UpsertRuntimeSettings(ctx context.Context, settings ToolRuntimeS
 	if strings.TrimSpace(settings.UpdatedBy) == "" {
 		settings.UpdatedBy = settings.CreatedBy
 	}
-	tokens, err := json.Marshal(settings.GitHubTokens)
+	tokens, err := json.Marshal(settings.GitHubTokenCredentials)
 	if err != nil {
 		return err
 	}
@@ -1620,14 +1626,14 @@ func upsertTool(ctx context.Context, tx pgx.Tx, repo GitHubRepo) (bool, Tool, er
 	summarySource := nullableString(repo.TemporarySummarySource)
 	license := nullableString(repo.LicenseSPDX)
 	defaultBranch := nullableString(repo.DefaultBranch)
+	if repo.Topics == nil {
+		repo.Topics = []string{}
+	}
 	topics, err := json.Marshal(repo.Topics)
 	if err != nil {
 		return false, Tool{}, err
 	}
-	purposeTags := NormalizePurposeTags(repo.PurposeTags)
-	if len(purposeTags) == 0 && !repo.PurposeTagsManuallySet {
-		purposeTags = InferPurposeTags(repo)
-	}
+	purposeTags := normalizedPurposeTagsForStorage(repo)
 	purposeTagsRaw, err := json.Marshal(purposeTags)
 	if err != nil {
 		return false, Tool{}, err
@@ -1681,6 +1687,14 @@ func upsertTool(ctx context.Context, tx pgx.Tx, repo GitHubRepo) (bool, Tool, er
 		return false, Tool{}, err
 	}
 	return created, tool, nil
+}
+
+func normalizedPurposeTagsForStorage(repo GitHubRepo) []string {
+	tags := NormalizePurposeTags(repo.PurposeTags)
+	if len(tags) == 0 && !repo.PurposeTagsManuallySet {
+		tags = NormalizePurposeTags(InferPurposeTags(repo))
+	}
+	return tags
 }
 
 func upsertSource(ctx context.Context, tx pgx.Tx, toolID string, source DiscoverySource) error {
@@ -1783,10 +1797,12 @@ func scanRuntimeSettings(row pgx.Row) (ToolRuntimeSettings, error) {
 	); err != nil {
 		return settings, err
 	}
-	if err := json.Unmarshal([]byte(tokensRaw), &settings.GitHubTokens); err != nil {
+	credentials, err := decodeGitHubTokenCredentials(tokensRaw)
+	if err != nil {
 		return settings, err
 	}
-	settings.GitHubTokens = NormalizeGitHubTokens(settings.GitHubTokens)
+	settings.GitHubTokenCredentials = credentials
+	settings.GitHubTokens = GitHubTokenValues(credentials)
 	return settings, nil
 }
 
@@ -1795,7 +1811,12 @@ func withRuntimeDefaults(settings ToolRuntimeSettings) ToolRuntimeSettings {
 	if settings.ID == "" {
 		settings.ID = defaults.ID
 	}
-	settings.GitHubTokens = NormalizeGitHubTokens(settings.GitHubTokens)
+	if settings.GitHubTokenCredentials == nil {
+		settings.GitHubTokenCredentials = GitHubTokenCredentialsFromValues(settings.GitHubTokens)
+	} else {
+		settings.GitHubTokenCredentials = NormalizeGitHubTokenCredentials(settings.GitHubTokenCredentials)
+	}
+	settings.GitHubTokens = GitHubTokenValues(settings.GitHubTokenCredentials)
 	settings.GitHubBaseURL = strings.TrimRight(strings.TrimSpace(settings.GitHubBaseURL), "/")
 	if !IsValidGitHubTokenStrategy(settings.GitHubTokenStrategy) {
 		settings.GitHubTokenStrategy = defaults.GitHubTokenStrategy
@@ -1816,6 +1837,18 @@ func withRuntimeDefaults(settings ToolRuntimeSettings) ToolRuntimeSettings {
 		settings.StarSnapshotLimit = defaults.StarSnapshotLimit
 	}
 	return settings
+}
+
+func decodeGitHubTokenCredentials(raw string) ([]GitHubTokenCredential, error) {
+	var credentials []GitHubTokenCredential
+	if err := json.Unmarshal([]byte(raw), &credentials); err == nil {
+		return NormalizeGitHubTokenCredentials(credentials), nil
+	}
+	var tokens []string
+	if err := json.Unmarshal([]byte(raw), &tokens); err != nil {
+		return nil, err
+	}
+	return GitHubTokenCredentialsFromValues(tokens), nil
 }
 
 func scanConfig(row pgx.Row) (DiscoveryConfig, error) {

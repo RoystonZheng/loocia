@@ -137,6 +137,7 @@ type RunResult struct {
 type ToolRuntimeSettings struct {
 	ID                         string
 	GitHubTokens               []string
+	GitHubTokenCredentials     []GitHubTokenCredential
 	GitHubBaseURL              string
 	GitHubTokenStrategy        GitHubTokenStrategy
 	GitHubActiveTokenIndex     int

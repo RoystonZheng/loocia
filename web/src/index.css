@@ -659,6 +659,83 @@ button { font-family: inherit; }
 .tools-token-pill strong {
   font-size: 13px;
 }
+.tools-token-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.tools-token-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #f8faf9;
+  padding: 12px;
+}
+.tools-token-main {
+  min-width: 0;
+}
+.tools-token-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tools-token-title strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.tools-token-title code {
+  color: var(--muted);
+  font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.tools-token-main p {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.tools-token-main a {
+  display: inline-block;
+  margin-top: 7px;
+  color: #245dd7;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.tools-token-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.tools-btn.danger {
+  color: #b42318;
+  border-color: #e5b6b2;
+}
+.tools-token-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.tools-token-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.tools-token-form-wide {
+  grid-column: 1 / -1;
+}
+.tools-account-subactions {
+  justify-content: flex-start;
+}
 .tools-strategy-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1560,6 +1637,11 @@ button { font-family: inherit; }
   .tools-summary-strip { align-items: flex-start; flex-direction: column; }
   .tools-account-head { align-items: stretch; flex-direction: column; }
   .tools-account-actions .tools-btn { flex: 1; }
+  .tools-token-grid,
+  .tools-token-form-grid { grid-template-columns: 1fr; }
+  .tools-token-form-wide { grid-column: auto; }
+  .tools-token-card { flex-direction: column; }
+  .tools-token-card-actions { justify-content: flex-start; }
   .tools-strategy-grid { grid-template-columns: 1fr; }
   .tools-summary-items { gap: 14px; }
   .tools-config-card {

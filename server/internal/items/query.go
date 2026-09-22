@@ -24,18 +24,19 @@ type Cursor struct {
 	ID      string
 }
 
-// ListParams filters the public listing. Nil pointer = no constraint.
+// ListParams filters the public listing. Nil pointers or empty slices mean no
+// constraint for that filter.
 // present=true AND duplicate_of_id IS NULL are always enforced.
 type ListParams struct {
-	Selected   *bool
-	Category   *string
-	SourceKind *string    // "rss" | "html" | "mp" | "aihot"; nil = all sources
-	Since      *time.Time // published_at, falling back to created_at when missing
-	Until      *time.Time // exclusive upper bound on published_at/created_at
-	Q          *string
-	ScoreMin   *int
-	After      *Cursor
-	Limit      int
+	Selected    *bool
+	Categories  []string   // category values are ORed; empty = all categories
+	SourceKinds []string   // source_kind values are ORed; empty = all sources
+	Since       *time.Time // published_at, falling back to created_at when missing
+	Until       *time.Time // exclusive upper bound on published_at/created_at
+	Q           *string
+	ScoreMin    *int
+	After       *Cursor
+	Limit       int
 }
 
 // List returns items ordered by COALESCE(published_at,epoch) DESC, id DESC.
@@ -61,8 +62,8 @@ func (s *Store) List(ctx context.Context, p ListParams) ([]Item, error) {
 		  AND duplicate_of_id IS NULL
 		  AND ($1::boolean IS NULL OR selected = $1)
 		  AND ($1::boolean IS NOT TRUE OR cluster_id IS NULL OR cluster_primary IS TRUE)
-		  AND ($2::text    IS NULL OR category = $2)
-		  AND ($9::text    IS NULL OR source_kind = $9)
+		  AND (COALESCE(cardinality($2::text[]), 0) = 0 OR category = ANY($2::text[]))
+		  AND (COALESCE(cardinality($9::text[]), 0) = 0 OR source_kind = ANY($9::text[]))
 		  AND ($3::timestamptz IS NULL OR COALESCE(published_at, created_at) >= $3)
 		  AND ($8::timestamptz IS NULL OR COALESCE(published_at, created_at) < $8)
 		  AND ($4::text IS NULL OR (
@@ -73,7 +74,7 @@ func (s *Store) List(ctx context.Context, p ListParams) ([]Item, error) {
 		       (COALESCE(published_at,'epoch'::timestamptz), id) < ($5, $6))
 		ORDER BY COALESCE(published_at,'epoch'::timestamptz) DESC, id DESC
 		LIMIT $7`,
-		p.Selected, p.Category, p.Since, p.Q, afterKey, afterID, limit, p.Until, p.SourceKind, p.ScoreMin)
+		p.Selected, p.Categories, p.Since, p.Q, afterKey, afterID, limit, p.Until, p.SourceKinds, p.ScoreMin)
 	if err != nil {
 		return nil, err
 	}

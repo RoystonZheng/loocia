@@ -38,6 +38,18 @@ describe('fetchItems', () => {
     expect(url).toContain('mode=all')
   })
 
+  it('encodes repeated category and source filters', async () => {
+    mockJson({ count: 0, hasNext: false, nextCursor: null, items: [] })
+    await fetchItems({
+      category: ['ai-models', 'paper'],
+      sourceKind: ['rss', 'mp'],
+    })
+    const url = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    const params = new URL(url, 'http://localhost').searchParams
+    expect(params.getAll('category')).toEqual(['ai-models', 'paper'])
+    expect(params.getAll('source_kind')).toEqual(['rss', 'mp'])
+  })
+
   it('omits unset params', async () => {
     mockJson({ count: 0, hasNext: false, nextCursor: null, items: [] })
     await fetchItems({ take: 10 })

@@ -10,9 +10,48 @@
 }
 ```
 
-非 0 `errno` 表示失败。常见错误：`400001` 参数错误，`404001` 资源不存在，`409001` 状态冲突，`429001` GitHub 限流，`502001` GitHub 或网络错误，`500001` 服务内部错误。错误响应的 `data.class` 会返回内部错误分类，如 `validation_error`、`invalid_github_url`、`invalid_cooper_url`、`missing_cooper_url`、`status_conflict`。
+非 0 `errno` 表示失败。常见错误：`400001` 参数错误，`404001` 资源不存在，`409001` 状态冲突，`429001` GitHub 限流，`502001` GitHub 或网络错误，`500001` 服务内部错误。错误响应的 `data.class` 会返回内部错误分类，如 `validation_error`、`invalid_github_url`、`invalid_cooper_url`、`missing_cooper_url`、`status_conflict`、`invalid_credentials`。
 
 ## 配置
+
+### GET `/api/tools/settings`
+
+读取 GitHub 工具发现运行设置。返回的 `data.settings.githubTokens[]` 和
+`defaultGitHubTokens[]` 只包含 `id`、`name`、`description`、`testUrl`、
+`index`、`masked`、`last4`、`source` 等预览字段，不返回 Token 明文。
+
+### POST `/api/tools/settings/tokens`
+
+新增或编辑一个 GitHub Token。Body：
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 可选；为空表示新增，有值表示编辑 |
+| `name` | 必填，Token 名称，最多 120 字 |
+| `description` | 可选，Token 描述，最多 500 字 |
+| `testUrl` | 可选，展示给用户的测试链接，必须是 `http` 或 `https` URL |
+| `token` | 新增时必填；编辑时可留空，表示保持原 Token |
+| `actor` | 必填，操作人 |
+
+保存成功返回 `data.token` 的脱敏预览和更新后的 `data.settings`。Token 明文只用于本次保存，接口响应不回传明文。历史上通过 `POST /api/tools/settings` 传入的 `githubTokens` 数组仍兼容，服务端会自动生成默认名称和稳定 ID。
+最多保存 20 个 Token；同一个 Token 不能重复保存。
+
+### POST `/api/tools/settings/tokens/test`
+
+测试单个 Token。新增草稿传 `token`；已保存 Token 传 `id` 即可。可选传
+`githubBaseUrl` 覆盖当前设置。服务端实际调用 GitHub API 的 rate-limit 接口，
+`testUrl` 只作为账号信息展示，不会被当作携带 Token 的任意请求地址。
+
+返回 `data.token`：`id`、`name`、`masked`、`source`、`ok`、`limit`、
+`remaining`、`resetAt`；失败时附带 `error`。
+
+### POST `/api/tools/settings/tokens/delete`
+
+删除一个已保存 Token。Body：`id`、`actor`。环境变量提供的默认 Token 不会被此接口删除。
+
+### POST `/api/tools/settings`
+
+保存 GitHub Base URL、Token 使用策略、固定 Token 下标和是否启用环境默认 Token 等运行设置。旧版 `githubTokens`、`clearGitHubTokens` 字段仍兼容，但新增 Token 建议使用上面的单条 Token 接口，以便保存名称、描述和测试链接。
 
 ### GET `/api/tools/configs`
 
@@ -61,6 +100,8 @@
 接口只负责创建 run 并立即返回 `status=running`，实际 GitHub 检索在服务端后台继续执行，不依赖浏览器请求。用户刷新页面不会打断本次执行，前端通过重新拉取 `GET /api/tools/configs` 展示 `lastRunStatus`、`lastPagesScanned` 和 `lastResultCount`。
 
 返回 `data.run`：`status`、`resultCount`、`newCount`、`updatedCount`、`skippedCount`、`pagesScanned`、`incompleteResults`、`truncated`、`pauseRequested`、`nextQueryIndex`、`nextPage`、`errorClass`、`errorMessage`、`rateLimited`、`rateLimitResetAt`。
+
+GitHub 返回 401 `Bad credentials` 时，执行器会跳过失效 Token，继续尝试其他候选 Token；如果所有候选 Token 都失效，则降级为匿名公开 API 查询，避免公开仓库发现被过期凭据阻断。匿名查询仍受 GitHub 的匿名限流约束。可通过 `POST /api/tools/settings/check-github` 逐个校验 Token，失效凭据应在账号设置中替换或清理。
 
 ### POST `/api/tools/configs/pause`
 

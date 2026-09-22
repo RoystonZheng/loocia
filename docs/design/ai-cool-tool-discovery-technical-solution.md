@@ -66,7 +66,7 @@ Cooper 测评文档由用户自己创建和维护。AI Cool 只保存 Cooper URL
 - 新功能页面和配置命名使用 `AI Tool` / `AI_TOOL_*`，不沿用旧资讯站命名。
 - 生产数据放现有 AI Cool 数据库，不单独建库，只新增工具发现相关表。
 - 生产表由开发在上线前按 schema 手动建好；服务启动不把自动 DDL 当上线依赖，`EnsureSchema` 只作为本地、测试和幂等兜底。
-- GitHub API token 首期使用个人账号 token，由用户提供；额度按少量配置和手动添加使用，限流时写入运行记录。
+- GitHub API token 首期使用个人账号 token，由用户提供；账号页支持保存名称、描述和测试链接，Token 明文只作为运行凭据保存在运行设置中，不写入代码仓库。
 - 定时发现复用 AI Cool 现有早间资讯抓取同一套调度系统；任务执行到期的每周配置和 Stars 快照。
 - 首期写操作和 `AI Tool` 入口只面向自己使用，不做灰度，也不把额外开关作为上线门槛。
 - Cooper 链接点击后直接跳转 Cooper；AI Cool 不验证文档能否打开，也不验证权限。没有权限时由 Cooper 自己处理申请。
@@ -150,6 +150,11 @@ server/cmd/discovertools
 
 | 接口 | 用途 |
 |---|---|
+| `GET /api/tools/settings` | 读取 GitHub 账号运行设置和 Token 脱敏预览 |
+| `POST /api/tools/settings` | 保存 GitHub Base URL、Token 使用策略和环境 Token 开关 |
+| `POST /api/tools/settings/tokens` | 新增或编辑单个 GitHub Token 及其元数据 |
+| `POST /api/tools/settings/tokens/test` | 测试单个 GitHub Token |
+| `POST /api/tools/settings/tokens/delete` | 删除已保存的 GitHub Token |
 | `GET /api/tools/configs` | 配置列表 |
 | `POST /api/tools/configs` | 新建或编辑配置 |
 | `POST /api/tools/configs/enable` | 启停配置 |
@@ -326,7 +331,7 @@ npx vitest run
 
 - 数据库：不单独开库，放现有 AI Cool 数据库；上线前我们自己把新表建好，不靠应用启动自动建表。
 - 测试表：上线前删掉测试用表和测试数据，再按正式 schema 建需要的表。
-- GitHub Token：先用个人账号 token；用户后续提供。代码只从配置读取，不写进仓库。
+- GitHub Token：使用个人账号 token；账号页可以维护多个带名称和描述的 Token，明文只存运行设置，不写进仓库。
 - 定时任务：工具发现和 Stars 快照接入 AI Cool 现有早间资讯抓取同一套调度系统。
 - 使用范围：首期自己用，`AI Tool` 入口不做灰度。
 - Cooper 链接：AI Cool 只保存和跳转，不校验打开权限；没权限时由 Cooper 页面处理申请。

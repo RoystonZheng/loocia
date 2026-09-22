@@ -86,6 +86,10 @@ export interface DiscoveryRun {
 export type GitHubTokenStrategy = 'round_robin' | 'fixed' | 'failover'
 
 export interface ToolSettingsTokenPreview {
+  id: string
+  name: string
+  description?: string
+  testUrl?: string
   index: number
   masked: string
   last4: string
@@ -123,6 +127,24 @@ export interface SaveToolSettingsInput {
   actor: string
 }
 
+export interface SaveGitHubTokenInput {
+  id?: string
+  name: string
+  description?: string
+  testUrl?: string
+  token?: string
+  actor: string
+}
+
+export interface TestGitHubTokenInput {
+  id?: string
+  name?: string
+  description?: string
+  testUrl?: string
+  token?: string
+  githubBaseUrl?: string
+}
+
 export interface CheckGitHubSettingsInput {
   githubTokens?: string[]
   githubBaseUrl?: string
@@ -130,6 +152,10 @@ export interface CheckGitHubSettingsInput {
 }
 
 export interface GitHubTokenCheck {
+  id?: string
+  name?: string
+  description?: string
+  testUrl?: string
   index: number
   masked: string
   last4: string
@@ -340,6 +366,20 @@ export async function fetchToolSettings(): Promise<ToolRuntimeSettings> {
 export async function saveToolSettings(input: SaveToolSettingsInput): Promise<ToolRuntimeSettings> {
   const data = await postToolAPI<{ settings: ToolRuntimeSettings }>('/api/tools/settings', input)
   return data.settings
+}
+
+export async function saveGitHubToken(input: SaveGitHubTokenInput): Promise<{ token: ToolSettingsTokenPreview; settings: ToolRuntimeSettings }> {
+  return postToolAPI('/api/tools/settings/tokens', input)
+}
+
+export async function deleteGitHubToken(id: string, actor: string): Promise<boolean> {
+  const data = await postToolAPI<{ deleted: boolean }>('/api/tools/settings/tokens/delete', { id, actor })
+  return data.deleted
+}
+
+export async function testGitHubToken(input: TestGitHubTokenInput): Promise<GitHubTokenCheck> {
+  const data = await postToolAPI<{ token: GitHubTokenCheck }>('/api/tools/settings/tokens/test', input)
+  return data.token
 }
 
 export async function checkGitHubSettings(input: CheckGitHubSettingsInput): Promise<GitHubTokenCheck[]> {

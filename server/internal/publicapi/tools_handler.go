@@ -78,6 +78,12 @@ func (h *ToolAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleGetSettings(w, r)
 	case path == "settings" && r.Method == http.MethodPost:
 		h.handleSaveSettings(w, r)
+	case path == "settings/tokens" && r.Method == http.MethodPost:
+		h.handleSaveGitHubToken(w, r)
+	case path == "settings/tokens/delete" && r.Method == http.MethodPost:
+		h.handleDeleteGitHubToken(w, r)
+	case path == "settings/tokens/test" && r.Method == http.MethodPost:
+		h.handleTestGitHubToken(w, r)
 	case path == "settings/check-github" && r.Method == http.MethodPost:
 		h.handleCheckGitHubSettings(w, r)
 	case path == "configs" && r.Method == http.MethodGet:
@@ -222,10 +228,14 @@ type runtimeSettingsJSON struct {
 }
 
 type tokenPreviewJSON struct {
-	Index  int    `json:"index"`
-	Masked string `json:"masked"`
-	Last4  string `json:"last4"`
-	Source string `json:"source,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	TestURL     string `json:"testUrl,omitempty"`
+	Index       int    `json:"index"`
+	Masked      string `json:"masked"`
+	Last4       string `json:"last4"`
+	Source      string `json:"source,omitempty"`
 }
 
 type saveRuntimeSettingsRequest struct {
@@ -248,16 +258,43 @@ type checkGitHubSettingsRequest struct {
 	IncludeDefaultGitHubTokens *bool     `json:"includeDefaultGitHubTokens"`
 }
 
+type githubTokenInput struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	TestURL     string `json:"testUrl"`
+	Token       string `json:"token"`
+}
+
+type saveGitHubTokenRequest struct {
+	githubTokenInput
+	Actor string `json:"actor"`
+}
+
+type deleteGitHubTokenRequest struct {
+	ID    string `json:"id"`
+	Actor string `json:"actor"`
+}
+
+type testGitHubTokenRequest struct {
+	githubTokenInput
+	GitHubBaseURL string `json:"githubBaseUrl"`
+}
+
 type githubTokenCheckJSON struct {
-	Index     int        `json:"index"`
-	Masked    string     `json:"masked"`
-	Last4     string     `json:"last4"`
-	Source    string     `json:"source"`
-	OK        bool       `json:"ok"`
-	Limit     int        `json:"limit,omitempty"`
-	Remaining int        `json:"remaining,omitempty"`
-	ResetAt   *time.Time `json:"resetAt,omitempty"`
-	Error     string     `json:"error,omitempty"`
+	ID          string     `json:"id,omitempty"`
+	Name        string     `json:"name,omitempty"`
+	Description string     `json:"description,omitempty"`
+	TestURL     string     `json:"testUrl,omitempty"`
+	Index       int        `json:"index"`
+	Masked      string     `json:"masked"`
+	Last4       string     `json:"last4"`
+	Source      string     `json:"source"`
+	OK          bool       `json:"ok"`
+	Limit       int        `json:"limit,omitempty"`
+	Remaining   int        `json:"remaining,omitempty"`
+	ResetAt     *time.Time `json:"resetAt,omitempty"`
+	Error       string     `json:"error,omitempty"`
 }
 
 type configJSON struct {
@@ -318,6 +355,7 @@ func (h *ToolAPIHandler) handleSaveSettings(w http.ResponseWriter, r *http.Reque
 	}
 	if req.ClearGitHubTokens {
 		settings.GitHubTokens = []string{}
+		settings.GitHubTokenCredentials = []tools.GitHubTokenCredential{}
 	}
 	if req.GitHubTokens != nil {
 		tokens, err := normalizeRuntimeGitHubTokens(*req.GitHubTokens)
@@ -326,6 +364,7 @@ func (h *ToolAPIHandler) handleSaveSettings(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		settings.GitHubTokens = tokens
+		settings.GitHubTokenCredentials = tools.GitHubTokenCredentialsFromValues(tokens)
 	}
 	if req.GitHubBaseURL != nil {
 		baseURL, err := normalizeRuntimeGitHubBaseURL(*req.GitHubBaseURL)
@@ -402,6 +441,255 @@ func (h *ToolAPIHandler) handleSaveSettings(w http.ResponseWriter, r *http.Reque
 	writeToolOK(w, map[string]any{"settings": toRuntimeSettingsJSON(saved)})
 }
 
+func (h *ToolAPIHandler) handleSaveGitHubToken(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req saveGitHubTokenRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	actor, err := requireToolText(req.Actor, "actor", 80)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	name, err := requireToolText(req.Name, "name", 120)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	description, err := optionalToolText(req.Description, "description", 500)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	testURL, err := normalizeGitHubTokenTestURL(req.TestURL)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	settings, err := h.store.GetRuntimeSettings(r.Context())
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	credentials := runtimeTokenCredentials(settings)
+	id := strings.TrimSpace(req.ID)
+	index := -1
+	for i := range credentials {
+		if credentials[i].ID == id && id != "" {
+			index = i
+			break
+		}
+	}
+	if id != "" && index < 0 {
+		writeToolErr(w, pgx.ErrNoRows)
+		return
+	}
+	if index < 0 && len(credentials) >= 20 {
+		writeToolError(w, http.StatusBadRequest, 400001, "githubTokens cannot exceed 20 items", tools.ErrorValidation)
+		return
+	}
+	token := strings.TrimSpace(req.Token)
+	if index >= 0 && token == "" {
+		token = credentials[index].Token
+	}
+	token, err = requireToolText(token, "token", 512)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	for i, credential := range credentials {
+		if i != index && credential.Token == token {
+			writeToolError(w, http.StatusBadRequest, 400001, "token already exists", tools.ErrorValidation)
+			return
+		}
+	}
+	credential := tools.GitHubTokenCredential{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		TestURL:     testURL,
+		Token:       token,
+	}
+	if index >= 0 {
+		credential.ID = credentials[index].ID
+		credentials[index] = credential
+	} else {
+		credentials = append(credentials, credential)
+	}
+	settings.GitHubTokenCredentials = tools.NormalizeGitHubTokenCredentials(credentials)
+	settings.GitHubTokens = tools.GitHubTokenValues(settings.GitHubTokenCredentials)
+	if settings.CreatedBy == "" {
+		settings.CreatedBy = actor
+	}
+	settings.UpdatedBy = actor
+	if err := h.store.UpsertRuntimeSettings(r.Context(), settings); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	saved, err := h.store.GetRuntimeSettings(r.Context())
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	for i, savedCredential := range saved.GitHubTokenCredentials {
+		if savedCredential.ID == credential.ID || savedCredential.Token == credential.Token {
+			writeToolOK(w, map[string]any{
+				"token":    tokenPreview(savedCredential, "saved", i),
+				"settings": toRuntimeSettingsJSON(saved),
+			})
+			return
+		}
+	}
+	writeToolErr(w, pgx.ErrNoRows)
+}
+
+func (h *ToolAPIHandler) handleDeleteGitHubToken(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req deleteGitHubTokenRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	actor, err := requireToolText(req.Actor, "actor", 80)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	id, err := requireToolText(req.ID, "id", 120)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	settings, err := h.store.GetRuntimeSettings(r.Context())
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	credentials := runtimeTokenCredentials(settings)
+	found := false
+	filtered := make([]tools.GitHubTokenCredential, 0, len(credentials))
+	for _, credential := range credentials {
+		if credential.ID == id {
+			found = true
+			continue
+		}
+		filtered = append(filtered, credential)
+	}
+	if !found {
+		writeToolErr(w, pgx.ErrNoRows)
+		return
+	}
+	settings.GitHubTokenCredentials = filtered
+	settings.GitHubTokens = tools.GitHubTokenValues(filtered)
+	if settings.CreatedBy == "" {
+		settings.CreatedBy = actor
+	}
+	settings.UpdatedBy = actor
+	if err := h.store.UpsertRuntimeSettings(r.Context(), settings); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	writeToolOK(w, map[string]any{"deleted": true})
+}
+
+func (h *ToolAPIHandler) handleTestGitHubToken(w http.ResponseWriter, r *http.Request) {
+	if err := requireToolStore(h.store); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	var req testGitHubTokenRequest
+	if err := decodeToolJSON(r, &req); err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	settings, err := h.store.GetRuntimeSettings(r.Context())
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	credential := tools.GitHubTokenCredential{
+		ID:          strings.TrimSpace(req.ID),
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		TestURL:     strings.TrimSpace(req.TestURL),
+		Token:       strings.TrimSpace(req.Token),
+	}
+	if credential.ID != "" {
+		found := false
+		for _, saved := range runtimeTokenCredentials(settings) {
+			if saved.ID == credential.ID {
+				if credential.Name == "" {
+					credential.Name = saved.Name
+				}
+				if credential.Description == "" {
+					credential.Description = saved.Description
+				}
+				if credential.TestURL == "" {
+					credential.TestURL = saved.TestURL
+				}
+				if credential.Token == "" {
+					credential.Token = saved.Token
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeToolErr(w, pgx.ErrNoRows)
+			return
+		}
+	}
+	credential.Description, err = optionalToolText(credential.Description, "description", 500)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	credential.TestURL, err = normalizeGitHubTokenTestURL(credential.TestURL)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	token, err := requireToolText(credential.Token, "token", 512)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
+	baseURL := settings.GitHubBaseURL
+	if strings.TrimSpace(req.GitHubBaseURL) != "" {
+		baseURL, err = normalizeRuntimeGitHubBaseURL(req.GitHubBaseURL)
+		if err != nil {
+			writeToolErr(w, err)
+			return
+		}
+	}
+	client := tools.NewHTTPGitHubClient("")
+	client.BaseURL = baseURL
+	limit, checkErr := client.CheckToken(r.Context(), token)
+	source := "draft"
+	if credential.ID != "" {
+		source = "saved"
+	}
+	result := tokenCheck(credential, source, 0)
+	if checkErr != nil {
+		result.Error = publicGitHubCheckError(checkErr)
+		writeToolOK(w, map[string]any{"token": result})
+		return
+	}
+	result.OK = true
+	result.Limit = limit.Limit
+	result.Remaining = limit.Remaining
+	result.ResetAt = limit.ResetAt
+	writeToolOK(w, map[string]any{"token": result})
+}
+
 func (h *ToolAPIHandler) handleCheckGitHubSettings(w http.ResponseWriter, r *http.Request) {
 	if err := requireToolStore(h.store); err != nil {
 		writeToolErr(w, err)
@@ -444,13 +732,13 @@ func (h *ToolAPIHandler) handleCheckGitHubSettings(w http.ResponseWriter, r *htt
 		client.BaseURL = settings.GitHubBaseURL
 	}
 	for i, candidate := range tokens {
-		last4 := tokenLast4(candidate.token)
-		item := githubTokenCheckJSON{
-			Index:  i,
-			Masked: "****" + last4,
-			Last4:  last4,
-			Source: candidate.source,
-		}
+		item := tokenCheck(tools.GitHubTokenCredential{
+			ID:          candidate.id,
+			Name:        candidate.name,
+			Description: candidate.description,
+			TestURL:     candidate.testURL,
+			Token:       candidate.token,
+		}, candidate.source, i)
 		limit, err := client.CheckToken(r.Context(), candidate.token)
 		if err != nil {
 			item.Error = publicGitHubCheckError(err)
@@ -1330,8 +1618,8 @@ func toConfigJSON(cfg tools.DiscoveryConfig) configJSON {
 }
 
 func toRuntimeSettingsJSON(settings tools.ToolRuntimeSettings) runtimeSettingsJSON {
-	tokens := tools.NormalizeGitHubTokens(settings.GitHubTokens)
-	previews := tokenPreviews(tokens, "saved", 0)
+	credentials := runtimeTokenCredentials(settings)
+	previews := tokenCredentialPreviews(credentials, "saved", 0)
 	defaultTokens := envGitHubTokens()
 	defaultPreviews := tokenPreviews(defaultTokens, "default", 0)
 	var updatedAt *time.Time
@@ -1340,7 +1628,7 @@ func toRuntimeSettingsJSON(settings tools.ToolRuntimeSettings) runtimeSettingsJS
 		updatedAt = &t
 	}
 	return runtimeSettingsJSON{
-		GitHubTokenCount:           len(tokens),
+		GitHubTokenCount:           len(credentials),
 		GitHubTokens:               previews,
 		DefaultGitHubTokenCount:    len(defaultTokens),
 		DefaultGitHubTokens:        defaultPreviews,
@@ -1362,6 +1650,8 @@ func tokenPreviews(tokens []string, source string, indexOffset int) []tokenPrevi
 	for i, token := range tokens {
 		last4 := tokenLast4(token)
 		previews = append(previews, tokenPreviewJSON{
+			ID:     tools.GitHubTokenCredentialID(token),
+			Name:   fmt.Sprintf("环境 Token %d", i+1),
 			Index:  indexOffset + i,
 			Masked: "****" + last4,
 			Last4:  last4,
@@ -1369,6 +1659,45 @@ func tokenPreviews(tokens []string, source string, indexOffset int) []tokenPrevi
 		})
 	}
 	return previews
+}
+
+func tokenCredentialPreviews(credentials []tools.GitHubTokenCredential, source string, indexOffset int) []tokenPreviewJSON {
+	previews := make([]tokenPreviewJSON, 0, len(credentials))
+	for i, credential := range credentials {
+		previews = append(previews, tokenPreview(credential, source, indexOffset+i))
+	}
+	return previews
+}
+
+func tokenPreview(credential tools.GitHubTokenCredential, source string, index int) tokenPreviewJSON {
+	if normalized := tools.NormalizeGitHubTokenCredentials([]tools.GitHubTokenCredential{credential}); len(normalized) > 0 {
+		credential = normalized[0]
+	}
+	last4 := tokenLast4(credential.Token)
+	return tokenPreviewJSON{
+		ID:          credential.ID,
+		Name:        credential.Name,
+		Description: credential.Description,
+		TestURL:     credential.TestURL,
+		Index:       index,
+		Masked:      "****" + last4,
+		Last4:       last4,
+		Source:      source,
+	}
+}
+
+func tokenCheck(credential tools.GitHubTokenCredential, source string, index int) githubTokenCheckJSON {
+	preview := tokenPreview(credential, source, index)
+	return githubTokenCheckJSON{
+		ID:          preview.ID,
+		Name:        preview.Name,
+		Description: preview.Description,
+		TestURL:     preview.TestURL,
+		Index:       preview.Index,
+		Masked:      preview.Masked,
+		Last4:       preview.Last4,
+		Source:      preview.Source,
+	}
 }
 
 func tokenLast4(token string) string {
@@ -1380,19 +1709,35 @@ func tokenLast4(token string) string {
 }
 
 type runtimeGitHubToken struct {
-	token  string
-	source string
+	token       string
+	source      string
+	id          string
+	name        string
+	description string
+	testURL     string
 }
 
 func resolvedRuntimeGitHubTokens(settings tools.ToolRuntimeSettings) []runtimeGitHubToken {
 	raw := []runtimeGitHubToken{}
 	if settings.IncludeDefaultGitHubTokens {
-		for _, token := range envGitHubTokens() {
-			raw = append(raw, runtimeGitHubToken{token: token, source: "default"})
+		for i, token := range envGitHubTokens() {
+			raw = append(raw, runtimeGitHubToken{
+				token:  token,
+				source: "default",
+				id:     tools.GitHubTokenCredentialID(token),
+				name:   fmt.Sprintf("环境 Token %d", i+1),
+			})
 		}
 	}
-	for _, token := range tools.NormalizeGitHubTokens(settings.GitHubTokens) {
-		raw = append(raw, runtimeGitHubToken{token: token, source: "saved"})
+	for _, credential := range runtimeTokenCredentials(settings) {
+		raw = append(raw, runtimeGitHubToken{
+			token:       credential.Token,
+			source:      "saved",
+			id:          credential.ID,
+			name:        credential.Name,
+			description: credential.Description,
+			testURL:     credential.TestURL,
+		})
 	}
 	seen := map[string]bool{}
 	out := make([]runtimeGitHubToken, 0, len(raw))
@@ -1404,6 +1749,13 @@ func resolvedRuntimeGitHubTokens(settings tools.ToolRuntimeSettings) []runtimeGi
 		out = append(out, candidate)
 	}
 	return out
+}
+
+func runtimeTokenCredentials(settings tools.ToolRuntimeSettings) []tools.GitHubTokenCredential {
+	if settings.GitHubTokenCredentials != nil {
+		return tools.NormalizeGitHubTokenCredentials(settings.GitHubTokenCredentials)
+	}
+	return tools.GitHubTokenCredentialsFromValues(settings.GitHubTokens)
 }
 
 func envGitHubTokens() []string {
@@ -1418,6 +1770,12 @@ func envGitHubTokens() []string {
 func publicGitHubCheckError(err error) string {
 	var derr *tools.DiscoveryError
 	if tools.AsDiscoveryError(err, &derr) && derr.Message != "" {
+		var payload struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal([]byte(derr.Message), &payload) == nil && strings.TrimSpace(payload.Message) != "" {
+			return strings.TrimSpace(payload.Message)
+		}
 		return derr.Message
 	}
 	if err != nil {
@@ -2022,6 +2380,32 @@ func requireToolText(raw, field string, max int) (string, error) {
 		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: field + " is too long"}
 	}
 	return v, nil
+}
+
+func optionalToolText(raw, field string, max int) (string, error) {
+	v := strings.TrimSpace(raw)
+	if len([]rune(v)) > max {
+		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: field + " is too long"}
+	}
+	return v, nil
+}
+
+func normalizeGitHubTokenTestURL(raw string) (string, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", nil
+	}
+	if len([]rune(v)) > 2048 {
+		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "testUrl is too long"}
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "testUrl must be a valid URL"}
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "testUrl must use http or https"}
+	}
+	return u.String(), nil
 }
 
 func resolveConfigActor(raw string, cfg *tools.DiscoveryConfig) (string, error) {

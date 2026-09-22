@@ -19,6 +19,7 @@ const (
 
 	ErrorBadQuery           = "bad_query"
 	ErrorGitHub             = "github_error"
+	ErrorInvalidCredentials = "invalid_credentials"
 	ErrorInvalidGitHubURL   = "invalid_github_url"
 	ErrorNetwork            = "network_error"
 	ErrorRateLimited        = "rate_limited"
@@ -214,6 +215,7 @@ func (c *HTTPGitHubClient) getJSON(ctx context.Context, path string, query url.V
 		return c.getJSONWithToken(ctx, path, query, out, "")
 	}
 	var lastErr error
+	allInvalidCredentials := true
 	for _, token := range tokens {
 		err := c.getJSONWithToken(ctx, path, query, out, token)
 		if err == nil {
@@ -221,9 +223,22 @@ func (c *HTTPGitHubClient) getJSON(ctx context.Context, path string, query url.V
 		}
 		lastErr = err
 		var derr *DiscoveryError
-		if !AsDiscoveryError(err, &derr) || !derr.RateLimited {
+		if !AsDiscoveryError(err, &derr) {
 			return err
 		}
+		if derr.Class == ErrorInvalidCredentials {
+			continue
+		}
+		allInvalidCredentials = false
+		if !derr.RateLimited {
+			return err
+		}
+	}
+	if allInvalidCredentials {
+		// A revoked or expired token should not block public repository discovery.
+		// Retry once without authentication; GitHub still permits public search,
+		// with its lower anonymous rate limit.
+		return c.getJSONWithToken(ctx, path, query, out, "")
 	}
 	return lastErr
 }
@@ -347,6 +362,9 @@ func githubHTTPError(resp *http.Response) error {
 	}
 	if resp.StatusCode == http.StatusUnprocessableEntity {
 		return &DiscoveryError{Class: ErrorBadQuery, Message: msg}
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return &DiscoveryError{Class: ErrorInvalidCredentials, Message: msg}
 	}
 	if isRateLimited(resp, msg) {
 		return &DiscoveryError{

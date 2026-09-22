@@ -89,6 +89,66 @@ describe('ToolsView', () => {
     vi.useRealTimers()
   })
 
+  it('adds a named token, tests it, and saves its metadata', async () => {
+    const preview = {
+      id: 'token-1',
+      name: '主账号',
+      description: '日常工具发现',
+      testUrl: 'https://api.github.com/rate_limit',
+      index: 0,
+      masked: '****abcd',
+      last4: 'abcd',
+      source: 'saved',
+    }
+    const emptySettings = {
+      githubTokenCount: 0,
+      githubTokens: [],
+      defaultGitHubTokenCount: 0,
+      defaultGitHubTokens: [],
+      githubBaseUrl: '',
+      githubTokenStrategy: 'round_robin',
+      githubActiveTokenIndex: 0,
+      includeDefaultGitHubTokens: false,
+      githubMaxPages: 5,
+      githubPerPage: 100,
+      githubRequestIntervalMs: 2000,
+      starSnapshotLimit: 200,
+      updatedBy: 'alice',
+    }
+    const savedSettings = { ...emptySettings, githubTokenCount: 1, githubTokens: [preview], updatedBy: 'alice' }
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (url === '/api/tools/settings') return ok({ settings: savedSettings.githubTokens.length ? savedSettings : emptySettings })
+      if (url === '/api/tools/settings/tokens/test') {
+        return ok({ token: { ...preview, ok: true, limit: 5000, remaining: 4999 } })
+      }
+      if (url === '/api/tools/settings/tokens') return ok({ token: preview, settings: savedSettings })
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="accounts" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: '添加 Token' })).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Token 名称'), { target: { value: '主账号' } })
+    fireEvent.change(screen.getByLabelText('Token 描述'), { target: { value: '日常工具发现' } })
+    fireEvent.change(screen.getByLabelText('Token 值'), { target: { value: 'ghp_secret' } })
+    fireEvent.change(screen.getByLabelText('测试链接'), { target: { value: 'https://api.github.com/rate_limit' } })
+    fireEvent.click(screen.getByRole('button', { name: '测试 Token' }))
+
+    await waitFor(() => expect(screen.getByText('Token 可用，剩余额度 4999/5000')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '保存 Token' }))
+
+    await waitFor(() => expect(screen.getByText('Token 已保存：主账号')).toBeInTheDocument())
+    expect(fetchMock.mock.calls.some((call) => call[0] === '/api/tools/settings/tokens/test')).toBe(true)
+    const saveCall = fetchMock.mock.calls.find((call) => call[0] === '/api/tools/settings/tokens')
+    expect(JSON.parse(String(saveCall?.[1]?.body))).toMatchObject({
+      name: '主账号',
+      description: '日常工具发现',
+      token: 'ghp_secret',
+      testUrl: 'https://api.github.com/rate_limit',
+      actor: 'alice',
+    })
+  })
+
   it('creates a discovery config from the config page', async () => {
     const config = {
       id: 'cfg1',

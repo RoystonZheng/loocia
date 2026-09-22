@@ -8,8 +8,7 @@ import { categoryLabel, beijingParts } from '../format'
 const CATEGORIES = ['ai-models', 'ai-products', 'industry', 'paper', 'tip']
 type SourceKind = 'rss' | 'html' | 'mp' | 'aihot'
 
-const SOURCES: { key: SourceKind | undefined; label: string }[] = [
-  { key: undefined, label: '全部来源' },
+const SOURCES: { key: SourceKind; label: string }[] = [
   { key: 'rss', label: 'RSS/Atom' },
   { key: 'html', label: '网页直采' },
   { key: 'mp', label: '公众号' },
@@ -40,8 +39,8 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
   const [error, setError] = useState(false)
   const [q, setQ] = useState('')
   const [submittedQ, setSubmittedQ] = useState('')
-  const [category, setCategory] = useState<string | undefined>(undefined)
-  const [sourceKind, setSourceKind] = useState<SourceKind | undefined>(undefined)
+  const [categories, setCategories] = useState<string[]>([])
+  const [sourceKinds, setSourceKinds] = useState<SourceKind[]>([])
   const [articleFilter, setArticleFilter] = useState<ArticleFilter>(mode === 'selected' ? 'selected' : 'all')
 
   const load = useCallback(
@@ -54,8 +53,8 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
           ...filter,
           take: PAGE_SIZE,
           q: submittedQ || undefined,
-          category,
-          sourceKind,
+          category: categories,
+          sourceKind: sourceKinds,
           cursor: reset ? undefined : curCursor ?? undefined,
         })
         setItems((prev) => (reset ? res.items : [...prev, ...res.items]))
@@ -67,7 +66,7 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
         setLoading(false)
       }
     },
-    [articleFilter, submittedQ, category, sourceKind],
+    [articleFilter, submittedQ, categories, sourceKinds],
   )
 
   useEffect(() => {
@@ -80,11 +79,19 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
 
       <div className="feed-controls">
         <div className="feed-sources">
+          <button
+            className={sourceKinds.length === 0 ? 'chip active' : 'chip'}
+            aria-pressed={sourceKinds.length === 0}
+            onClick={() => setSourceKinds([])}
+          >
+            全部来源
+          </button>
           {SOURCES.map((s) => (
             <button
               key={s.label}
-              className={sourceKind === s.key ? 'chip active' : 'chip'}
-              onClick={() => setSourceKind(s.key)}
+              className={sourceKinds.includes(s.key) ? 'chip active' : 'chip'}
+              aria-pressed={sourceKinds.includes(s.key)}
+              onClick={() => setSourceKinds((current) => toggleValue(current, s.key))}
             >
               {s.label}
             </button>
@@ -92,16 +99,18 @@ export function Feed({ mode }: { mode: 'selected' | 'all' }) {
         </div>
         <div className="feed-cats">
           <button
-            className={category === undefined ? 'chip active' : 'chip'}
-            onClick={() => setCategory(undefined)}
+            className={categories.length === 0 ? 'chip active' : 'chip'}
+            aria-pressed={categories.length === 0}
+            onClick={() => setCategories([])}
           >
-            全部
+            全部主题
           </button>
           {CATEGORIES.map((c) => (
             <button
               key={c}
-              className={category === c ? 'chip active' : 'chip'}
-              onClick={() => setCategory(c)}
+              className={categories.includes(c) ? 'chip active' : 'chip'}
+              aria-pressed={categories.includes(c)}
+              onClick={() => setCategories((current) => toggleValue(current, c))}
             >
               {categoryLabel(c)}
             </button>
@@ -182,4 +191,8 @@ function renderTimeline(items: PublicItem[]): ReactNode[] {
     )
   }
   return out
+}
+
+function toggleValue<T>(values: T[], value: T): T[] {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value]
 }

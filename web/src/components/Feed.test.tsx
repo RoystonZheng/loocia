@@ -81,6 +81,39 @@ describe('Feed', () => {
     expect(mpUrl).toContain('source_kind=mp')
   })
 
+  it('supports multi-select source and topic filters and clears each group with 全部', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => page(['filtered'], null) })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<Feed mode="all" />)
+    await waitFor(() => expect(screen.getByText('t-filtered')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'RSS/Atom' }))
+    fireEvent.click(screen.getByRole('button', { name: '公众号' }))
+    fireEvent.click(screen.getByRole('button', { name: '模型发布/更新' }))
+    fireEvent.click(screen.getByRole('button', { name: '论文研究' }))
+
+    await waitFor(() => {
+      const url = new URL(fetchMock.mock.calls[fetchMock.mock.calls.length - 1]![0] as string, 'http://localhost')
+      expect(url.searchParams.getAll('source_kind')).toEqual(['rss', 'mp'])
+      expect(url.searchParams.getAll('category')).toEqual(['ai-models', 'paper'])
+    })
+    expect(screen.getByRole('button', { name: 'RSS/Atom' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '模型发布/更新' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '全部来源' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: '全部主题' })).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(screen.getByRole('button', { name: '全部来源' }))
+    fireEvent.click(screen.getByRole('button', { name: '全部主题' }))
+    await waitFor(() => {
+      const url = new URL(fetchMock.mock.calls[fetchMock.mock.calls.length - 1]![0] as string, 'http://localhost')
+      expect(url.searchParams.getAll('source_kind')).toEqual([])
+      expect(url.searchParams.getAll('category')).toEqual([])
+    })
+    expect(screen.getByRole('button', { name: '全部来源' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '全部主题' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('switching the article filter supports 精选 and score thresholds', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => page(['a'], null) })
@@ -124,7 +157,13 @@ describe('Feed', () => {
     fireEvent.click(screen.getByRole('button', { name: 'AIHOT补漏' }))
     await waitFor(() => expect(screen.getByText('t-aihot1')).toBeInTheDocument())
     expect(screen.queryByText('t-html1')).toBeNull()
-    expect(fetchMock.mock.calls[2][0] as string).toContain('source_kind=aihot')
+    const combinedUrl = new URL(fetchMock.mock.calls[2][0] as string, 'http://localhost')
+    expect(combinedUrl.searchParams.getAll('source_kind')).toEqual(['html', 'aihot'])
+
+    fireEvent.click(screen.getByRole('button', { name: '网页直采' }))
+    await waitFor(() => expect(screen.getByText('t-aihot1')).toBeInTheDocument())
+    const aihotOnlyUrl = new URL(fetchMock.mock.calls[3][0] as string, 'http://localhost')
+    expect(aihotOnlyUrl.searchParams.getAll('source_kind')).toEqual(['aihot'])
   })
 
   it('shows an error message when the fetch fails', async () => {

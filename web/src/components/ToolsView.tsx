@@ -4,6 +4,7 @@ import {
   ToolApiError,
   addManualTool,
   checkGitHubSettings,
+  deleteGitHubToken,
   deleteTeamTool,
   deleteToolConfig,
   excludeDiscoveredTool,
@@ -17,10 +18,12 @@ import {
   previewManualTool,
   resumeToolConfig,
   runToolConfig,
+  saveGitHubToken,
   saveToolConfig,
   saveToolSettings,
   setToolConfigEnabled,
   startToolEvaluation,
+  testGitHubToken,
   updateTeamTool,
   updateToolPurposeTags,
   updateToolEvaluationCooperURL,
@@ -36,6 +39,7 @@ import {
   type ToolSourceType,
   type ToolStatus,
   type ToolRuntimeSettings,
+  type ToolSettingsTokenPreview,
   type TriggerMode,
 } from '../api/tools'
 import { formatBeijingTime } from '../format'
@@ -143,8 +147,11 @@ type ConfigFormState = {
 }
 
 type SettingsFormState = {
-  githubTokensText: string
-  clearGitHubTokens: boolean
+  tokenId: string
+  tokenName: string
+  tokenDescription: string
+  tokenValue: string
+  tokenTestUrl: string
   githubBaseUrl: string
   useEnterpriseGitHub: boolean
   githubTokenStrategy: GitHubTokenStrategy
@@ -586,20 +593,13 @@ function AccountPanel({
 
   const savedTokens = settings?.githubTokens ?? []
   const defaultTokens = settings?.defaultGitHubTokens ?? []
-  const draftTokens = splitRuntimeTokens(form.githubTokensText)
   const candidates = [...(form.includeDefaultGitHubTokens ? defaultTokens : []), ...savedTokens]
-  const fixedCandidates = candidates.length > 0 ? candidates : draftTokens.map((token, index) => ({
-    index,
-    masked: maskDraftToken(token),
-    last4: token.slice(-4),
-    source: 'saved' as const,
-  }))
+  const fixedCandidates = candidates
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     onError('')
     const actor = form.actor.trim() || settings?.updatedBy || 'system'
-    const tokens = splitRuntimeTokens(form.githubTokensText)
     const activeIndex = parseActiveTokenIndex(form.githubActiveTokenIndex)
     if (form.githubTokenStrategy === 'fixed' && fixedCandidates.length === 0) {
       onError('请先配置至少一个 GitHub Token')
@@ -612,8 +612,6 @@ function AccountPanel({
     try {
       setSaving(true)
       const saved = await saveToolSettings({
-        githubTokens: tokens.length > 0 ? tokens : undefined,
-        clearGitHubTokens: tokens.length > 0 ? false : form.clearGitHubTokens,
         githubBaseUrl: form.useEnterpriseGitHub ? form.githubBaseUrl.trim() : '',
         githubTokenStrategy: form.githubTokenStrategy,
         githubActiveTokenIndex: activeIndex,
@@ -632,13 +630,131 @@ function AccountPanel({
     }
   }
 
+  function resetTokenForm(nextSettings = settings) {
+    setForm((current) => ({
+      ...emptySettingsForm(current.actor || nextSettings?.updatedBy || '', nextSettings),
+      githubBaseUrl: current.githubBaseUrl,
+      useEnterpriseGitHub: current.useEnterpriseGitHub,
+      githubTokenStrategy: current.githubTokenStrategy,
+      githubActiveTokenIndex: current.githubActiveTokenIndex,
+      includeDefaultGitHubTokens: current.includeDefaultGitHubTokens,
+      actor: current.actor || nextSettings?.updatedBy || '',
+    }))
+  }
+
+  function editToken(token: ToolSettingsTokenPreview) {
+    setForm((current) => ({
+      ...current,
+      tokenId: token.id,
+      tokenName: token.name,
+      tokenDescription: token.description ?? '',
+      tokenValue: '',
+      tokenTestUrl: token.testUrl ?? '',
+    }))
+    onError('')
+    onNotice(`正在编辑 ${token.name}`)
+  }
+
+  async function saveToken() {
+    onError('')
+    const name = form.tokenName.trim()
+    if (!name) {
+      onError('请输入 Token 名称')
+      return
+    }
+    if (!form.tokenId && !form.tokenValue.trim()) {
+      onError('请输入 Token 值')
+      return
+    }
+    const actor = form.actor.trim() || settings?.updatedBy || 'system'
+    try {
+      setSaving(true)
+      const result = await saveGitHubToken({
+        id: form.tokenId || undefined,
+        name,
+        description: form.tokenDescription.trim() || undefined,
+        testUrl: form.tokenTestUrl.trim() || undefined,
+        token: form.tokenValue.trim() || undefined,
+        actor,
+      })
+      const normalized = normalizeSettings(result.settings)
+      setSettings(normalized)
+      setForm(emptySettingsForm(actor, normalized))
+      setChecks([])
+      onNotice(`${form.tokenId ? 'Token 已更新' : 'Token 已保存'}：${result.token.name}`)
+    } catch (err) {
+      onError(formatToolError(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeToken(token: ToolSettingsTokenPreview) {
+    if (!window.confirm(`确定删除 Token「${token.name}」吗？`)) return
+    onError('')
+    const actor = form.actor.trim() || settings?.updatedBy || 'system'
+    try {
+      setSaving(true)
+      await deleteGitHubToken(token.id, actor)
+      const next = normalizeSettings(await fetchToolSettings())
+      setSettings(next)
+      resetTokenForm(next)
+      setChecks([])
+      onNotice(`Token 已删除：${token.name}`)
+    } catch (err) {
+      onError(formatToolError(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function testTokenDraft() {
+    onError('')
+    if (!form.tokenId && !form.tokenValue.trim()) {
+      onError('请输入 Token 值后再测试')
+      return
+    }
+    try {
+      setChecking(true)
+      const result = await testGitHubToken({
+        id: form.tokenId || undefined,
+        name: form.tokenName.trim() || undefined,
+        description: form.tokenDescription.trim() || undefined,
+        testUrl: form.tokenTestUrl.trim() || undefined,
+        token: form.tokenValue.trim() || undefined,
+        githubBaseUrl: form.useEnterpriseGitHub ? form.githubBaseUrl.trim() : '',
+      })
+      setChecks([result])
+      onNotice(result.ok ? `Token 可用，剩余额度 ${result.remaining ?? 0}/${result.limit ?? 0}` : result.error || 'Token 不可用')
+    } catch (err) {
+      onError(formatToolError(err))
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  async function testSavedToken(token: ToolSettingsTokenPreview) {
+    onError('')
+    try {
+      setChecking(true)
+      const result = await testGitHubToken({
+        id: token.id,
+        githubBaseUrl: form.useEnterpriseGitHub ? form.githubBaseUrl.trim() : '',
+      })
+      setChecks([result])
+      onNotice(result.ok ? `Token 可用，剩余额度 ${result.remaining ?? 0}/${result.limit ?? 0}` : result.error || 'Token 不可用')
+    } catch (err) {
+      onError(formatToolError(err))
+    } finally {
+      setChecking(false)
+    }
+  }
+
   async function testConnection() {
     onError('')
     setChecking(true)
     try {
-      const tokens = splitRuntimeTokens(form.githubTokensText)
       const result = await checkGitHubSettings({
-        githubTokens: tokens.length > 0 ? tokens : undefined,
         githubBaseUrl: form.useEnterpriseGitHub ? form.githubBaseUrl.trim() : '',
         includeDefaultGitHubTokens: form.includeDefaultGitHubTokens,
       })
@@ -681,19 +797,90 @@ function AccountPanel({
                   {checking ? '测试中...' : '测试连接'}
                 </button>
                 <button className="tools-btn primary" type="submit" disabled={saving}>
-                  {saving ? '保存中...' : '保存账号'}
+                  {saving ? '保存中...' : '保存策略'}
                 </button>
               </div>
             </div>
 
-            <div className="tools-token-list" aria-label="当前 Token">
-              {settings?.includeDefaultGitHubTokens && defaultTokens.map((token, index) => (
-                <TokenPill key={`default-${index}`} token={token} label="默认" />
+            {form.includeDefaultGitHubTokens && defaultTokens.length > 0 && (
+              <div className="tools-token-list" aria-label="环境 Token">
+                {defaultTokens.map((token, index) => (
+                  <TokenPill key={`default-${index}`} token={token} label="环境" />
+                ))}
+              </div>
+            )}
+
+            <div className="tools-token-grid" aria-label="已保存 Token">
+              {savedTokens.map((token) => (
+                <article className="tools-token-card" key={token.id}>
+                  <div className="tools-token-main">
+                    <div className="tools-token-title">
+                      <strong>{token.name}</strong>
+                      <code>{token.masked}</code>
+                    </div>
+                    {token.description && <p>{token.description}</p>}
+                    {token.testUrl ? (
+                      <a href={token.testUrl} target="_blank" rel="noreferrer">
+                        测试链接
+                      </a>
+                    ) : (
+                      <span className="tools-muted">未设置测试链接</span>
+                    )}
+                  </div>
+                  <div className="tools-token-card-actions">
+                    <button type="button" className="tools-btn" onClick={() => testSavedToken(token)} disabled={checking || saving}>测试</button>
+                    <button type="button" className="tools-btn" onClick={() => editToken(token)} disabled={saving}>编辑</button>
+                    <button type="button" className="tools-btn danger" onClick={() => removeToken(token)} disabled={saving}>删除</button>
+                  </div>
+                </article>
               ))}
-              {savedTokens.map((token, index) => (
-                <TokenPill key={`saved-${index}`} token={token} label="已保存" />
-              ))}
-              {defaultTokens.length === 0 && savedTokens.length === 0 && <span className="tools-muted">还没有可用 Token</span>}
+              {savedTokens.length === 0 && <span className="tools-muted">还没有已保存 Token，请在下方添加。</span>}
+            </div>
+
+            <div className="tools-token-editor">
+              <div className="tools-account-head compact">
+                <div>
+                  <h2>{form.tokenId ? '编辑 Token' : '添加 Token'}</h2>
+                  <p>名称、描述和测试链接会保存为账号信息，Token 值仅用于鉴权。</p>
+                </div>
+                {form.tokenId && (
+                  <button type="button" className="tools-btn" onClick={() => resetTokenForm()} disabled={saving}>
+                    取消编辑
+                  </button>
+                )}
+              </div>
+              <div className="tools-token-form-grid">
+                <label>
+                  <span>Token 名称</span>
+                  <input value={form.tokenName} onChange={(e) => setForm({ ...form, tokenName: e.target.value })} placeholder="例如：主账号" />
+                </label>
+                <label>
+                  <span>Token 描述</span>
+                  <input value={form.tokenDescription} onChange={(e) => setForm({ ...form, tokenDescription: e.target.value })} placeholder="例如：用于日常工具发现" />
+                </label>
+                <label className="tools-token-form-wide">
+                  <span>Token 值</span>
+                  <input
+                    type="password"
+                    value={form.tokenValue}
+                    onChange={(e) => setForm({ ...form, tokenValue: e.target.value })}
+                    placeholder={form.tokenId ? '留空表示保持原 Token' : '粘贴 GitHub personal access token'}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label className="tools-token-form-wide">
+                  <span>测试链接</span>
+                  <input value={form.tokenTestUrl} onChange={(e) => setForm({ ...form, tokenTestUrl: e.target.value })} placeholder="https://api.github.com/rate_limit" />
+                </label>
+              </div>
+              <div className="tools-account-actions tools-account-subactions">
+                <button type="button" className="tools-btn" onClick={testTokenDraft} disabled={checking || saving}>
+                  {checking ? '测试中...' : '测试 Token'}
+                </button>
+                <button type="button" className="tools-btn primary" onClick={saveToken} disabled={saving || checking}>
+                  {saving ? '保存中...' : '保存 Token'}
+                </button>
+              </div>
             </div>
 
             {defaultTokens.length > 0 && (
@@ -706,23 +893,6 @@ function AccountPanel({
                 <span>把环境里的默认初始 Token 加入候选账号</span>
               </label>
             )}
-
-            <label>
-              <span>新增或替换 Token</span>
-              <textarea
-                value={form.githubTokensText}
-                onChange={(e) => setForm({ ...form, githubTokensText: e.target.value, clearGitHubTokens: false })}
-                placeholder="每行一个 token；留空表示不替换已保存 token"
-              />
-            </label>
-            <label className="tools-check">
-              <input
-                type="checkbox"
-                checked={form.clearGitHubTokens}
-                onChange={(e) => setForm({ ...form, clearGitHubTokens: e.target.checked, githubTokensText: e.target.checked ? '' : form.githubTokensText })}
-              />
-              <span>清空已保存 Token</span>
-            </label>
           </section>
 
           <section className="tools-account-section">
@@ -792,7 +962,7 @@ function AccountPanel({
               <div className="tools-check-results">
                 {checks.map((item) => (
                   <div key={`${item.source}-${item.index}`} className={`tools-check-result ${item.ok ? 'ok' : 'bad'}`}>
-                    <strong>{item.source === 'default' ? '默认' : '已保存'} {item.masked}</strong>
+                    <strong>{item.name || (item.source === 'default' ? '环境 Token' : 'Token')} {item.masked}</strong>
                     <span>{item.ok ? `剩余额度 ${item.remaining ?? 0}/${item.limit ?? 0}` : item.error || '不可用'}</span>
                   </div>
                 ))}
@@ -805,10 +975,11 @@ function AccountPanel({
   )
 }
 
-function TokenPill({ token, label }: { token: { masked: string }; label: string }) {
+function TokenPill({ token, label }: { token: ToolSettingsTokenPreview; label: string }) {
   return (
     <span className="tools-token-pill">
       <i>{label}</i>
+      <strong>{token.name}</strong>
       <strong>{token.masked}</strong>
     </span>
   )
@@ -2285,8 +2456,11 @@ function emptyConfigForm(actor: string): ConfigFormState {
 function emptySettingsForm(actor: string, settings: ToolRuntimeSettings | null): SettingsFormState {
   const safe = normalizeSettings(settings)
   return {
-    githubTokensText: '',
-    clearGitHubTokens: false,
+    tokenId: '',
+    tokenName: '',
+    tokenDescription: '',
+    tokenValue: '',
+    tokenTestUrl: '',
     githubBaseUrl: safe.githubBaseUrl,
     useEnterpriseGitHub: safe.githubBaseUrl !== '' && safe.githubBaseUrl !== 'https://api.github.com',
     githubTokenStrategy: safe.githubTokenStrategy,
@@ -2315,17 +2489,6 @@ function normalizeSettings(settings: ToolRuntimeSettings | null | undefined): To
   }
 }
 
-function splitRuntimeTokens(raw: string): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const token of raw.split(/[\n,;，；]/).map((item) => item.trim()).filter(Boolean)) {
-    if (seen.has(token)) continue
-    seen.add(token)
-    out.push(token)
-  }
-  return out
-}
-
 function normalizeGitHubTokenStrategy(value: unknown): GitHubTokenStrategy {
   return value === 'fixed' || value === 'failover' || value === 'round_robin' ? value : 'round_robin'
 }
@@ -2338,11 +2501,6 @@ function tokenStrategyLabel(value: GitHubTokenStrategy): string {
 function parseActiveTokenIndex(raw: string): number {
   const n = Number(raw)
   return Number.isInteger(n) && n >= 0 ? n : 0
-}
-
-function maskDraftToken(token: string): string {
-  const last4 = token.slice(-4)
-  return last4 ? `****${last4}` : '****'
 }
 
 function resolveConfigRunState(cfg: DiscoveryConfig, overrides: Record<string, ConfigRunState>): ConfigRunState {
@@ -2458,10 +2616,11 @@ function isGitHubURL(raw: string | undefined): boolean {
 }
 
 function configRunReasonLabel(reason: string): string {
-  const lower = reason.toLowerCase()
+  const message = extractConfigRunMessage(reason)
+  const lower = message.toLowerCase()
   if (
-    reason === 'GitHub search reached the configured page limit' ||
-    reason === 'GitHub search returned incomplete results' ||
+    message === 'GitHub search reached the configured page limit' ||
+    message === 'GitHub search returned incomplete results' ||
     lower.includes('rate limit')
   ) {
     return '提示'
@@ -2470,15 +2629,30 @@ function configRunReasonLabel(reason: string): string {
 }
 
 function formatConfigRunReason(reason: string): string {
-  const lower = reason.toLowerCase()
+  const message = extractConfigRunMessage(reason)
+  const lower = message.toLowerCase()
   if (lower.includes('context canceled') || lower.includes('request cancellation') || lower.includes('running discovery was closed')) {
     return '上次执行中断，已自动结束'
   }
+  if (lower.includes('bad credentials') || lower.includes('invalid credentials') || lower.includes('status') && lower.includes('401')) {
+    return 'GitHub Token 已失效，请到账号设置测试或更换 Token'
+  }
   if (lower.includes('secondary rate limit')) return 'GitHub 暂时限流，请稍后再试'
   if (lower.includes('api rate limit exceeded') || lower.includes('rate limit')) return 'GitHub API 限流，请稍后再试'
-  if (reason === 'GitHub search reached the configured page limit') return '已达到本次扫描页数上限'
-  if (reason === 'GitHub search returned incomplete results') return 'GitHub 返回结果不完整'
-  return reason
+  if (message === 'GitHub search reached the configured page limit') return '已达到本次扫描页数上限'
+  if (message === 'GitHub search returned incomplete results') return 'GitHub 返回结果不完整'
+  return message
+}
+
+function extractConfigRunMessage(reason: string): string {
+  const trimmed = reason.trim()
+  if (!trimmed.startsWith('{')) return reason
+  try {
+    const parsed = JSON.parse(trimmed) as { message?: unknown }
+    return typeof parsed.message === 'string' && parsed.message.trim() ? parsed.message : reason
+  } catch {
+    return reason
+  }
 }
 
 function splitTerms(raw: string): string[] {

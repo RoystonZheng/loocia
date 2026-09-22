@@ -99,7 +99,7 @@ func TestListFiltersSelectedCategorySince(t *testing.T) {
 	}
 	// selected + category
 	cat := CategoryAIModels
-	got, _ = s.List(context.Background(), ListParams{Selected: &tru, Category: &cat, Limit: 10})
+	got, _ = s.List(context.Background(), ListParams{Selected: &tru, Categories: []string{cat}, Limit: 10})
 	if g := ids(got); !equal(g, []string{"sel-model"}) {
 		t.Fatalf("category filter: got %v", g)
 	}
@@ -127,9 +127,9 @@ func TestListIncludesRecentItemsWithoutPublishedAt(t *testing.T) {
 	since := created.Add(-time.Hour)
 	kind := "html"
 	got, err := s.List(context.Background(), ListParams{
-		SourceKind: &kind,
-		Since:      &since,
-		Limit:      10,
+		SourceKinds: []string{kind},
+		Since:       &since,
+		Limit:       10,
 	})
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -139,6 +139,37 @@ func TestListIncludesRecentItemsWithoutPublishedAt(t *testing.T) {
 	}
 	if got[0].PublishedAt != nil {
 		t.Fatalf("list must preserve the missing published_at value: %v", got[0].PublishedAt)
+	}
+}
+
+func TestListFiltersMultipleCategoriesAndSources(t *testing.T) {
+	s := newTestStore(t)
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+
+	modelRSS := sampleItem("model-rss", base.Add(4*time.Hour))
+	modelRSS.Category = strptr(CategoryAIModels)
+	modelRSS.SourceKind = "rss"
+	paperMP := sampleItem("paper-mp", base.Add(3*time.Hour))
+	paperMP.Category = strptr(CategoryPaper)
+	paperMP.SourceKind = "mp"
+	industryMP := sampleItem("industry-mp", base.Add(2*time.Hour))
+	industryMP.Category = strptr(CategoryIndustry)
+	industryMP.SourceKind = "mp"
+	modelHTML := sampleItem("model-html", base.Add(time.Hour))
+	modelHTML.Category = strptr(CategoryAIModels)
+	modelHTML.SourceKind = "html"
+	seed(t, s, modelRSS, paperMP, industryMP, modelHTML)
+
+	got, err := s.List(context.Background(), ListParams{
+		Categories:  []string{CategoryAIModels, CategoryPaper},
+		SourceKinds: []string{"rss", "mp"},
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("List multiple filters: %v", err)
+	}
+	if g := ids(got); !equal(g, []string{"model-rss", "paper-mp"}) {
+		t.Fatalf("multiple filters should OR within each group and AND across groups: got %v", g)
 	}
 }
 

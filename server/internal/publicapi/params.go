@@ -51,22 +51,18 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		return p, errBadRequest
 	}
 
-	if c := q.Get("category"); c != "" {
-		if !apiCategories[c] {
-			return p, errBadRequest
-		}
-		cc := c
-		p.Category = &cc
+	categories, err := parseMultiValue(q, "category", apiCategories)
+	if err != nil {
+		return p, err
 	}
+	p.Categories = categories
 
 	// source_kind filter: rss/html/mp/aihot. Any other value → 400.
-	if sk := q.Get("source_kind"); sk != "" {
-		if !apiSourceKinds[sk] {
-			return p, errBadRequest
-		}
-		skk := sk
-		p.SourceKind = &skk
+	sourceKinds, err := parseMultiValue(q, "source_kind", apiSourceKinds)
+	if err != nil {
+		return p, err
 	}
+	p.SourceKinds = sourceKinds
 
 	if score := q.Get("score_min"); score != "" {
 		n, err := strconv.Atoi(score)
@@ -99,7 +95,7 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 	// The 公众号 (mp) corpus is historical, so browsing it must ignore the 7-day
 	// freshness floor — otherwise the archive is invisible. Searching already
 	// spans all time; explicitly viewing the mp source opens the archive too.
-	archive := p.SourceKind != nil && *p.SourceKind == "mp"
+	archive := slicesContains(p.SourceKinds, "mp")
 	allTime := isSearch || archive
 
 	lower := now.Add(-sinceWindow)
@@ -125,4 +121,32 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 	}
 
 	return p, nil
+}
+
+func parseMultiValue(q url.Values, key string, allowed map[string]bool) ([]string, error) {
+	var values []string
+	seen := make(map[string]struct{})
+	for _, value := range q[key] {
+		if value == "" {
+			continue
+		}
+		if !allowed[value] {
+			return nil, errBadRequest
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func slicesContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

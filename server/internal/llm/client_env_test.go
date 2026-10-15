@@ -2,24 +2,31 @@ package llm
 
 import "testing"
 
-func TestNewTermsClientFromEnvDefaults(t *testing.T) {
+func TestAllEnvClientsUseDeepSeekFlash(t *testing.T) {
 	t.Setenv("AIHOT_LLM_API_KEY", "k")
-	t.Setenv("AIHOT_TERMS_MODEL", "")
-	c, err := NewTermsClientFromEnv()
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if c.model != "deepseek-v4-flash" {
-		t.Fatalf("default model: %q", c.model)
-	}
-
+	t.Setenv("AIHOT_LLM_MODEL", "auto-max")
+	t.Setenv("AIHOT_TRANSLATE_MODEL", "auto-max")
 	t.Setenv("AIHOT_TERMS_MODEL", "auto-mini")
-	c, err = NewTermsClientFromEnv()
-	if err != nil {
-		t.Fatalf("err: %v", err)
+	t.Setenv("AIHOT_TRANSLATE_RETRY_MODEL", "auto-std")
+	constructors := []struct {
+		name string
+		fn   func() (*Client, error)
+	}{
+		{"main", NewClientFromEnv},
+		{"translate", NewTranslateClientFromEnv},
+		{"retry translate", NewRetryTranslateClientFromEnv},
+		{"terms", NewTermsClientFromEnv},
 	}
-	if c.model != "auto-mini" {
-		t.Fatalf("override model: %q", c.model)
+	for _, tc := range constructors {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := tc.fn()
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if c.model != defaultModel {
+				t.Fatalf("model: %q", c.model)
+			}
+		})
 	}
 }
 

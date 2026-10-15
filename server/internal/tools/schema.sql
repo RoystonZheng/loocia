@@ -5,7 +5,9 @@ CREATE TABLE IF NOT EXISTS tool_discovery_configs (
     name                TEXT NOT NULL,
     method              TEXT NOT NULL CHECK (method IN ('keyword', 'topic')),
     terms               JSONB NOT NULL,
-    trigger_mode        TEXT NOT NULL CHECK (trigger_mode IN ('manual', 'weekly')),
+    trigger_mode        TEXT NOT NULL CHECK (trigger_mode IN ('manual', 'daily', 'weekly')),
+    schedule_time       TEXT NOT NULL DEFAULT '09:00',
+    schedule_weekday    INTEGER NOT NULL DEFAULT 1,
     enabled             BOOLEAN NOT NULL DEFAULT TRUE,
     deleted_at          TIMESTAMPTZ,
     deleted_by          TEXT,
@@ -26,7 +28,7 @@ CREATE TABLE IF NOT EXISTS tool_discovery_configs (
 CREATE TABLE IF NOT EXISTS tool_discovery_runs (
     id                  TEXT PRIMARY KEY,
     config_id           TEXT REFERENCES tool_discovery_configs(id) ON DELETE SET NULL,
-    trigger_source      TEXT NOT NULL CHECK (trigger_source IN ('manual', 'weekly')),
+    trigger_source      TEXT NOT NULL CHECK (trigger_source IN ('manual', 'daily', 'weekly')),
     actor               TEXT NOT NULL,
     started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     finished_at         TIMESTAMPTZ,
@@ -52,6 +54,25 @@ CREATE TABLE IF NOT EXISTS tool_discovery_runs (
 ALTER TABLE tool_discovery_configs
     ADD COLUMN IF NOT EXISTS last_pages_scanned INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tool_discovery_configs
+    ADD COLUMN IF NOT EXISTS schedule_time TEXT NOT NULL DEFAULT '09:00';
+ALTER TABLE tool_discovery_configs
+    ADD COLUMN IF NOT EXISTS schedule_weekday INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE tool_discovery_configs
+    DROP CONSTRAINT IF EXISTS tool_discovery_configs_trigger_mode_check;
+ALTER TABLE tool_discovery_configs
+    ADD CONSTRAINT tool_discovery_configs_trigger_mode_check
+    CHECK (trigger_mode IN ('manual', 'daily', 'weekly'));
+ALTER TABLE tool_discovery_configs
+    DROP CONSTRAINT IF EXISTS tool_discovery_configs_schedule_time_check;
+ALTER TABLE tool_discovery_configs
+    ADD CONSTRAINT tool_discovery_configs_schedule_time_check
+    CHECK (schedule_time ~ '^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$');
+ALTER TABLE tool_discovery_configs
+    DROP CONSTRAINT IF EXISTS tool_discovery_configs_schedule_weekday_check;
+ALTER TABLE tool_discovery_configs
+    ADD CONSTRAINT tool_discovery_configs_schedule_weekday_check
+    CHECK (schedule_weekday BETWEEN 1 AND 7);
+ALTER TABLE tool_discovery_configs
     ADD COLUMN IF NOT EXISTS last_pause_requested BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE tool_discovery_configs
     DROP CONSTRAINT IF EXISTS tool_discovery_configs_last_run_status_check;
@@ -61,6 +82,11 @@ ALTER TABLE tool_discovery_configs
 
 ALTER TABLE tool_discovery_runs
     ADD COLUMN IF NOT EXISTS pause_requested BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tool_discovery_runs
+    DROP CONSTRAINT IF EXISTS tool_discovery_runs_trigger_source_check;
+ALTER TABLE tool_discovery_runs
+    ADD CONSTRAINT tool_discovery_runs_trigger_source_check
+    CHECK (trigger_source IN ('manual', 'daily', 'weekly'));
 ALTER TABLE tool_discovery_runs
     ADD COLUMN IF NOT EXISTS next_query_index INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tool_discovery_runs

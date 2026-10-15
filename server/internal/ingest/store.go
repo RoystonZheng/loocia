@@ -51,7 +51,12 @@ func (s *RawStore) ListUnprocessed(ctx context.Context, limit int) ([]RawItem, e
 		SELECT id, source, source_kind, source_role, url, title, published_at, raw_content, image_url, video_url
 		FROM raw_items
 		WHERE processed = false
-		ORDER BY CASE WHEN source_kind = 'aihot' THEN 0 ELSE 1 END, fetched_at ASC
+		-- Keep the current public window flowing even when an old clone/backlog
+		-- exists. Historical rows remain FIFO after fresh rows are drained.
+		ORDER BY
+			CASE WHEN COALESCE(published_at, fetched_at) >= now() - interval '7 days' THEN 0 ELSE 1 END,
+			CASE WHEN source_kind = 'aihot' THEN 0 ELSE 1 END,
+			fetched_at ASC
 		LIMIT $1`, limit)
 	if err != nil {
 		return nil, err

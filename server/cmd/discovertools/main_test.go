@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"aihot-server/internal/db"
@@ -129,5 +130,23 @@ func TestRunWeeklyCommandExecutesConfiguredDiscovery(t *testing.T) {
 	}
 	if snapshotCount != 1 {
 		t.Fatalf("weekly command should persist a star snapshot, got %d", snapshotCount)
+	}
+}
+
+func TestSummaryErrors(t *testing.T) {
+	if err := scheduledSummaryError(tools.ScheduledSummary{}); err != nil {
+		t.Fatalf("successful scheduled summary: %v", err)
+	}
+	if err := scheduledSummaryError(tools.ScheduledSummary{Partial: 1}); !strings.Contains(err.Error(), "partial=1") {
+		t.Fatalf("partial scheduled summary: %v", err)
+	}
+	if err := weeklySummaryError(tools.WeeklySummary{Failed: 2}); !strings.Contains(err.Error(), "failed=2") {
+		t.Fatalf("failed weekly summary: %v", err)
+	}
+	if err := starSnapshotSummaryError(tools.StarSnapshotSummary{Failed: 1}); !strings.Contains(err.Error(), "failed=1") {
+		t.Fatalf("failed snapshot summary: %v", err)
+	}
+	if err := purposeReclassifySummaryError(tools.PurposeReclassifySummary{}); err != nil {
+		t.Fatalf("successful purpose summary: %v", err)
 	}
 }

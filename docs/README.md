@@ -134,6 +134,7 @@ AI 在新增/调整文档时维护本节。`overview/` 五篇是固定起点；�
 | [`references/ai-cool-2.0-benchmark/README.md`](./references/ai-cool-2.0-benchmark/README.md) | 竞品、开源替代、AI Hot 使用边界与 Ego Lite 截图 |
 | [`design/ai-cool-2.0-product-design.md`](./design/ai-cool-2.0-product-design.md) | AI Cool 2.0 产品方案、状态机、路线图和验收标准 |
 | [`design/ai-cool-source-expansion-prd.md`](./design/ai-cool-source-expansion-prd.md) | AI Cool 第四部分信息源扩展、来源角色、AIHOT 补漏和精选规则调整的开发用 PRD |
+| [`design/ai-cool-aihot-alignment-solution.md`](./design/ai-cool-aihot-alignment-solution.md) | AIHOT 与 AI Cool 的效果对比、当前运行证据和三个重点优化方向 |
 | [`design/ai-cool-tool-discovery-prd.md`](./design/ai-cool-tool-discovery-prd.md) | AI Cool 工具发现、测评记录和团队工具列表的开发用 PRD |
 | [`design/ai-cool-tool-discovery-technical-solution.md`](./design/ai-cool-tool-discovery-technical-solution.md) | AI Cool 工具发现模块的轻量技术方案 |
 | [`design/prototypes/ai-cool-2.0-tools-prototype.html`](./design/prototypes/ai-cool-2.0-tools-prototype.html) | 工具雷达与评测闭环的本地交互原型 |

@@ -14,6 +14,12 @@ YYYY-MM-DD-topic.md
 2026-01-01-payment-module.md
 ```
 
+## 当前接手包
+
+| 文件 | 内容 |
+|---|---|
+| [`2026-10-10-ai-cool-development-report.md`](./2026-10-10-ai-cool-development-report.md) | 信息源扩展、精选去重、工具发现改动、测试结果和问题记录 |
+
 ## 建议内容
 
 - 背景和目标

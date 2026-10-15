@@ -49,6 +49,15 @@ type WeeklySummary struct {
 	Failed    int
 }
 
+type ScheduledSummary struct {
+	Checked   int
+	Skipped   int
+	Attempted int
+	Succeeded int
+	Partial   int
+	Failed    int
+}
+
 type StarSnapshotSummary struct {
 	Attempted   int
 	Saved       int
@@ -562,6 +571,42 @@ func (d *Discoverer) RunWeekly(ctx context.Context, actor string) (WeeklySummary
 			summary.Failed++
 		case RunPaused:
 			summary.Partial++
+		}
+	}
+	return summary, nil
+}
+
+func (d *Discoverer) RunScheduled(ctx context.Context, now time.Time, actor string) (ScheduledSummary, error) {
+	configs, err := d.Store.ListScheduledConfigs(ctx)
+	if err != nil {
+		return ScheduledSummary{}, err
+	}
+	if now.IsZero() {
+		if d.Now != nil {
+			now = d.Now()
+		} else {
+			now = time.Now()
+		}
+	}
+	summary := ScheduledSummary{Checked: len(configs)}
+	for _, cfg := range configs {
+		if !IsDiscoveryConfigDue(cfg, now) {
+			summary.Skipped++
+			continue
+		}
+		summary.Attempted++
+		result, err := d.RunConfig(ctx, cfg.ID, cfg.TriggerMode, actor)
+		if err != nil {
+			summary.Failed++
+			continue
+		}
+		switch result.Status {
+		case RunSucceeded:
+			summary.Succeeded++
+		case RunPartial, RunPaused:
+			summary.Partial++
+		case RunFailed:
+			summary.Failed++
 		}
 	}
 	return summary, nil

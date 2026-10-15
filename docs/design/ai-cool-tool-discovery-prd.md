@@ -194,7 +194,7 @@ Topics：browser-agent、browser-automation
 
 近 7 天增长来自系统历史快照，只是已有工具的排序方式，不会产生新工具，也不能称为 GitHub Trending。计算时使用距当前 6 至 8 天内最接近 7 天的快照；任务延期、失败或新发现仓库没有合适快照时显示“暂无”。
 
-候选工具只展示：名称、一句话介绍、发现来源、Stars、近 7 天增长、最近提交时间、GitHub 链接，以及“开始测评”“不处理”操作。
+候选工具只展示：名称、一句话介绍、发现来源、Stars、近 7 天增长、最近提交时间、GitHub 链接，以及“加入团队”“编辑（含用途修正）”“评价”“不处理”操作。单个工具行不再展示“开始测评”按钮，开始测评保留在批量操作中。
 
 一句话介绍优先使用 GitHub Description；描述为空或过于模糊时，从 README 开头生成临时中文摘要。纳入团队工具前由测评人确认，格式统一为“它是什么 + 解决什么问题 + 适合什么场景”。
 
@@ -208,7 +208,7 @@ Topics：browser-agent、browser-automation
 
 ### 2.7 工具测评记录
 
-点击“开始测评”后，工具进入“测评中”。AI Cool 不建设站内测评编辑器，只记录：
+通过批量操作开始测评后，工具进入“测评中”。AI Cool 不建设站内测评编辑器，只记录：
 
 - 测评人
 - 开始时间
@@ -409,23 +409,26 @@ AI Cool
 - 部分成功时仍展示已入库结果，同时显示不完整原因。
 - 失败时配置保留，展示最近失败原因。
 
-### 5.5 C04 每周自动执行启用配置
+### 5.5 C04 每天/每周按时自动执行启用配置
 
-用户故事：作为系统，我要每周执行启用配置，避免候选池停滞。
+用户故事：作为系统，我要按用户配置的北京时间每天或每周固定时间执行启用配置，避免候选池停滞。
 
 流程：
 
 ```text
-deploy cron
-  -> /root/aihot/bin/aihot-cron.sh discovertools weekly
-  -> discovertools 读取 enabled=true AND trigger_mode='weekly'
-  -> 逐条执行配置
+deploy cron（每分钟唤醒）
+  -> /root/aihot/bin/aihot-cron.sh discovertools scheduled
+  -> discovertools 读取 enabled=true AND trigger_mode IN ('daily', 'weekly')
+  -> 判断北京时间的 schedule_time / schedule_weekday 是否到期
+  -> 逐条执行到期配置
   -> 写 run 记录
 ```
 
 验收：
 
 - 停用配置不会被自动执行。
+- `daily` 每天执行一次，`weekly` 按配置的周一至周日执行一次。
+- 具体时间按北京时间 `HH:MM` 配置，同一时间槽不会重复执行。
 - 单条配置失败不影响下一条配置。
 - cron 日志能看到本次总执行数、成功数、失败数。
 - 部署包包含 `discovertools` 二进制。
@@ -619,7 +622,9 @@ CREATE TABLE IF NOT EXISTS tool_discovery_configs (
     name                TEXT NOT NULL,
     method              TEXT NOT NULL CHECK (method IN ('keyword', 'topic')),
     terms               JSONB NOT NULL,
-    trigger_mode        TEXT NOT NULL CHECK (trigger_mode IN ('manual', 'weekly')),
+    trigger_mode        TEXT NOT NULL CHECK (trigger_mode IN ('manual', 'daily', 'weekly')),
+    schedule_time       TEXT NOT NULL DEFAULT '09:00',
+    schedule_weekday    INTEGER NOT NULL DEFAULT 1,
     enabled             BOOLEAN NOT NULL DEFAULT TRUE,
     last_success_at     TIMESTAMPTZ,
     last_run_at         TIMESTAMPTZ,
@@ -635,7 +640,7 @@ CREATE TABLE IF NOT EXISTS tool_discovery_configs (
 CREATE TABLE IF NOT EXISTS tool_discovery_runs (
     id                  TEXT PRIMARY KEY,
     config_id           TEXT REFERENCES tool_discovery_configs(id) ON DELETE SET NULL,
-    trigger_source      TEXT NOT NULL CHECK (trigger_source IN ('manual', 'weekly')),
+    trigger_source      TEXT NOT NULL CHECK (trigger_source IN ('manual', 'daily', 'weekly')),
     actor               TEXT NOT NULL,
     started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     finished_at         TIMESTAMPTZ,
@@ -778,6 +783,7 @@ type TriggerMode string
 
 const (
     TriggerManual TriggerMode = "manual"
+    TriggerDaily  TriggerMode = "daily"
     TriggerWeekly TriggerMode = "weekly"
 )
 ```
@@ -1043,6 +1049,8 @@ GET /api/tools/discovery-configs
         "method": "keyword",
         "terms": ["browser agent", "web agent"],
         "triggerMode": "weekly",
+        "scheduleTime": "09:00",
+        "scheduleWeekday": 1,
         "enabled": true,
         "lastRunAt": "2026-09-07T01:00:00Z",
         "lastSuccessAt": "2026-09-07T01:00:00Z",
@@ -1070,6 +1078,8 @@ Content-Type: application/json
   "method": "keyword",
   "terms": ["browser agent", "web agent", "browser automation", "computer use"],
   "triggerMode": "weekly",
+  "scheduleTime": "09:00",
+  "scheduleWeekday": 1,
   "enabled": true,
   "actor": "zhangsan"
 }
@@ -1461,7 +1471,7 @@ web/src/components/tools/FinishEvaluationModal.tsx
 ### 12.1 新增命令
 
 ```bash
-go run ./cmd/discovertools weekly
+go run ./cmd/discovertools scheduled
 go run ./cmd/discovertools run-config -config cfg_01 -actor zhangsan
 go run ./cmd/discovertools snapshot
 ```
@@ -1470,7 +1480,8 @@ go run ./cmd/discovertools snapshot
 
 | 子命令 | 用途 |
 |---|---|
-| `weekly` | 执行所有启用且触发方式为 weekly 的配置 |
+| `scheduled` | 每分钟检查并执行到期的 daily/weekly 配置 |
+| `weekly` | 执行所有启用的 weekly 配置，兼容旧手工排障 |
 | `run-config` | 执行指定配置，供接口或人工排障使用 |
 | `snapshot` | 为非 excluded 工具刷新 GitHub 数据并保存 Stars 快照 |
 
@@ -1479,7 +1490,7 @@ go run ./cmd/discovertools snapshot
 `deploy/install-melos.sh` 增加：
 
 ```text
-35 2 * * 1 /root/aihot/bin/aihot-cron.sh discovertools weekly
+* * * * * /root/aihot/bin/aihot-cron.sh discovertools scheduled
 45 2 * * 1 /root/aihot/bin/aihot-cron.sh discovertools snapshot
 ```
 

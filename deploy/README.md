@@ -6,20 +6,48 @@
 Mac 只负责交叉编译 + scp。
 
 ## 定时(crontab,标记块 `# aihot-begin/end`)
+
+截至 **2026-09-23**，线上 Melos 的实际 crontab 仍是上一版：
+
+```cron
+25 * * * * /root/aihot/bin/aihot-cron.sh importmp -corpus /root/wechat-corpus
+*/30 * * * * /root/aihot/bin/aihot-cron.sh pulse
+*/30 * * * * /root/aihot/bin/aihot-cron.sh discovertools weekly -actor cron
+```
+
+这意味着当前线上 `discovertools` 还按旧的 `weekly` 入口运行，尚未使用配置中的
+daily/weekly 时间槽。执行本仓库的 `install-melos.sh` 后，只有这一行会切换为：
+
+```cron
+* * * * * /root/aihot/bin/aihot-cron.sh discovertools scheduled -actor cron
+```
+
+这一分钟级任务只是调度时钟：它每分钟检查一次，到达配置的北京时间才执行；
+资讯采集仍由 `pulse` 每 30 分钟运行。更新后的 wrapper 会在每次 `pulse` 成功后
+顺序执行 `gendaily` 和 `hotpass`，让迟到的当天资讯及时进入日报和热点；词云直接读取
+`pulse` 富化时写入的词项，因此会随这次采集立即更新。
+
 | 单元 | 频率 | 作用 |
 |---|---|---|
 | pulse | 每 30 分钟 | RSS 采集 + LLM 加工(≤100 条/次) |
-| discovertools | 跟随 pulse，每 30 分钟 | AI Tool weekly 配置发现 + Stars 快照 |
-| gendaily | 每小时 :10 | 重生成当天(UTC)日报,upsert 幂等 |
-| hotpass | 每小时 :20 | 聚类 + 热度重算(72h 窗口) |
+| discovertools scheduled | 每分钟唤醒一次 | 按配置的北京时间执行 daily/weekly 发现 |
+| discovertools snapshot | 每周一 02:45 | 刷新工具 GitHub 数据并保存 Stars 快照 |
+| gendaily | 每次 pulse 成功后 | 重生成昨天和当天(北京时间)日报,upsert 幂等 |
+| hotpass | 每次 gendaily 后 | 聚类 + 热度重算(72h 窗口) |
 
 ## 发布 / 更新
-    ./deploy/build-linux.sh     # Mac 交叉编译 server + pulse/gendaily/hotpass/discovertools → deploy/out/
-    ./deploy/install-melos.sh   # scp + 刷新 crontab(幂等)
+    ./deploy/build-linux.sh     # Mac 交叉编译 server + pipeline commands → deploy/out/
+    ./deploy/install-serve-melos.sh  # 先更新 server，启动时幂等补齐新 schema
+    ./deploy/install-melos.sh   # 再更新任务二进制、wrapper 和 crontab(幂等)
+
+默认部署目标是 `root@10.190.12.242`，也可以通过第一个参数或
+`AIHOT_DEPLOY_HOST` 覆盖。
 
 ## 手动跑一次 / 看日志(在 Melos 上)
-    /root/aihot/bin/aihot-cron.sh pulse
-    /root/aihot/bin/aihot-cron.sh discovertools weekly -actor cron
+    /root/aihot/bin/aihot-cron.sh pulse  # 成功后自动刷新日报和热点
+    /root/aihot/bin/aihot-cron.sh gendaily  # 需要单独补算时使用
+    /root/aihot/bin/aihot-cron.sh hotpass  # 需要单独补算时使用
+    /root/aihot/bin/aihot-cron.sh discovertools scheduled -actor cron
     tail -50 /root/aihot/log/pulse.log
 
 ## Mac 上看真实数据
@@ -48,7 +76,9 @@ Mac 只负责交叉编译 + scp。
   `/root/wechat-push/.env`，不要写进仓库；可选配置 `AI_TOOL_GITHUB_MAX_PAGES` 控制单次查询分页上限，
   `AI_TOOL_GITHUB_REQUEST_INTERVAL_MS` 控制 GitHub 请求间隔，`AI_TOOL_STAR_SNAPSHOT_LIMIT`
   控制每次补采已有工具 Star 快照的上限。
-- `discovertools weekly` 目前会执行所有启用的 weekly 配置，不做“每周只跑一次”的冷却判断；跟随 `pulse` 后就是每 30 分钟触发一次。
+- `discovertools scheduled` 每分钟检查启用的 daily/weekly 配置，只在配置的北京时间到点后执行一次；daily 每天执行，weekly 按配置的周一至周日执行。旧的 `discovertools weekly` 命令仍保留用于兼容和手动排障。
+- 线上旧表在 **2026-09-23** 尚未包含 `schedule_time` 和 `schedule_weekday`。新 `server` 或
+  `discovertools` 启动时会通过 `EnsureSchema` 幂等补齐字段和约束；部署后首次启动会完成这一步。
 
 ## 24/7 托管(nginx + systemd,无需 Mac)
 

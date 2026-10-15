@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test:e2e": "playwright test",
+    "test:e2e:local": "AI_COOL_LIVE_ACCEPTANCE=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5178 AI_COOL_API_BASE=http://127.0.0.1:8991 playwright test e2e/ai-cool-local-acceptance.spec.ts",
     "preview": "vite preview"
   },
   "dependencies": {

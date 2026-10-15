@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ToolApiError,
@@ -6,9 +6,7 @@ import {
   addToolMemberReview,
   checkGitHubSettings,
   deleteGitHubToken,
-  deleteTeamTool,
   deleteToolConfig,
-  excludeDiscoveredTool,
   fetchToolConfigs,
   fetchToolSettings,
   fetchToolSummaryByURLKey,
@@ -16,6 +14,7 @@ import {
   finishToolEvaluation,
   includeDiscoveredAsTeamTool,
   importTeamTool,
+  moveTeamToolToToolbox,
   pauseToolConfig,
   previewManualTool,
   resumeToolConfig,
@@ -28,7 +27,6 @@ import {
   testGitHubToken,
   updateTeamTool,
   updateToolMetadata,
-  updateToolPurposeTags,
   updateToolEvaluationCooperURL,
   type ConfigList,
   type DiscoveryConfig,
@@ -82,7 +80,21 @@ const CONFIG_METHOD_FILTER_OPTIONS: { key: ConfigMethodFilter; label: string }[]
 const CONFIG_TRIGGER_FILTER_OPTIONS: { key: ConfigTriggerFilter; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'manual', label: '手动执行' },
-  { key: 'weekly', label: '自动执行' },
+  { key: 'daily', label: '每天' },
+  { key: 'weekly', label: '每周' },
+]
+
+const DEFAULT_DISCOVERY_SCHEDULE_TIME = '09:00'
+const DEFAULT_DISCOVERY_SCHEDULE_WEEKDAY = 1
+
+const DISCOVERY_WEEKDAY_OPTIONS = [
+  { value: 1, label: '周一' },
+  { value: 2, label: '周二' },
+  { value: 3, label: '周三' },
+  { value: 4, label: '周四' },
+  { value: 5, label: '周五' },
+  { value: 6, label: '周六' },
+  { value: 7, label: '周日' },
 ]
 
 const SORT_OPTIONS: { key: ToolSort; label: string; icon: string }[] = [
@@ -115,21 +127,17 @@ const DEFAULT_PURPOSE_TAGS = [
 ]
 
 type ToolAction =
-  | { kind: 'start'; tool: ToolItem }
   | { kind: 'edit'; tool: ToolItem }
   | { kind: 'include-team'; tool: ToolItem }
   | { kind: 'review'; tool: ToolItem }
-  | { kind: 'exclude'; tool: ToolItem }
   | { kind: 'cooper'; tool: ToolItem }
   | { kind: 'include'; tool: ToolItem }
   | { kind: 'reject'; tool: ToolItem }
-  | { kind: 'purpose'; tool: ToolItem }
   | { kind: 'team-edit'; tool: ToolItem }
   | { kind: 'team-delete'; tool: ToolItem }
 
 type BatchToolAction =
   | { kind: 'batch-start'; tools: ToolItem[] }
-  | { kind: 'batch-exclude'; tools: ToolItem[] }
   | { kind: 'batch-include'; tools: ToolItem[] }
   | { kind: 'batch-reject'; tools: ToolItem[] }
   | { kind: 'batch-team-edit'; tools: ToolItem[] }
@@ -148,6 +156,8 @@ type ConfigFormState = {
   method: DiscoveryMethod
   termsText: string
   triggerMode: TriggerMode
+  scheduleTime: string
+  scheduleWeekday: number
   enabled: boolean
   actor: string
 }
@@ -341,6 +351,8 @@ function ConfigPanel({
         method: form.method,
         terms: splitTerms(form.termsText),
         triggerMode: form.triggerMode,
+        scheduleTime: form.scheduleTime,
+        scheduleWeekday: form.scheduleWeekday,
         enabled: form.enabled,
         actor,
       })
@@ -352,6 +364,8 @@ function ConfigPanel({
         termsText: saved.terms.join('\n'),
         method: saved.method,
         triggerMode: saved.triggerMode,
+        scheduleTime: saved.scheduleTime || DEFAULT_DISCOVERY_SCHEDULE_TIME,
+        scheduleWeekday: saved.scheduleWeekday || DEFAULT_DISCOVERY_SCHEDULE_WEEKDAY,
         enabled: saved.enabled,
       }))
       setFormOpen(false)
@@ -454,6 +468,8 @@ function ConfigPanel({
       method: cfg.method,
       termsText: cfg.terms.join('\n'),
       triggerMode: cfg.triggerMode,
+      scheduleTime: cfg.scheduleTime || DEFAULT_DISCOVERY_SCHEDULE_TIME,
+      scheduleWeekday: cfg.scheduleWeekday || DEFAULT_DISCOVERY_SCHEDULE_WEEKDAY,
       enabled: cfg.enabled,
       actor: form.actor.trim() || cfg.updatedBy || cfg.createdBy,
     })
@@ -539,9 +555,36 @@ function ConfigPanel({
                 <span>触发方式</span>
                 <select value={form.triggerMode} onChange={(e) => setForm({ ...form, triggerMode: e.target.value as TriggerMode })}>
                   <option value="manual">手动执行</option>
+                  <option value="daily">每天执行</option>
                   <option value="weekly">每周执行</option>
                 </select>
               </label>
+              {form.triggerMode !== 'manual' && (
+                <label>
+                  <span>运行时间（北京时间）</span>
+                  <input
+                    aria-label="运行时间（北京时间）"
+                    type="time"
+                    step="60"
+                    value={form.scheduleTime}
+                    onChange={(e) => setForm({ ...form, scheduleTime: e.target.value })}
+                  />
+                </label>
+              )}
+              {form.triggerMode === 'weekly' && (
+                <label>
+                  <span>每周星期</span>
+                  <select
+                    aria-label="每周星期"
+                    value={form.scheduleWeekday}
+                    onChange={(e) => setForm({ ...form, scheduleWeekday: Number(e.target.value) })}
+                  >
+                    {DISCOVERY_WEEKDAY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
             <label>
               <span>{form.method === 'keyword' ? '检索词' : 'Topics'}</span>
@@ -1035,7 +1078,7 @@ function ConfigCard({
         {cfg.terms.map((term) => <span key={term}>{term}</span>)}
       </div>
       <div className="tools-config-schedule">
-        <strong>{cfg.triggerMode === 'weekly' ? '每周执行' : '仅手动'}</strong>
+        <strong>{formatConfigSchedule(cfg)}</strong>
         <span>上次执行 {formatShortDateTime(cfg.lastRunAt) || '暂无'}</span>
         {progressText ? <em>{progressText}</em> : cfg.lastFailureReason && <em>{configRunReasonLabel(cfg.lastFailureReason)}：{formatConfigRunReason(cfg.lastFailureReason)}</em>}
       </div>
@@ -1298,6 +1341,11 @@ function ToolListPanel({
 
   async function doPreview(e: FormEvent) {
     e.preventDefault()
+    setManualError('')
+    if (!manualRepoURL.trim()) {
+      setManualError('请填写 GitHub 仓库地址')
+      return
+    }
     setManualLoading(true)
     onError('')
     try {
@@ -1307,13 +1355,18 @@ function ToolListPanel({
       onNotice('仓库预览已同步')
     } catch (err) {
       setPreview(null)
-      onError(formatToolError(err))
+      setManualError(formatToolError(err))
     } finally {
       setManualLoading(false)
     }
   }
 
   async function doManualAdd() {
+    setManualError('')
+    if (!manualRepoURL.trim()) {
+      setManualError('请填写 GitHub 仓库地址')
+      return
+    }
     if (!manualActor.trim()) {
       setManualError('请填写操作人')
       return
@@ -1337,7 +1390,7 @@ function ToolListPanel({
       setManualOpen(false)
       await load()
     } catch (err) {
-      onError(formatToolError(err))
+      setManualError(formatToolError(err))
     } finally {
       setManualLoading(false)
     }
@@ -1411,7 +1464,7 @@ function ToolListPanel({
       notice={notice}
       error={error}
       actions={(section === 'discovered' || section === 'team') && (
-        <button type="button" className="tools-btn primary" onClick={() => setManualOpen(true)}>
+        <button type="button" className="tools-btn primary" onClick={() => { onError(''); setManualOpen(true) }}>
           <span aria-hidden>＋</span>{section === 'team' ? '手动导入' : '手动添加'}
         </button>
       )}
@@ -1474,7 +1527,10 @@ function ToolListPanel({
             selectingAllResults={selectingAllResults}
             onSelectResultCount={adjustSelectedResultCount}
             onSelectAllResults={selectAllMatchingResults}
-            onBatchAction={setBatchAction}
+            onBatchAction={(next) => {
+              onError('')
+              setBatchAction(next)
+            }}
             onClear={clearSelection}
           />
           <span className="tools-result-count">{data?.count ?? 0} 个结果</span>
@@ -1486,7 +1542,10 @@ function ToolListPanel({
             data={data}
             summaryOverrides={summaryOverrides}
             onRevealSummary={ensureChineseSummary}
-            onAction={setAction}
+            onAction={(next) => {
+              onError('')
+              setAction(next)
+            }}
             selectedIds={selectedIds}
             onSelectTool={toggleSelected}
             onSelectAll={toggleAllVisible}
@@ -1578,7 +1637,6 @@ function ToolListPanel({
             onNotice(message)
             await load()
           }}
-          onError={onError}
           purposeOptions={allPurposeTags}
         />
       )}
@@ -1598,7 +1656,6 @@ function ToolListPanel({
             onNotice(message)
             await load()
           }}
-          onError={onError}
         />
       )}
     </ToolShell>
@@ -1721,10 +1778,7 @@ function BatchActionBar({ section, selectedTools, totalCount, selectingAllResult
         </button>
       )}
       {section === 'discovered' && (
-        <>
-          <button type="button" onClick={() => onBatchAction({ kind: 'batch-start', tools: selectedTools })}>批量测试</button>
-          <button type="button" className="danger" onClick={() => onBatchAction({ kind: 'batch-exclude', tools: selectedTools })}>批量删除</button>
-        </>
+        <button type="button" onClick={() => onBatchAction({ kind: 'batch-start', tools: selectedTools })}>批量测试</button>
       )}
       {section === 'evaluating' && (
         <>
@@ -1735,7 +1789,7 @@ function BatchActionBar({ section, selectedTools, totalCount, selectingAllResult
       {section === 'team' && (
         <>
           <button type="button" onClick={() => onBatchAction({ kind: 'batch-team-edit', tools: selectedTools })}>批量修改</button>
-          <button type="button" className="danger" onClick={() => onBatchAction({ kind: 'batch-team-delete', tools: selectedTools })}>批量删除</button>
+          <button type="button" className="danger" onClick={() => onBatchAction({ kind: 'batch-team-delete', tools: selectedTools })}>批量移回工具百宝箱</button>
         </>
       )}
       <button type="button" className="muted" onClick={onClear}>取消选择</button>
@@ -1760,7 +1814,19 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
   if (section === 'discovered') {
     return (
       <div className="tools-table-wrap">
-        <table className="tools-data-table">
+        <table className="tools-data-table discovered">
+          <colgroup>
+            <col className="tools-col-select" />
+            <col className="tools-col-tool" />
+            <col className="tools-col-intro" />
+            <col className="tools-col-purpose" />
+            <col className="tools-col-source" />
+            <col className="tools-col-cooper" />
+            <col className="tools-col-stars" />
+            <col className="tools-col-growth" />
+            <col className="tools-col-recent" />
+            <col className="tools-col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th className="tools-select-col">
@@ -1796,9 +1862,6 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                     <RowIconButton label="加入团队工具" icon="✓" onClick={() => onAction({ kind: 'include-team', tool })} />
                     <RowIconButton label="编辑" icon="✎" onClick={() => onAction({ kind: 'edit', tool })} />
                     <RowIconButton label="评价" icon="☷" onClick={() => onAction({ kind: 'review', tool })} />
-                    <RowIconButton label="开始测评" icon="☑" onClick={() => onAction({ kind: 'start', tool })} />
-                    <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
-                    <RowIconButton label="不处理" icon="⌫" danger onClick={() => onAction({ kind: 'exclude', tool })} />
                   </div>
                 </td>
               </tr>
@@ -1812,6 +1875,16 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
     return (
       <div className="tools-table-wrap">
         <table className="tools-data-table evaluating">
+          <colgroup>
+            <col className="tools-col-select" />
+            <col className="tools-col-tool" />
+            <col className="tools-col-intro" />
+            <col className="tools-col-purpose" />
+            <col className="tools-col-evaluator" />
+            <col className="tools-col-cooper" />
+            <col className="tools-col-started" />
+            <col className="tools-col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th className="tools-select-col">
@@ -1848,7 +1921,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                   <div className="tools-row-actions">
                     <RowIconButton label="✓ 纳入" icon="✓" onClick={() => onAction({ kind: 'include', tool })} />
                     <RowIconButton label="评价" icon="☷" onClick={() => onAction({ kind: 'review', tool })} />
-                    <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
+                    <RowIconButton label="编辑" icon="✎" onClick={() => onAction({ kind: 'edit', tool })} />
                     <RowIconButton label="不纳入" icon="×" danger onClick={() => onAction({ kind: 'reject', tool })} />
                   </div>
                 </td>
@@ -1862,6 +1935,16 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
   return (
     <div className="tools-table-wrap">
       <table className="tools-data-table team">
+        <colgroup>
+          <col className="tools-col-select" />
+          <col className="tools-col-tool" />
+          <col className="tools-col-summary" />
+          <col className="tools-col-purpose" />
+          <col className="tools-col-evaluator" />
+          <col className="tools-col-included" />
+          <col className="tools-col-links" />
+          <col className="tools-col-actions" />
+        </colgroup>
         <thead>
           <tr>
             <th className="tools-select-col">
@@ -1897,8 +1980,7 @@ function ToolTable({ section, data, summaryOverrides, onRevealSummary, onAction,
                 <div className="tools-row-actions">
                   <RowIconButton label="编辑" icon="✎" onClick={() => onAction({ kind: 'team-edit', tool })} />
                   <RowIconButton label="评价" icon="☷" onClick={() => onAction({ kind: 'review', tool })} />
-                  <RowIconButton label="分类" icon="⌁" onClick={() => onAction({ kind: 'purpose', tool })} />
-                  <RowIconButton label="删除" icon="⌫" danger onClick={() => onAction({ kind: 'team-delete', tool })} />
+                  <RowIconButton label="移回工具百宝箱" icon="↩" danger onClick={() => onAction({ kind: 'team-delete', tool })} />
                 </div>
               </td>
             </tr>
@@ -1922,14 +2004,12 @@ function RowIconButton({ label, icon, danger, onClick }: {
   )
 }
 
-function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: {
+function ToolActionPanel({ action, onCancel, onDone, purposeOptions }: {
   action: ToolAction
   onCancel: () => void
   onDone: (message: string) => Promise<void>
-  onError: (v: string) => void
   purposeOptions: string[]
 }) {
-  const [evaluator, setEvaluator] = useState('')
   const [operator, setOperator] = useState('')
   const [reviewer, setReviewer] = useState('')
   const [reviewContent, setReviewContent] = useState('')
@@ -1955,7 +2035,6 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if ((action.kind === 'start') && !requireModalField(evaluator, '请填写测评人')) return
     if (action.kind === 'review') {
       if (!requireModalField(reviewer, '请填写评价人')) return
       if (!requireModalField(reviewContent, '请填写评价内容')) return
@@ -1964,14 +2043,11 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
     }
     if (action.kind === 'cooper' && !requireModalField(cooperUrl, '请填写 Cooper 链接')) return
     if (action.kind === 'include-team' && !requireModalField(summary, '请填写团队使用说明')) return
-    if ((action.kind === 'exclude' || action.kind === 'reject' || action.kind === 'team-delete') && !requireModalField(reason, '请填写原因')) return
+    if ((action.kind === 'reject' || action.kind === 'team-delete') && !requireModalField(reason, '请填写原因')) return
     setBusy(true)
-    onError('')
+    setModalError('')
     try {
-      if (action.kind === 'start') {
-        await startToolEvaluation({ toolId: action.tool.id, evaluator, operator, cooperUrl })
-        await onDone('已开始测评')
-      } else if (action.kind === 'edit') {
+      if (action.kind === 'edit') {
         await updateToolMetadata({
           toolId: action.tool.id,
           operator,
@@ -1995,10 +2071,6 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
           content: reviewContent.trim(),
         })
         await onDone('团队评价已提交')
-      } else if (action.kind === 'exclude') {
-        if (!window.confirm(`确认不处理「${action.tool.name}」？`)) return
-        await excludeDiscoveredTool(action.tool.id, reason, operator)
-        await onDone('已标记不处理')
       } else if (action.kind === 'cooper') {
         await updateToolEvaluationCooperURL(action.tool.id, cooperUrl, operator)
         await onDone('Cooper 链接已更新')
@@ -2020,13 +2092,6 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
           notIncludedReason: reason,
         })
         await onDone('已完成为不纳入')
-      } else if (action.kind === 'purpose') {
-        await updateToolPurposeTags({
-          toolId: action.tool.id,
-          actor: operator,
-          purposeTags,
-        })
-        await onDone('用途分类已更新')
       } else if (action.kind === 'team-edit') {
         await updateTeamTool({
           toolId: action.tool.id,
@@ -2037,28 +2102,26 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
         })
         await onDone('团队工具已更新')
       } else {
-        await deleteTeamTool(action.tool.id, operator, reason)
-        await onDone('团队工具已删除')
+        if (!window.confirm(`确认将「${action.tool.name}」移回工具百宝箱？`)) return
+        await moveTeamToolToToolbox(action.tool.id, operator, reason)
+        await onDone('团队工具已移回工具百宝箱')
       }
     } catch (err) {
-      onError(formatToolError(err))
+      setModalError(formatToolError(err))
     } finally {
       setBusy(false)
     }
   }
 
   const title = {
-    start: '开始测评',
     edit: '编辑工具',
     'include-team': '加入团队工具',
     review: '写团队评价',
-    exclude: '不处理',
     cooper: '关联 Cooper 文档',
     include: '纳入团队工具',
     reject: '不纳入',
-    purpose: '修正用途分类',
     'team-edit': '编辑团队工具',
-    'team-delete': '删除团队工具',
+    'team-delete': '移回工具百宝箱',
   }[action.kind]
 
   return (
@@ -2077,19 +2140,7 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
             </label>
           </>
         )}
-        {action.kind === 'start' && (
-          <div className="tools-form-grid">
-            <label>
-              <span>测评人</span>
-              <input value={evaluator} onChange={(e) => setEvaluator(e.target.value)} placeholder="手动填写" />
-            </label>
-            <label>
-              <span>操作人</span>
-              <input value={operator} onChange={(e) => setOperator(e.target.value)} placeholder="手动填写" />
-            </label>
-          </div>
-        )}
-        {action.kind !== 'start' && action.kind !== 'review' && (
+        {action.kind !== 'review' && (
           <label>
             <span>操作人</span>
             <input value={operator} onChange={(e) => setOperator(e.target.value)} placeholder="手动填写" />
@@ -2098,10 +2149,10 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
         {action.kind === 'include-team' && (
           <p className="tools-field-help tools-auto-date">纳入日期：{includeDate}</p>
         )}
-        {(action.kind === 'start' || action.kind === 'cooper' || action.kind === 'edit' || action.kind === 'include-team' || action.kind === 'team-edit') && (
+        {(action.kind === 'cooper' || action.kind === 'edit' || action.kind === 'include-team' || action.kind === 'team-edit') && (
           <label>
-            <span>{action.kind === 'start' || action.kind === 'cooper' ? 'Cooper 链接' : 'Cooper 文档（可选）'}</span>
-            <input aria-label={action.kind === 'start' || action.kind === 'cooper' ? 'Cooper 链接' : 'Cooper 文档'} value={cooperUrl} onChange={(e) => setCooperUrl(e.target.value)} placeholder={action.kind === 'start' || action.kind === 'cooper' ? 'https://cooper.didichuxing.com/didocs/...' : '可选，https://cooper.didichuxing.com/didocs/...'} />
+            <span>{action.kind === 'cooper' ? 'Cooper 链接' : 'Cooper 文档（可选）'}</span>
+            <input aria-label={action.kind === 'cooper' ? 'Cooper 链接' : 'Cooper 文档'} value={cooperUrl} onChange={(e) => setCooperUrl(e.target.value)} placeholder={action.kind === 'cooper' ? 'https://cooper.didichuxing.com/didocs/...' : '可选，https://cooper.didichuxing.com/didocs/...'} />
           </label>
         )}
         {(action.kind === 'include' || action.kind === 'include-team' || action.kind === 'team-edit') && (
@@ -2110,17 +2161,17 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
             <textarea value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="它是什么、解决什么问题、适合什么场景" />
           </label>
         )}
-        {(action.kind === 'edit' || action.kind === 'include-team' || action.kind === 'purpose' || action.kind === 'team-edit') && (
+        {(action.kind === 'edit' || action.kind === 'include-team' || action.kind === 'team-edit') && (
           <TagEditor
-            label={action.kind === 'purpose' ? '用途分类' : '用途'}
+            label="用途"
             selected={purposeTags}
             options={mergeTagOptions(purposeOptions, action.tool.purposeTags)}
             onChange={setPurposeTags}
           />
         )}
-        {(action.kind === 'exclude' || action.kind === 'reject' || action.kind === 'team-delete') && (
+        {(action.kind === 'reject' || action.kind === 'team-delete') && (
           <label>
-            <span>{action.kind === 'team-delete' ? '删除原因' : action.kind === 'exclude' ? '不处理原因' : '不纳入原因'}</span>
+            <span>{action.kind === 'team-delete' ? '移回原因' : '不纳入原因'}</span>
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="记录原因，便于后续追溯" />
           </label>
         )}
@@ -2133,12 +2184,11 @@ function ToolActionPanel({ action, onCancel, onDone, onError, purposeOptions }: 
   )
 }
 
-function BatchActionPanel({ action, onCancel, onRefresh, onDone, onError }: {
+function BatchActionPanel({ action, onCancel, onRefresh, onDone }: {
   action: BatchToolAction
   onCancel: () => void
   onRefresh: (message: string) => Promise<void>
   onDone: (message: string) => Promise<void>
-  onError: (v: string) => void
 }) {
   const [evaluator, setEvaluator] = useState('')
   const [operator, setOperator] = useState('')
@@ -2177,7 +2227,7 @@ function BatchActionPanel({ action, onCancel, onRefresh, onDone, onError }: {
   function validateRows(): boolean {
     if (action.kind === 'batch-start' && !requireBatchField(evaluator, '请填写测评人')) return false
     if (!requireBatchField(operator, '请填写操作人')) return false
-    if ((action.kind === 'batch-exclude' || action.kind === 'batch-team-delete') && !requireBatchField(sharedReason, '请填写删除原因')) return false
+    if (action.kind === 'batch-team-delete' && !requireBatchField(sharedReason, '请填写移回原因')) return false
 
     if (action.kind === 'batch-include') {
       for (const row of rows) {
@@ -2224,7 +2274,6 @@ function BatchActionPanel({ action, onCancel, onRefresh, onDone, onError }: {
     if (!validateRows()) return
     setBusy(true)
     setModalError('')
-    onError('')
     const failures: string[] = []
     let success = 0
     for (const tool of action.tools) {
@@ -2237,8 +2286,6 @@ function BatchActionPanel({ action, onCancel, onRefresh, onDone, onError }: {
             operator,
             cooperUrl: row.cooperUrl.trim() || undefined,
           })
-        } else if (action.kind === 'batch-exclude') {
-          await excludeDiscoveredTool(tool.id, sharedReason, operator)
         } else if (action.kind === 'batch-include') {
           const nextCooper = row.cooperUrl.trim()
           if (nextCooper && nextCooper !== (tool.evaluation?.cooperUrl ?? '')) {
@@ -2267,7 +2314,7 @@ function BatchActionPanel({ action, onCancel, onRefresh, onDone, onError }: {
             finalSummary: row.finalSummary.trim() || undefined,
           })
         } else {
-          await deleteTeamTool(tool.id, operator, sharedReason)
+          await moveTeamToolToToolbox(tool.id, operator, sharedReason)
         }
         success += 1
       } catch (err) {
@@ -2280,7 +2327,6 @@ function BatchActionPanel({ action, onCancel, onRefresh, onDone, onError }: {
     if (failures.length) {
       const message = `${label}部分完成：成功 ${success}，失败 ${failures.length}`
       setModalError(failures.slice(0, 3).join('\n'))
-      onError(message)
       if (success > 0) await onRefresh(message)
       return
     }
@@ -2310,13 +2356,13 @@ function BatchActionPanel({ action, onCancel, onRefresh, onDone, onError }: {
             <input value={operator} onChange={(e) => setOperator(e.target.value)} placeholder="手动填写" />
           </label>
         )}
-        {(action.kind === 'batch-exclude' || action.kind === 'batch-team-delete') && (
+        {action.kind === 'batch-team-delete' && (
           <label>
-            <span>{action.kind === 'batch-team-delete' ? '删除原因' : '不处理原因'}</span>
-            <textarea value={sharedReason} onChange={(e) => setSharedReason(e.target.value)} placeholder="批量删除原因会写入每个工具的操作记录" />
+            <span>移回原因</span>
+            <textarea value={sharedReason} onChange={(e) => setSharedReason(e.target.value)} placeholder="批量移回原因会写入每个工具的操作记录" />
           </label>
         )}
-        {(action.kind === 'batch-exclude' || action.kind === 'batch-team-delete') ? (
+        {action.kind === 'batch-team-delete' ? (
           <BatchToolList tools={action.tools} />
         ) : (
           <div className="tools-batch-rows">
@@ -2376,22 +2422,20 @@ function BatchToolList({ tools }: { tools: ToolItem[] }) {
 function batchTitle(kind: BatchToolAction['kind']): string {
   return {
     'batch-start': '批量开始测评',
-    'batch-exclude': '批量删除工具百宝箱条目',
     'batch-include': '批量纳入团队工具',
     'batch-reject': '批量不纳入',
     'batch-team-edit': '批量修改团队工具',
-    'batch-team-delete': '批量删除团队工具',
+    'batch-team-delete': '批量移回工具百宝箱',
   }[kind]
 }
 
 function batchDoneLabel(kind: BatchToolAction['kind']): string {
   return {
     'batch-start': '批量测评',
-    'batch-exclude': '批量删除',
     'batch-include': '批量纳入',
     'batch-reject': '批量不纳入',
     'batch-team-edit': '批量修改',
-    'batch-team-delete': '批量删除',
+    'batch-team-delete': '批量移回',
   }[kind]
 }
 
@@ -2700,17 +2744,18 @@ function TagEditor({
   options: string[]
   onChange: (tags: string[]) => void
 }) {
-  const [selectedOption, setSelectedOption] = useState('')
-  const [customTag, setCustomTag] = useState('')
+  const [tagInput, setTagInput] = useState('')
+  const purposeListID = useId()
   const normalizedSelected = normalizeTags(selected)
   const availableOptions = mergeTagOptions(options).filter((tag) => !normalizedSelected.includes(tag))
+  const normalizedInput = normalizeTag(tagInput)
+  const isExistingTag = normalizedInput !== '' && mergeTagOptions(options).includes(normalizedInput)
 
   function addTag(tag: string) {
     const next = normalizeTag(tag)
     if (!next || normalizedSelected.includes(next)) return
     onChange([...normalizedSelected, next].slice(0, 8))
-    setSelectedOption('')
-    setCustomTag('')
+    setTagInput('')
   }
 
   function removeTag(tag: string) {
@@ -2728,15 +2773,19 @@ function TagEditor({
         )) : <em>未分类</em>}
       </div>
       <div className="tools-tag-controls">
-        <select aria-label="选择用途分类" value={selectedOption} onChange={(e) => setSelectedOption(e.target.value)}>
-          <option value="">选择已有分类</option>
+        <input
+          aria-label="用途分类"
+          list={purposeListID}
+          value={tagInput}
+          onChange={(e) => setTagInput(e.target.value)}
+          placeholder="输入或选择用途分类，如：会议纪要"
+        />
+        <datalist id={purposeListID}>
           {availableOptions.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
-        </select>
-        <button type="button" className="tools-btn" onClick={() => addTag(selectedOption)} disabled={!selectedOption}>添加</button>
-      </div>
-      <div className="tools-tag-controls">
-        <input value={customTag} onChange={(e) => setCustomTag(e.target.value)} placeholder="新增分类，如：会议纪要" />
-        <button type="button" className="tools-btn" onClick={() => addTag(customTag)} disabled={!customTag.trim()}>新增</button>
+        </datalist>
+        <button type="button" className="tools-btn" onClick={() => addTag(tagInput)} disabled={!normalizedInput}>
+          {isExistingTag ? '选择' : '添加'}
+        </button>
       </div>
       <p className="tools-field-help">按使用场景分类；没有合适场景可以保持未分类。</p>
     </div>
@@ -2772,6 +2821,17 @@ function DateStack({ main, sub }: { main: string; sub: string }) {
   )
 }
 
+function formatConfigSchedule(cfg: DiscoveryConfig): string {
+  if (cfg.triggerMode === 'daily') {
+    return `每天 ${cfg.scheduleTime || DEFAULT_DISCOVERY_SCHEDULE_TIME}`
+  }
+  if (cfg.triggerMode === 'weekly') {
+    const weekday = DISCOVERY_WEEKDAY_OPTIONS.find((option) => option.value === (cfg.scheduleWeekday || DEFAULT_DISCOVERY_SCHEDULE_WEEKDAY))
+    return `每周${weekday?.label || '周一'} ${cfg.scheduleTime || DEFAULT_DISCOVERY_SCHEDULE_TIME}`
+  }
+  return '仅手动'
+}
+
 function LoadingBlock() {
   return <div className="tools-empty">加载中...</div>
 }
@@ -2787,6 +2847,8 @@ function emptyConfigForm(actor: string): ConfigFormState {
     method: 'keyword',
     termsText: '',
     triggerMode: 'manual',
+    scheduleTime: DEFAULT_DISCOVERY_SCHEDULE_TIME,
+    scheduleWeekday: DEFAULT_DISCOVERY_SCHEDULE_WEEKDAY,
     enabled: true,
     actor,
   }

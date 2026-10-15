@@ -5,7 +5,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/deploy"
-HOST="${1:-melos}"
+HOST="${1:-${AIHOT_DEPLOY_HOST:-root@10.190.12.242}}"
 
 [ -x out/server ] || { echo "run build-linux.sh first (out/server missing)"; exit 1; }
 [ -d out/web ]    || { echo "run build-linux.sh first (out/web missing)"; exit 1; }
@@ -44,6 +44,8 @@ ssh "$HOST" 'nginx -t && nginx -s reload'
 echo "== verify on host =="
 ssh "$HOST" '
   curl -s -o /dev/null -w "server :8991 healthz=%{http_code}\n" http://127.0.0.1:8991/healthz
+  schema_columns="$(PGPASSWORD=aihot psql -h 127.0.0.1 -U aihot -d aihot -Atqc "select count(*) from information_schema.columns where table_name='\''tool_discovery_configs'\'' and column_name in ('\''schedule_time'\'','\''schedule_weekday'\'')" 2>/dev/null || true)"
+  test "$schema_columns" = "2" || { echo "schema verification failed: expected schedule_time and schedule_weekday, got ${schema_columns:-empty}" >&2; exit 1; }
   curl -s -o /dev/null -w "nginx  :8899 spa=%{http_code}\n"    http://127.0.0.1:8899/
   curl -s -o /dev/null -w "nginx  :8899 api=%{http_code}\n"    "http://127.0.0.1:8899/api/public/items?take=1"
 '

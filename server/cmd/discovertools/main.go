@@ -1,6 +1,6 @@
 // discovertools runs AI Tool discovery jobs.
 //
-//	AI_TOOL_DATABASE_URL=postgres://... AI_TOOL_GITHUB_TOKEN=... go run ./cmd/discovertools weekly
+//	AI_TOOL_DATABASE_URL=postgres://... AI_TOOL_GITHUB_TOKEN=... go run ./cmd/discovertools scheduled
 package main
 
 import (
@@ -39,6 +39,35 @@ func run(command string, args []string) error {
 	}
 
 	switch command {
+	case "scheduled":
+		fs := flag.NewFlagSet("scheduled", flag.ExitOnError)
+		actor := fs.String("actor", "cron", "operator name recorded on discovery runs")
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		now := time.Now()
+		if discoverer.Now != nil {
+			now = discoverer.Now()
+		}
+		sum, err := discoverer.RunScheduled(ctx, now, *actor)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("ai tool scheduled: checked=%d skipped=%d attempted=%d succeeded=%d partial=%d failed=%d\n",
+			sum.Checked, sum.Skipped, sum.Attempted, sum.Succeeded, sum.Partial, sum.Failed)
+		return scheduledSummaryError(sum)
+	case "snapshot":
+		fs := flag.NewFlagSet("snapshot", flag.ExitOnError)
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		snap, err := discoverer.SnapshotActiveTools(ctx, discoverer.StarSnapshotLimit)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("ai tool snapshots: attempted=%d saved=%d skipped=%d failed=%d rate_limited=%t\n",
+			snap.Attempted, snap.Saved, snap.Skipped, snap.Failed, snap.RateLimited)
+		return starSnapshotSummaryError(snap)
 	case "weekly":
 		fs := flag.NewFlagSet("weekly", flag.ExitOnError)
 		actor := fs.String("actor", "cron", "operator name recorded on discovery runs")
@@ -57,7 +86,10 @@ func run(command string, args []string) error {
 		}
 		fmt.Printf("ai tool snapshots: attempted=%d saved=%d skipped=%d failed=%d rate_limited=%t\n",
 			snap.Attempted, snap.Saved, snap.Skipped, snap.Failed, snap.RateLimited)
-		return nil
+		if err := weeklySummaryError(sum); err != nil {
+			return err
+		}
+		return starSnapshotSummaryError(snap)
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
 		configID := fs.String("config", "", "tool discovery config id")
@@ -103,7 +135,7 @@ func run(command string, args []string) error {
 		}
 		fmt.Printf("ai tool purpose reclassify: attempted=%d updated=%d skipped=%d failed=%d\n",
 			sum.Attempted, sum.Updated, sum.Skipped, sum.Failed)
-		return nil
+		return purposeReclassifySummaryError(sum)
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", command)
@@ -121,6 +153,7 @@ func newDiscoverer(ctx context.Context) (*tools.Store, *tools.Discoverer, func()
 	}
 	store := tools.New(pool)
 	client := tools.NewHTTPGitHubClient(os.Getenv("AI_TOOL_GITHUB_TOKEN"))
+	client.SetDefaultTokens(tools.SplitGitHubTokens(os.Getenv("AI_TOOL_GITHUB_TOKENS")))
 	if baseURL := os.Getenv("AI_TOOL_GITHUB_BASE_URL"); baseURL != "" {
 		client.BaseURL = baseURL
 	}
@@ -172,9 +205,39 @@ func printRunResult(label string, result tools.RunResult) {
 	fmt.Println()
 }
 
+func scheduledSummaryError(sum tools.ScheduledSummary) error {
+	if sum.Partial == 0 && sum.Failed == 0 {
+		return nil
+	}
+	return fmt.Errorf("scheduled completed with partial=%d failed=%d", sum.Partial, sum.Failed)
+}
+
+func weeklySummaryError(sum tools.WeeklySummary) error {
+	if sum.Partial == 0 && sum.Failed == 0 {
+		return nil
+	}
+	return fmt.Errorf("weekly completed with partial=%d failed=%d", sum.Partial, sum.Failed)
+}
+
+func starSnapshotSummaryError(sum tools.StarSnapshotSummary) error {
+	if sum.Failed == 0 && !sum.RateLimited {
+		return nil
+	}
+	return fmt.Errorf("star snapshots completed with failed=%d rate_limited=%t", sum.Failed, sum.RateLimited)
+}
+
+func purposeReclassifySummaryError(sum tools.PurposeReclassifySummary) error {
+	if sum.Failed == 0 {
+		return nil
+	}
+	return fmt.Errorf("purpose reclassify completed with failed=%d", sum.Failed)
+}
+
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
+	fmt.Fprintln(os.Stderr, "  discovertools scheduled [-actor cron]")
 	fmt.Fprintln(os.Stderr, "  discovertools weekly [-actor cron]")
+	fmt.Fprintln(os.Stderr, "  discovertools snapshot")
 	fmt.Fprintln(os.Stderr, "  discovertools run -config <id> [-actor name]")
 	fmt.Fprintln(os.Stderr, "  discovertools manual -repo <github-url> [-actor name]")
 	fmt.Fprintln(os.Stderr, "  discovertools reclassify-purpose [-limit n]")

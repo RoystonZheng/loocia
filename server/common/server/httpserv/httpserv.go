@@ -119,14 +119,16 @@ func Run() error {
 		}
 	}
 	toolDiscoverer := newToolDiscoverer(toolsStore)
-	reclassifyToolPurposeTags(toolDiscoverer)
+	// Keep the production-compatible HTTP server responsive while the optional
+	// LLM-backed purpose refresh runs in the background.
+	go reclassifyToolPurposeTags(toolDiscoverer)
 	toolHandler := publicapi.NewToolAPIHandler(toolStore, toolDiscoverer).
 		WithSummaryGenerator(newToolSummaryGenerator())
 	svr.AddHTTPHandle("/api/tools", toolHandler)
 	svr.AddHTTPHandle("/api/tools/", toolHandler)
 
 	// SSR 详情页：GET /items/{id} 直出 HTML（noindex），复用同一个 itemsStore。
-	// 若有 LLM key，则同时启用 POST /items/{id}/retranslate（auto-std 重译）。
+	// 若有 LLM key，则同时启用 POST /items/{id}/retranslate（固定使用 deepseek-v4-flash）。
 	detailHandler := detailpage.NewHandler(itemsStore)
 	if retryClient, err := llm.NewRetryTranslateClientFromEnv(); err == nil {
 		retryTr := pipeline.NewTranslator(retryClient, retryClient.Model())
@@ -206,7 +208,10 @@ func reclassifyToolPurposeTags(discoverer *tools.Discoverer) {
 	if discoverer == nil || discoverer.Store == nil {
 		return
 	}
-	limit := 1000
+	// Historical reclassification is an explicit maintenance operation. Keep
+	// it off by default so an API restart never spends the shared LLM quota or
+	// delays readiness on a potentially large batch.
+	limit := 0
 	if raw := os.Getenv("AI_TOOL_PURPOSE_RECLASSIFY_LIMIT"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 0 {

@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Request, type Route } from '@playwright/test'
 
 type DiscoveryMethod = 'keyword' | 'topic'
-type TriggerMode = 'manual' | 'weekly'
+type TriggerMode = 'manual' | 'daily' | 'weekly'
 type ToolStatus = 'discovered' | 'evaluating' | 'included' | 'excluded'
 type ToolSort = 'latest' | 'stars' | 'stars7d'
 type ToolSourceType = 'keyword' | 'topic' | 'manual'
@@ -13,6 +13,8 @@ type DiscoveryConfig = {
   method: DiscoveryMethod
   terms: string[]
   triggerMode: TriggerMode
+  scheduleTime?: string
+  scheduleWeekday?: number
   enabled: boolean
   lastSuccessAt?: string
   lastRunAt?: string
@@ -132,13 +134,21 @@ test.describe('AI Tool 开发用例', () => {
       const dialog = page.getByRole('dialog', { name: '新增发现配置' })
       await dialog.getByLabel('配置名称').fill('Playwright 配置')
       await dialog.getByLabel('检索词').fill('playwright agent')
+      await dialog.getByLabel('触发方式').selectOption('weekly')
+      await dialog.getByLabel('运行时间（北京时间）').fill('06:30')
+      await dialog.getByLabel('每周星期').selectOption('3')
       await dialog.getByRole('button', { name: '创建配置' }).click()
       await expect(dialog.getByText('请先填写操作人')).toBeVisible()
       await expect(page.locator('.tools-error')).toHaveCount(0)
       await dialog.getByLabel('操作人').fill('郑睿涛')
       await dialog.getByRole('button', { name: '创建配置' }).click()
       await expect(page.getByText('配置已创建')).toBeVisible()
-      expect(lastCall(state, '/api/tools/configs')?.body).toMatchObject({ actor: '郑睿涛' })
+      expect(lastCall(state, '/api/tools/configs')?.body).toMatchObject({
+        actor: '郑睿涛',
+        triggerMode: 'weekly',
+        scheduleTime: '06:30',
+        scheduleWeekday: 3,
+      })
     })
 
     await test.step('TC-005 编辑配置可以复用已有操作人', async () => {
@@ -217,7 +227,7 @@ test.describe('AI Tool 开发用例', () => {
     })
   })
 
-  test('TC-014~TC-025 工具百宝箱：排序、筛选、用途分类、中文介绍、手动添加、单个测评/删除、跨页批量', async ({ page }) => {
+  test('TC-014~TC-025 工具百宝箱：排序、筛选、用途分类、中文介绍、手动添加、批量测评/删除、跨页批量', async ({ page }) => {
     const state = await installMockRoutes(page, createMockState({ discoveredCount: 105 }))
 
     await test.step('TC-014 打开工具百宝箱并展示分页', async () => {
@@ -246,7 +256,7 @@ test.describe('AI Tool 开发用例', () => {
       await sourceFilter(page).selectOption('all')
     })
 
-    await test.step('TC-017 用途筛选和手动分类修正', async () => {
+    await test.step('TC-017 用途筛选和编辑中的用途修正', async () => {
       await purposeFilter(page).selectOption('深度研究')
       await expect(toolName(page, 'DeepResearch AI')).toBeVisible()
       await expect(toolName(page, 'Topic 命中工具')).toBeHidden()
@@ -258,17 +268,17 @@ test.describe('AI Tool 开发用例', () => {
       await expect(toolName(page, '增长爆发工具')).toBeHidden()
       await keywordFilter(page).selectOption('all')
 
-      await toolRow(page, 'DeepResearch AI').getByRole('button', { name: '分类' }).click()
-      const dialog = page.getByRole('dialog', { name: /修正用途分类/ })
+      await toolRow(page, 'DeepResearch AI').getByRole('button', { name: '编辑' }).click()
+      const dialog = page.getByRole('dialog', { name: /编辑工具/ })
       await dialog.getByLabel('操作人').fill('郑睿涛')
       await dialog.locator('.tools-tag-selected button').first().click()
       await dialog.getByPlaceholder('新增分类，如：会议纪要').fill('工作流自动化')
       await dialog.getByRole('button', { name: '新增' }).click()
       await dialog.getByRole('button', { name: '提交' }).click()
-      await expect(page.getByText('用途分类已更新')).toBeVisible()
-      expect(lastCall(state, '/api/tools/purpose-tags')?.body).toMatchObject({
+      await expect(page.getByText('工具信息已更新')).toBeVisible()
+      expect(lastCall(state, '/api/tools/items/update')?.body).toMatchObject({
         toolId: 'disc-deep',
-        actor: '郑睿涛',
+        operator: '郑睿涛',
         purposeTags: ['工作流自动化'],
       })
     })
@@ -304,19 +314,9 @@ test.describe('AI Tool 开发用例', () => {
       await expect(page.getByText('仓库已加入已发现列表')).toBeVisible()
     })
 
-    await test.step('TC-022 单个开始测评要求测评人和操作人', async () => {
+    await test.step('TC-022 单个工具不再显示开始测评按钮', async () => {
       await runSearch(page, '搜索工具、仓库或发现来源', 'DeepResearch')
-      await page.getByRole('button', { name: '开始测评' }).click()
-      const dialog = page.getByRole('dialog', { name: /开始测评/ })
-      await dialog.getByRole('button', { name: '提交' }).click()
-      await expect(dialog.getByText('请填写测评人')).toBeVisible()
-      await dialog.getByLabel('测评人').fill('李明')
-      await dialog.getByRole('button', { name: '提交' }).click()
-      await expect(dialog.getByText('请填写操作人')).toBeVisible()
-      await dialog.getByLabel('操作人').fill('郑睿涛')
-      await dialog.getByLabel('Cooper 链接').fill(cooperUrl)
-      await dialog.getByRole('button', { name: '提交' }).click()
-      await expect(page.getByText('已开始测评')).toBeVisible()
+      await expect(toolRow(page, 'DeepResearch AI').getByRole('button', { name: '开始测评' })).toHaveCount(0)
     })
 
     await test.step('TC-023 单个不处理必须写原因和操作人', async () => {
@@ -363,6 +363,49 @@ test.describe('AI Tool 开发用例', () => {
       await dialog.getByRole('button', { name: '提交' }).click()
       await expect(page.getByText('批量删除完成：2 个工具')).toBeVisible()
     })
+  })
+
+  test('TC-014A 工具表格的最近提交和操作列不发生重叠', async ({ page }) => {
+    await installMockRoutes(page, createMockState())
+    await page.goto('/#tools-discovered')
+
+    const tableWrap = page.locator('.tools-table-wrap').first()
+    const wrapBox = await tableWrap.boundingBox()
+    const tableWidth = await tableWrap.locator('table').evaluate((node) => ({
+      clientWidth: node.parentElement?.clientWidth ?? 0,
+      scrollWidth: node.scrollWidth,
+    }))
+    expect(wrapBox).not.toBeNull()
+    expect(tableWidth.scrollWidth).toBeLessThanOrEqual(tableWidth.clientWidth + 1)
+
+    const row = page.locator('.tools-data-table:not(.evaluating):not(.team) tbody tr').first()
+    await expect(row).toBeVisible()
+    const dateBox = await row.locator('.tools-date-stack').boundingBox()
+    const actionBox = await row.locator('.tools-row-actions').boundingBox()
+    const actionLayout = await row.locator('.tools-row-actions').evaluate((node) => ({
+      flexWrap: getComputedStyle(node).flexWrap,
+      buttonTops: Array.from(node.querySelectorAll('button')).map((button) => Math.round(button.getBoundingClientRect().top)),
+    }))
+
+    expect(dateBox).not.toBeNull()
+    expect(actionBox).not.toBeNull()
+    expect(dateBox!.x + dateBox!.width).toBeLessThanOrEqual(actionBox!.x + 1)
+    expect(actionLayout.flexWrap).toBe('nowrap')
+    expect(new Set(actionLayout.buttonTops).size).toBeLessThanOrEqual(1)
+  })
+
+  test('TC-014B 工具表格在窄视口内锁定宽度且不产生横向滚动', async ({ page }) => {
+    await page.setViewportSize({ width: 760, height: 900 })
+    await installMockRoutes(page, createMockState())
+    await page.goto('/#tools-discovered')
+
+    const metrics = await page.locator('.tools-table-wrap').first().evaluate((node) => ({
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      tableScrollWidth: node.querySelector('table')?.scrollWidth ?? 0,
+    }))
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
+    expect(metrics.tableScrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
   })
 
   test('TC-025~TC-033 测评中：检索、来源筛选、关联文档、纳入、不纳入和批量操作', async ({ page }) => {
@@ -782,12 +825,14 @@ async function installMockRoutes(page: Page, state: MockState): Promise<MockStat
           method: input.method || config.method,
           terms: input.terms || config.terms,
           triggerMode: input.triggerMode || config.triggerMode,
+          scheduleTime: input.scheduleTime || config.scheduleTime,
+          scheduleWeekday: input.scheduleWeekday || config.scheduleWeekday,
           enabled: input.enabled ?? config.enabled,
           updatedBy: input.actor,
           updatedAt: now,
         })
       } else {
-        config = makeConfig(`cfg-${state.configs.length + 1}`, input.name || '未命名配置', input.method || 'keyword', input.terms || [], input.triggerMode || 'manual', input.enabled ?? true, input.actor)
+        config = makeConfig(`cfg-${state.configs.length + 1}`, input.name || '未命名配置', input.method || 'keyword', input.terms || [], input.triggerMode || 'manual', input.enabled ?? true, input.actor, input.scheduleTime, input.scheduleWeekday)
         state.configs.push(config)
       }
       await ok(route, { config })
@@ -972,6 +1017,17 @@ async function installMockRoutes(page: Page, state: MockState): Promise<MockStat
       return
     }
 
+    if (path === '/api/tools/items/update') {
+      const input = body as { toolId: string; operator?: string; purposeTags?: string[] }
+      if (!input.operator) return fail(route, 'operator is required')
+      const tool = toolByID(state, input.toolId)
+      tool.purposeTags = input.purposeTags ?? tool.purposeTags
+      tool.purposeTagsManuallySet = true
+      tool.updatedAt = now
+      await ok(route, { updated: true })
+      return
+    }
+
     if (path === '/api/tools/team/import') {
       const input = body as { repoUrl: string; operator: string; cooperUrl?: string; finalSummary?: string; purposeTags?: string[] }
       if (!input.operator) return fail(route, 'actor is required')
@@ -1049,13 +1105,15 @@ async function installMockRoutes(page: Page, state: MockState): Promise<MockStat
   return state
 }
 
-function makeConfig(id: string, name: string, method: DiscoveryMethod, terms: string[], triggerMode: TriggerMode, enabled: boolean, actor = '郑睿涛'): DiscoveryConfig {
+function makeConfig(id: string, name: string, method: DiscoveryMethod, terms: string[], triggerMode: TriggerMode, enabled: boolean, actor = '郑睿涛', scheduleTime = '09:00', scheduleWeekday = 1): DiscoveryConfig {
   return {
     id,
     name,
     method,
     terms,
     triggerMode,
+    scheduleTime,
+    scheduleWeekday,
     enabled,
     lastResultCount: 0,
     lastPagesScanned: 0,

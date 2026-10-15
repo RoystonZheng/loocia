@@ -24,7 +24,7 @@ func TestCompleteSendsAnthropicRequestAndReturnsText(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "test-key", "auto-max")
+	c := NewClient(srv.URL, "test-key", "deepseek-v4-flash")
 	out, err := c.Complete(context.Background(), "sys prompt", "user prompt")
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
@@ -35,7 +35,7 @@ func TestCompleteSendsAnthropicRequestAndReturnsText(t *testing.T) {
 	if gotAPIKey != "test-key" {
 		t.Fatalf("x-api-key header: %q", gotAPIKey)
 	}
-	if gotBody["model"] != "auto-max" {
+	if gotBody["model"] != "deepseek-v4-flash" {
 		t.Fatalf("model in body: %v", gotBody["model"])
 	}
 	if gotBody["system"] != "sys prompt" {
@@ -50,7 +50,7 @@ func TestCompleteReturnsErrorOnNon200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", "auto-max")
+	c := NewClient(srv.URL, "k", "deepseek-v4-flash")
 	_, err := c.Complete(context.Background(), "", "hi")
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("want error mentioning 401, got %v", err)
@@ -74,7 +74,7 @@ func TestCompleteRetriesOn429ThenSucceeds(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", "auto-max")
+	c := NewClient(srv.URL, "k", "deepseek-v4-flash")
 	out, err := c.Complete(context.Background(), "", "hi")
 	if err != nil {
 		t.Fatalf("should have recovered after retries: %v", err)
@@ -99,7 +99,7 @@ func TestCompleteExhaustsRetriesOn429(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", "auto-max")
+	c := NewClient(srv.URL, "k", "deepseek-v4-flash")
 	_, err := c.Complete(context.Background(), "", "hi")
 	if err == nil || !strings.Contains(err.Error(), "429") {
 		t.Fatalf("want 429 error after exhausting retries, got %v", err)
@@ -117,7 +117,7 @@ func TestCompleteDoesNotRetryOn401(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", "auto-max")
+	c := NewClient(srv.URL, "k", "deepseek-v4-flash")
 	if _, err := c.Complete(context.Background(), "", "hi"); err == nil {
 		t.Fatal("expected error")
 	}

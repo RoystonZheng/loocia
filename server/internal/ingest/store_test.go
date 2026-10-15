@@ -103,6 +103,29 @@ func TestListUnprocessedPrioritizesAIHOT(t *testing.T) {
 	}
 }
 
+func TestListUnprocessedPrioritizesFreshRowsBeforeBacklog(t *testing.T) {
+	s := newTestRawStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	old := sampleRaw("https://ex.com/old-backlog", now.Add(-10*24*time.Hour))
+	fresh := sampleRaw("https://ex.com/fresh", now.Add(-time.Hour))
+	if _, err := s.InsertRaw(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.InsertRaw(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+
+	un, err := s.ListUnprocessed(ctx, 2)
+	if err != nil {
+		t.Fatalf("ListUnprocessed: %v", err)
+	}
+	if len(un) != 2 || un[0].ID != fresh.ID {
+		t.Fatalf("fresh rows should precede stale backlog: %+v", un)
+	}
+}
+
 func TestInsertRawPersistsSourceRole(t *testing.T) {
 	s := newTestRawStore(t)
 	ctx := context.Background()

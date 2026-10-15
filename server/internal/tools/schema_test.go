@@ -22,7 +22,7 @@ func TestEmbeddedSchemaCapturesRequiredToolContracts(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS tool_star_snapshots",
 		"CHECK (status IN ('discovered', 'evaluating', 'included', 'excluded'))",
 		"CHECK (method IN ('keyword', 'topic'))",
-		"CHECK (trigger_mode IN ('manual', 'weekly'))",
+		"CHECK (trigger_mode IN ('manual', 'daily', 'weekly'))",
 		"CHECK (status IN ('running', 'paused', 'succeeded', 'partial', 'failed'))",
 		"github_node_id           TEXT NOT NULL UNIQUE",
 		"status_version           INTEGER NOT NULL DEFAULT 1",

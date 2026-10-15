@@ -2,13 +2,14 @@
 # Install/refresh the pipeline on Melos: binaries + wrapper + crontab.
 set -euo pipefail
 cd "$(dirname "$0")"
-HOST="${1:-melos}"
+HOST="${1:-${AIHOT_DEPLOY_HOST:-root@10.190.12.242}}"
 
 [ -x out/pulse ] || { echo "run build-linux.sh first"; exit 1; }
 [ -x out/discovertools ] || { echo "run build-linux.sh first (out/discovertools missing)"; exit 1; }
+[ -x out/importmp ] || { echo "run build-linux.sh first (out/importmp missing)"; exit 1; }
 
 ssh "$HOST" 'mkdir -p /root/aihot/bin /root/aihot/etc /root/aihot/log'
-scp out/pulse out/gendaily out/hotpass out/discovertools aihot-cron.sh aihot-backup.sh aihot-logclean.sh "$HOST:/root/aihot/bin/"
+scp out/pulse out/gendaily out/hotpass out/discovertools out/importmp aihot-cron.sh aihot-backup.sh aihot-logclean.sh "$HOST:/root/aihot/bin/"
 ssh "$HOST" 'chmod +x /root/aihot/bin/*'
 
 # Crontab: keep other entries, replace the aihot block idempotently.
@@ -20,9 +21,8 @@ ssh "$HOST" '
    echo "# aihot-begin"
    echo "25 * * * * /root/aihot/bin/aihot-cron.sh importmp -corpus /root/wechat-corpus"
    echo "*/30 * * * * /root/aihot/bin/aihot-cron.sh pulse"
-   echo "*/30 * * * * /root/aihot/bin/aihot-cron.sh discovertools weekly -actor cron"
-   echo "10 * * * * /root/aihot/bin/aihot-cron.sh gendaily"
-   echo "20 * * * * /root/aihot/bin/aihot-cron.sh hotpass"
+   echo "* * * * * /root/aihot/bin/aihot-cron.sh discovertools scheduled -actor cron"
+   echo "45 2 * * 1 /root/aihot/bin/aihot-cron.sh discovertools snapshot"
    echo "45 3 * * * /root/aihot/bin/aihot-logclean.sh"
    echo "50 3 * * * /root/aihot/bin/aihot-backup.sh"
    echo "# aihot-end") | crontab -

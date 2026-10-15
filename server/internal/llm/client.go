@@ -15,8 +15,12 @@ import (
 
 const (
 	defaultBaseURL = "https://llm-proxy.intra.xiaojukeji.com"
-	defaultModel   = "auto-max"
-	// 8192 = deepseek-chat 的输出上限。原来 1024 太小,长文章翻译(输入允许 8000 字)
+	// Keep every production LLM call on one explicit, reproducible model.
+	// The proxy also exposes tier aliases such as auto-max/auto-std, but those
+	// aliases are intentionally not used by AI Cool.
+	defaultModel   = "deepseek-v4-flash"
+	// 8192 is the output budget used by deepseek-v4-flash. The old 1024 limit was
+	// too small for long article translation (inputs can be up to 8000 chars),
 	// 会在 ~1500-2000 中文字处被截断,连带把正文后半段的图片也截没了。
 	maxTokens      = 8192
 )
@@ -41,8 +45,9 @@ func NewClient(baseURL, apiKey, model string) *Client {
 	}
 }
 
-// NewClientFromEnv reads AIHOT_LLM_API_KEY (required) and optional
-// AIHOT_LLM_BASE_URL / AIHOT_LLM_MODEL overrides.
+// NewClientFromEnv reads AIHOT_LLM_API_KEY (required) and the optional proxy
+// base URL. Model selection is intentionally fixed so a stale auto-* setting
+// in a shell, cron file, or server environment cannot change runtime behavior.
 func NewClientFromEnv() (*Client, error) {
 	key := os.Getenv("AIHOT_LLM_API_KEY")
 	if key == "" {
@@ -52,20 +57,15 @@ func NewClientFromEnv() (*Client, error) {
 	if base == "" {
 		base = defaultBaseURL
 	}
-	model := os.Getenv("AIHOT_LLM_MODEL")
-	if model == "" {
-		model = defaultModel
-	}
-	return NewClient(base, key, model), nil
+	return NewClient(base, key, defaultModel), nil
 }
 
-// defaultTranslateModel is a cheaper tier than auto-max; translation of short
-// RSS bodies doesn't need the flagship and shouldn't compete for its RPM.
+// All LLM workloads use the same named model, including translation.
 const defaultTranslateModel = "deepseek-v4-flash"
 
 // NewTranslateClientFromEnv builds a client on the same proxy/key as
-// NewClientFromEnv but with the lower-tier translation model (AIHOT_TRANSLATE_MODEL
-// override, default deepseek-v4-flash).
+// NewClientFromEnv. AIHOT_TRANSLATE_MODEL is retained as a legacy environment
+// variable for deployment compatibility, but is intentionally ignored.
 func NewTranslateClientFromEnv() (*Client, error) {
 	key := os.Getenv("AIHOT_LLM_API_KEY")
 	if key == "" {
@@ -75,20 +75,15 @@ func NewTranslateClientFromEnv() (*Client, error) {
 	if base == "" {
 		base = defaultBaseURL
 	}
-	model := os.Getenv("AIHOT_TRANSLATE_MODEL")
-	if model == "" {
-		model = defaultTranslateModel
-	}
-	return NewClient(base, key, model), nil
+	return NewClient(base, key, defaultTranslateModel), nil
 }
 
-// defaultRetryTranslateModel is the stronger tier used when a user manually
-// retries a failed translation from the detail page.
-const defaultRetryTranslateModel = "auto-std"
+const defaultRetryTranslateModel = "deepseek-v4-flash"
 
 // NewRetryTranslateClientFromEnv builds a client on the same proxy/key as
-// NewClientFromEnv but with the retry translation model (AIHOT_TRANSLATE_RETRY_MODEL
-// override, default auto-std).
+// NewClientFromEnv. AIHOT_TRANSLATE_RETRY_MODEL is retained as a legacy
+// environment variable for deployment compatibility, but is intentionally
+// ignored.
 func NewRetryTranslateClientFromEnv() (*Client, error) {
 	key := os.Getenv("AIHOT_LLM_API_KEY")
 	if key == "" {
@@ -98,20 +93,14 @@ func NewRetryTranslateClientFromEnv() (*Client, error) {
 	if base == "" {
 		base = defaultBaseURL
 	}
-	model := os.Getenv("AIHOT_TRANSLATE_RETRY_MODEL")
-	if model == "" {
-		model = defaultRetryTranslateModel
-	}
-	return NewClient(base, key, model), nil
+	return NewClient(base, key, defaultRetryTranslateModel), nil
 }
 
-// defaultTermsModel: term extraction is a short, structured task — the cheap
-// tier is plenty and mustn't compete with auto-max for the shared key's RPM.
 const defaultTermsModel = "deepseek-v4-flash"
 
 // NewTermsClientFromEnv builds a client on the same proxy/key as
-// NewClientFromEnv but with the lower-tier terms model (AIHOT_TERMS_MODEL
-// override, default deepseek-v4-flash).
+// NewClientFromEnv. AIHOT_TERMS_MODEL is retained as a legacy environment
+// variable for deployment compatibility, but is intentionally ignored.
 func NewTermsClientFromEnv() (*Client, error) {
 	key := os.Getenv("AIHOT_LLM_API_KEY")
 	if key == "" {
@@ -121,11 +110,7 @@ func NewTermsClientFromEnv() (*Client, error) {
 	if base == "" {
 		base = defaultBaseURL
 	}
-	model := os.Getenv("AIHOT_TERMS_MODEL")
-	if model == "" {
-		model = defaultTermsModel
-	}
-	return NewClient(base, key, model), nil
+	return NewClient(base, key, defaultTermsModel), nil
 }
 
 type msgRequest struct {

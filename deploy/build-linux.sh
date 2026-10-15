@@ -8,8 +8,11 @@ mkdir -p "$OUT"
 
 echo "== go binaries (linux/amd64 static) =="
 cd "$ROOT/server"
-export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.25.5}" GOSUMDB=sum.golang.org CGO_ENABLED=0 GOOS=linux GOARCH=amd64
-for cmd in pulse gendaily hotpass discovertools; do
+# Use the installed toolchain by default so a clean local release build does
+# not block on downloading an unavailable patch toolchain. Pin explicitly with
+# GOTOOLCHAIN=go1.25.5 when the release environment has that toolchain cached.
+export GOTOOLCHAIN="${GOTOOLCHAIN:-local}" GOSUMDB=sum.golang.org CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+for cmd in pulse gendaily hotpass discovertools importmp; do
   echo "  building $cmd..."
   go build -o "$OUT/$cmd" "./cmd/$cmd"
 done

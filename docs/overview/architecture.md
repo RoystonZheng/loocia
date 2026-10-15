@@ -47,7 +47,7 @@ pulse.LoadSources
 - `server/internal/tools`：工具发现配置、工具实体、来源、测评、状态流水和 Stars 快照的 schema、Store、GitHub client、runner。
 - `server/internal/publicapi/tools_public.go`：工具列表读接口。
 - `server/internal/publicapi/tools_admin.go`：配置保存、手动执行、手动添加、开始测评、不处理、完成测评。
-- `server/cmd/discovertools/main.go`：每周发现、指定配置执行和 Stars 快照刷新。
+- `server/cmd/discovertools/main.go`：按 daily/weekly 时间槽执行发现、指定配置执行和 Stars 快照刷新。
 
 两个 HTTP 入口都要注册工具 API。部署脚本需要打包 `discovertools` 并接入 cron。
 

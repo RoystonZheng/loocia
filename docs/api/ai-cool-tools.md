@@ -61,11 +61,11 @@
 |---|---|
 | `q` | 可选，按配置名、检索词、发现方式或触发方式搜索 |
 | `method` | 可选，可重复，`keyword` 或 `topic`；不传表示全部发现方式 |
-| `triggerMode` | 可选，可重复，`manual` 或 `weekly`；不传表示全部触发方式 |
+| `triggerMode` | 可选，可重复，`manual`、`daily` 或 `weekly`；不传表示全部触发方式 |
 
-前端使用两个下拉筛选：发现方式为“全部 / 关键词 / Topic”，触发方式为“全部 / 手动执行 / 自动执行”。选择“全部”时不传对应参数。
+前端使用两个下拉筛选：发现方式为“全部 / 关键词 / Topic”，触发方式为“全部 / 手动执行 / 每天 / 每周”。选择“全部”时不传对应参数。
 
-返回 `data.items[]`：`id`、`name`、`method`、`terms`、`triggerMode`、`enabled`、`lastSuccessAt`、`lastRunAt`、`lastRunStatus`、`lastResultCount`、`lastPagesScanned`、`lastPauseRequested`、`lastFailureReason`、`createdBy`、`updatedBy`、`createdAt`、`updatedAt`。
+返回 `data.items[]`：`id`、`name`、`method`、`terms`、`triggerMode`、`scheduleTime`、`scheduleWeekday`、`enabled`、`lastSuccessAt`、`lastRunAt`、`lastRunStatus`、`lastResultCount`、`lastPagesScanned`、`lastPauseRequested`、`lastFailureReason`、`createdBy`、`updatedBy`、`createdAt`、`updatedAt`。`scheduleTime` 使用 `HH:MM`，按北京时间解释；`scheduleWeekday` 使用 `1-7` 表示周一至周日。
 
 返回统计：`count`、`enabledCount`、`disabledCount`。
 
@@ -79,7 +79,9 @@
 | `name` | 必填，配置名称 |
 | `method` | 必填，`keyword` 或 `topic` |
 | `terms` | 必填，检索词或 Topics；会去重 |
-| `triggerMode` | 可选，`manual` 或 `weekly`，默认 `manual` |
+| `triggerMode` | 可选，`manual`、`daily` 或 `weekly`，默认 `manual` |
+| `scheduleTime` | 自动执行时可选，`HH:MM`，默认 `09:00`，按北京时间执行 |
+| `scheduleWeekday` | `weekly` 时可选，`1-7` 表示周一至周日，默认 `1` |
 | `enabled` | 可选，是否启用；新建默认启用，编辑默认沿用原值 |
 | `actor` | 新建必填，编辑已有配置时为空会沿用原配置的 `updatedBy/createdBy` |
 

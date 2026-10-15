@@ -102,6 +102,30 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 	return sum, nil
 }
 
+// RunIngestOnly fetches and persists raw source items without requiring an LLM.
+// It is used by the local acceptance runtime when the enrichment credential is
+// unavailable: collection remains testable and the raw queue records exactly
+// what still needs enrichment instead of silently skipping the source pass.
+func RunIngestOnly(ctx context.Context, pool *pgxpool.Pool, sources []ingest.Source) (Summary, error) {
+	var sum Summary
+	rawStore := ingest.NewRawStore(pool)
+	if err := rawStore.EnsureSchema(ctx); err != nil {
+		return sum, fmt.Errorf("raw schema: %w", err)
+	}
+
+	runner := ingest.NewRunner(rawStore, sources...)
+	runner.MaxAge = maxItemAge
+	res, err := runner.RunOnce(ctx)
+	if err != nil {
+		return sum, fmt.Errorf("ingest: %w", err)
+	}
+	sum.Fetched, sum.Inserted, sum.Skipped = res.Fetched, res.Inserted, res.Skipped
+	sum.AgeSkipped = res.AgeSkipped
+	sum.SourceErrors = len(res.Errors)
+	sum.SourceErrorDetails = sourceErrorMessages(res.Errors)
+	return sum, nil
+}
+
 func sourceErrorMessages(errs []error) []string {
 	out := make([]string, 0, len(errs))
 	for _, err := range errs {

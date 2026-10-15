@@ -106,7 +106,10 @@ func buildMux() http.Handler {
 		ensureToolSchema(toolsStore)
 	}
 	toolDiscoverer := newToolDiscoverer(toolsStore)
-	reclassifyToolPurposeTags(toolDiscoverer)
+	// Do not block HTTP startup on a potentially large LLM-backed maintenance
+	// pass. With credentials enabled this can otherwise issue up to 1000 calls
+	// before the server begins listening on 8991.
+	go reclassifyToolPurposeTags(toolDiscoverer)
 	toolHandler := publicapi.NewToolAPIHandler(toolStore, toolDiscoverer).
 		WithSummaryGenerator(newToolSummaryGenerator())
 	mux.Handle("/api/tools", toolHandler)
@@ -205,7 +208,10 @@ func reclassifyToolPurposeTags(discoverer *tools.Discoverer) {
 	if discoverer == nil || discoverer.Store == nil {
 		return
 	}
-	limit := 1000
+	// Historical reclassification is an explicit maintenance operation. Keep
+	// it off by default so an API restart never spends the shared LLM quota or
+	// delays readiness on a potentially large batch.
+	limit := 0
 	if raw := os.Getenv("AI_TOOL_PURPOSE_RECLASSIFY_LIMIT"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 0 {

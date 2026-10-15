@@ -68,7 +68,7 @@ Cooper 测评文档由用户自己创建和维护。AI Cool 只保存 Cooper URL
 - 生产数据放现有 AI Cool 数据库，不单独建库，只新增工具发现相关表。
 - 生产表由开发在上线前按 schema 手动建好；服务启动不把自动 DDL 当上线依赖，`EnsureSchema` 只作为本地、测试和幂等兜底。
 - GitHub API token 首期使用个人账号 token，由用户提供；账号页支持保存名称、描述和测试链接，Token 明文只作为运行凭据保存在运行设置中，不写入代码仓库。
-- 定时发现复用 AI Cool 现有早间资讯抓取同一套调度系统；任务执行到期的每周配置和 Stars 快照。
+- 定时发现复用 AI Cool 现有调度系统；每分钟唤醒一次，按北京时间执行到期的 daily/weekly 配置并刷新 Stars 快照。
 - 首期写操作和 `AI Tool` 入口只面向自己使用，不做灰度，也不把额外开关作为上线门槛。
 - Cooper 链接点击后直接跳转 Cooper；AI Cool 不验证文档能否打开，也不验证权限。没有权限时由 Cooper 自己处理申请。
 - 测试库和测试表在上线前清理，正式库再按本期 schema 建需要的表。
@@ -79,7 +79,7 @@ Cooper 测评文档由用户自己创建和维护。AI Cool 只保存 Cooper URL
 | 页面 | 入口 | 首期能力 |
 |---|---|---|
 | 发现配置 | `#tools-configs` | 配置列表、新建、编辑、启停、软删除、手动执行 |
-| 工具百宝箱 | `#tools-discovered` | 候选列表、搜索、来源筛选、关键词筛选、用途筛选、排序、手动添加、直接纳入、编辑、评价、开始测评、不处理 |
+| 工具百宝箱 | `#tools-discovered` | 候选列表、搜索、来源筛选、关键词筛选、用途筛选、排序、手动添加、直接纳入、编辑（含用途修正）、评价、不处理；开始测评从批量操作进入 |
 | 测评中 | `#tools-evaluating` | 查看测评人、操作人、Cooper 链接，补链接、编辑、评价，完成测评 |
 | 团队工具 | `#tools-team` | 只展示 `included` 工具，支持搜索、基础统计、编辑、评价和删除 |
 
@@ -112,7 +112,7 @@ server/cmd/discovertools
 - 模块内 `schema.sql + EnsureSchema`。
 - 公共接口放在 `server/internal/publicapi`。
 - 两个 HTTP 入口都注册工具接口：`server/cmd/webserver/main.go`、`server/common/server/httpserv/httpserv.go`。
-- `discovertools` 负责执行到期配置、指定配置执行和 Stars 快照，并挂到现有 AI Cool 早间定时任务系统。
+- `discovertools` 负责执行到期配置、指定配置执行和 Stars 快照；`scheduled` 命令按配置的每天/每周时间槽执行，`weekly` 保留用于兼容和手动排障。
 
 核心表：
 
@@ -144,7 +144,7 @@ server/cmd/discovertools
 | `AI_TOOL_TEST_DATABASE_URL` | 本地和 CI 测试库，不连生产库 |
 | `AI_TOOL_GITHUB_TOKEN` | GitHub API token，首期使用个人账号 token，由用户提供 |
 | `AI_TOOL_GITHUB_MAX_PAGES` | 单个 GitHub 查询最多翻页数 |
-| `AI_TOOL_PURPOSE_RECLASSIFY_LIMIT` | 服务启动时历史工具用途重分类数量；`0` 表示关闭 |
+| `AI_TOOL_PURPOSE_RECLASSIFY_LIMIT` | 服务启动时历史工具用途重分类数量；默认 `0`（关闭），需要时显式设置 |
 
 生产库上线前先手动执行正式 schema，建好 `tool_*` 相关表。服务启动可以保留 `EnsureSchema` 的本地和测试兜底能力，但生产发布不能依赖启动时自动 DDL。
 
@@ -215,7 +215,7 @@ web/src/api/tools.test.ts
 
 - 用途筛选用下拉菜单，默认“全部用途”。
 - 列表行展示用途标签；没有分类时展示“未分类”。
-- “分类”操作打开弹窗，操作人必填，可以选择已有分类或新增分类，也可以清空为未分类。
+- “编辑”操作同时承担工具元数据和用途修正，操作人必填，可以选择已有分类或新增分类，也可以清空为未分类。
 - 搜索命中范围包含用途标签，便于按场景检索工具池。
 - 工具行支持直接添加 Cooper 文档和团队评价；评价摘要显示在工具说明下方，悬浮窗口固定尺寸并支持滚动查看全部评价。
 - 工具百宝箱支持直接纳入团队工具，纳入时填写操作人和团队使用说明，纳入日期由服务端生成，Cooper 文档可选。
@@ -320,7 +320,7 @@ topic:browser-automation fork:false archived:false
 | 2. GitHub 发现 | GitHub client、关键词/Topic 查询、分页、限流、`discovertools` 基础命令 | fake GitHub server 覆盖 200、403、422、5xx、分页截断；本地执行一次配置 |
 | 3. 测评流转 | 开始测评、补 Cooper URL、纳入、不纳入、不处理 | 单测覆盖合法流转、非法状态、重复开始测评、缺 Cooper URL 完成失败 |
 | 4. 后端接口 | `/api/tools/*` handlers，接入两个 HTTP 入口 | handler 测试覆盖字段校验、错误码、状态过滤；本地请求接口返回正常 |
-| 5. 前端页面 | `AI Tool` 导航、四个页面、弹窗、列表刷新、用途筛选、用途修正和错误态 | `npm run build`、`npm run lint`、`npx vitest run`；本地页面跑通主路径 |
+| 5. 前端页面 | `AI Tool` 导航、四个页面、弹窗、列表刷新、用途筛选、编辑内用途修正和错误态 | `npm run build`、`npm run lint`、`npx vitest run`；本地页面跑通主路径 |
 | 6. 本地完整链路 | 配置发现或手动添加 -> 测评 -> 纳入 -> 团队工具可见 | 使用本地 PostgreSQL 跑一条关键词配置、一条 Topic 配置、一个手动 GitHub URL |
 | 7. 部署准备 | 清理测试表和测试数据、手动建正式表、打包 `discovertools`、接入现有早间调度、历史工具用途重分类 | 确认正式库新表存在；定时任务 dry run；`AI Tool` 自用入口可访问；历史工具分类可筛选 |
 
@@ -342,7 +342,7 @@ npx vitest run
 - 数据库：不单独开库，放现有 AI Cool 数据库；上线前我们自己把新表建好，不靠应用启动自动建表。
 - 测试表：上线前删掉测试用表和测试数据，再按正式 schema 建需要的表。
 - GitHub Token：使用个人账号 token；账号页可以维护多个带名称和描述的 Token，明文只存运行设置，不写进仓库。
-- 定时任务：工具发现和 Stars 快照接入 AI Cool 现有早间资讯抓取同一套调度系统。
+- 定时任务：部署 cron 每分钟调用 `discovertools scheduled`，配置时间统一按北京时间解释；单个时间槽只执行一次。
 - 使用范围：首期自己用，`AI Tool` 入口不做灰度。
 - Cooper 链接：AI Cool 只保存和跳转，不校验打开权限；没权限时由 Cooper 页面处理申请。
 - 上线验证：允许用一条关键词配置、一条 Topic 配置、一个手动 GitHub 仓库跑完整链路。
@@ -350,5 +350,5 @@ npx vitest run
 ### 5.2 上线前还要落地
 
 - 拿到 `AI_TOOL_GITHUB_TOKEN` 并放到运行环境配置。
-- 确认现有调度系统里新增 `discovertools` 命令的具体运行时间和日志位置。
+- 确认 Melos 上 `discovertools scheduled` 的日志位置和每分钟唤醒任务已安装。
 - 确认失败是否只看页面运行记录；首期默认不做 IM 或邮件通知。

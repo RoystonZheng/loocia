@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Local Pulse Fixture",
+    "url": "http://127.0.0.1:18080/feed.xml",
+    "adapter": "rss",
+    "source_kind": "rss",
+    "source_role": "official",
+    "fetch_limit": 2
+  }
+]

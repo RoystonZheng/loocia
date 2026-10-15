@@ -109,6 +109,35 @@ func TestRunIngestsAndEnriches(t *testing.T) {
 	}
 }
 
+func TestRunIngestOnlyDoesNotRequireLLM(t *testing.T) {
+	pool := testPool(t)
+	rss := pulseRSS(time.Now().UTC())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write([]byte(rss))
+	}))
+	defer srv.Close()
+
+	sum, err := RunIngestOnly(context.Background(), pool, []ingest.Source{ingest.NewRSSSource("Test Feed", srv.URL)})
+	if err != nil {
+		t.Fatalf("RunIngestOnly: %v", err)
+	}
+	if sum.Fetched != 2 || sum.Inserted != 2 || sum.SourceErrors != 0 {
+		t.Fatalf("summary: %+v", sum)
+	}
+
+	var rawCount, itemCount int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM raw_items").Scan(&rawCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM items").Scan(&itemCount); err != nil {
+		t.Fatal(err)
+	}
+	if rawCount != 2 || itemCount != 0 {
+		t.Fatalf("ingest-only wrote raw=%d items=%d", rawCount, itemCount)
+	}
+}
+
 func TestRunStopsWhenNoProgress(t *testing.T) {
 	pool := testPool(t)
 	rss := pulseRSS(time.Now().UTC())

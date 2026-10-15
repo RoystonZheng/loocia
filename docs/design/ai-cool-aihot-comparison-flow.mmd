@@ -1,0 +1,20 @@
+%%{init: {'theme':'base', 'themeVariables': {
+  'primaryColor':'#E2E8F0',
+  'primaryTextColor':'#1E293B',
+  'primaryBorderColor':'#94A3B8',
+  'lineColor':'#64748B',
+  'secondaryColor':'#E9D5FF',
+  'tertiaryColor':'#FEF9C3'
+}}}%%
+flowchart LR
+  H[AIHOT\n多来源] --> H2[先过滤] --> H3[两次判断] --> H4[按事件呈现]
+  C[AI Cool 当前\n能抓取和精选] --> C2[一次处理] --> C3[以文章为主]
+  T[优化方向\n来源记录] --> T2[初筛和复核] --> T3[多篇整合] --> T4[事件、热点、日报]
+  H4 -.借鉴效果.-> T
+  C3 -.补齐短板.-> T
+  classDef hot fill:#E9D5FF,stroke:#A78BFA,color:#1E293B,stroke-width:2px
+  classDef cool fill:#DBEAFE,stroke:#60A5FA,color:#1E293B,stroke-width:2px
+  classDef target fill:#FEF3C7,stroke:#F59E0B,color:#1E293B,stroke-width:2px
+  class H,H2,H3,H4 hot
+  class C,C2,C3 cool
+  class T,T2,T3,T4 target

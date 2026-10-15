@@ -8,6 +8,7 @@
 |---|---|---|
 | [`../../deploy/README.md`](../../deploy/README.md) | 生产部署、24/7 托管和排障 | 部署或排查线上服务时 |
 | `local-dev.md` | 本地环境、启动和测试方法 | 本地开发时 |
+| `local-auto-run.md` | 仿照生产触发器验证本地后端保活和工具自动调度 | 验证代码更新后的自动运行时 |
 | `deployment.md` | 发布、验证和回滚步骤 | 部署系统时 |
 | `<问题>-troubleshooting.md` | 某类问题的排查流程 | 出现对应故障时 |
 
@@ -26,10 +27,11 @@
 
 数据管线部署在 Melos 个人开发机（`ssh melos`），由 root crontab 驱动，核心定时任务如下：
 
-- `pulse`（每 30 分钟）：抓源 + LLM 富化入库。
-- `discovertools`（跟随 `pulse`，每 30 分钟）：AI Tool weekly 配置发现 + GitHub Stars 快照。
-- `gendaily`（每小时 :10）：生成日报。
-- `hotpass`（每小时 :20）：热点聚类。
+- `pulse`（每 30 分钟）：抓源 + LLM 富化入库；成功后顺序刷新日报和热点。
+- `discovertools scheduled`（每分钟唤醒）：按配置的北京时间执行 daily/weekly 工具发现。
+- `discovertools snapshot`（每周一次）：独立刷新 GitHub Stars 快照，不跟随每分钟调度。
+- `gendaily`（每次 pulse 成功后）：生成昨天和当天日报。
+- `hotpass`（每次 gendaily 后）：热点聚类。
 
 生产数据库为 Melos 本机 PostgreSQL 的 `aihot` 库（勿与 `aihot_test` 混淆）。AI Tool 仍使用同库新表，定时发现需要在 Melos 环境文件中配置 `AI_TOOL_GITHUB_TOKEN`。全站 24/7 常驻 Melos：`http://10.190.12.242:8899/`。
 完整部署与排障手册见仓库根目录 [`deploy/README.md`](../../deploy/README.md)。

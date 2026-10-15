@@ -474,13 +474,12 @@ describe('ToolsView', () => {
     expect(fetchMock.mock.calls.filter((call) => call[0] === '/api/tools/configs/resume')).toHaveLength(1)
   })
 
-  it('previews, adds and starts evaluation from discovered tools', async () => {
+  it('previews and adds a discovered tool without a single-tool evaluation button', async () => {
     const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
       if (url === '/api/tools/manual/preview') {
         return ok({ repository: { nodeId: 'node1', owner: 'openai', repo: 'browser-agent', fullName: 'openai/browser-agent', url: 'https://github.com/openai/browser-agent', name: 'browser-agent', description: 'A browser automation agent', stars: 321, forks: 12, openIssues: 4, topics: [], purposeTags: ['浏览器操作'] } })
       }
       if (url === '/api/tools/manual/add') return ok({ tool: baseTool, created: true, duplicate: false })
-      if (url === '/api/tools/evaluations/start') return ok({ evaluation: { id: 'eval1', evaluator: '张三', operator: '李四', startedAt: now } })
       if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [baseTool]))
       return ok({})
     })
@@ -497,19 +496,12 @@ describe('ToolsView', () => {
     fireEvent.click(screen.getByRole('button', { name: '加入已发现' }))
     await waitFor(() => expect(screen.getByText('仓库已加入已发现列表')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: '开始测评' }))
-    fireEvent.change(screen.getByLabelText('测评人'), { target: { value: '张三' } })
-    const operatorInputs = screen.getAllByLabelText('操作人')
-    fireEvent.change(operatorInputs[operatorInputs.length - 1], { target: { value: '李四' } })
-    fireEvent.click(screen.getByRole('button', { name: '提交' }))
-
-    await waitFor(() => expect(screen.getByText('已开始测评')).toBeInTheDocument())
-    expect(fetchMock.mock.calls.map((call) => call[0])).toContain('/api/tools/evaluations/start')
+    expect(screen.queryByRole('button', { name: '开始测评' })).not.toBeInTheDocument()
   })
 
-  it('filters and manually corrects purpose tags', async () => {
+  it('filters and corrects purpose tags from the edit action', async () => {
     const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
-      if (url === '/api/tools/purpose-tags') return ok({ tool: { ...baseTool, purposeTags: ['工作流自动化'], purposeTagsManuallySet: true } })
+      if (url === '/api/tools/items/update') return ok({ updated: true })
       if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [baseTool]))
       return ok({})
     })
@@ -524,18 +516,18 @@ describe('ToolsView', () => {
       expect(urls.some((url) => url.includes('purposeTag=%E6%B5%8F%E8%A7%88%E5%99%A8%E6%93%8D%E4%BD%9C'))).toBe(true)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: '分类' }))
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
     fireEvent.change(screen.getByLabelText('操作人'), { target: { value: '李四' } })
     fireEvent.click(screen.getByRole('button', { name: '浏览器操作' }))
     fireEvent.change(screen.getByPlaceholderText('新增分类，如：会议纪要'), { target: { value: '工作流自动化' } })
     fireEvent.click(screen.getByRole('button', { name: '新增' }))
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
 
-    await waitFor(() => expect(screen.getByText('用途分类已更新')).toBeInTheDocument())
-    const updateCall = fetchMock.mock.calls.find((call) => call[0] === '/api/tools/purpose-tags')
+    await waitFor(() => expect(screen.getByText('工具信息已更新')).toBeInTheDocument())
+    const updateCall = fetchMock.mock.calls.find((call) => call[0] === '/api/tools/items/update')
     expect(JSON.parse(String(updateCall?.[1]?.body))).toEqual({
       toolId: 'tool1',
-      actor: '李四',
+      operator: '李四',
       purposeTags: ['工作流自动化'],
     })
   })
@@ -696,6 +688,58 @@ describe('ToolsView', () => {
       operator: '王五',
       purposeTags: ['浏览器操作'],
     })
+  })
+
+  it('keeps tool action API failures inside the action modal', async () => {
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
+      if (url === '/api/tools/reviews/add') {
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          json: async () => ({ errno: 502001, errmsg: 'Cooper API 未连接', data: { class: 'network_error' } }),
+        })
+      }
+      if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [baseTool]))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="discovered" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('openai/browser-agent')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '评价' }))
+    fireEvent.change(screen.getByLabelText('评价人'), { target: { value: '张三' } })
+    fireEvent.change(screen.getByLabelText('团队评价'), { target: { value: '需要记录接口异常时的处理方式。' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    const dialog = screen.getByRole('dialog')
+    await waitFor(() => expect(dialog).toHaveTextContent('Cooper API 未连接'))
+    expect(document.querySelector('.tools-error')).toBeNull()
+  })
+
+  it('keeps manual tool preview API failures inside the manual modal', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === '/api/tools/manual/preview') {
+        return Promise.resolve({
+          ok: false,
+          status: 502,
+          json: async () => ({ errno: 502001, errmsg: 'GitHub API 未连接', data: { class: 'network_error' } }),
+        })
+      }
+      if (String(url).startsWith('/api/tools/items')) return ok(toolList('discovered', [baseTool]))
+      return ok({})
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    render(<ToolsView section="discovered" onSection={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('openai/browser-agent')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /手动添加/ }))
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: 'https://github.com/openai/browser-agent' } })
+    fireEvent.click(screen.getByRole('button', { name: '预览' }))
+
+    const dialog = screen.getByRole('dialog')
+    await waitFor(() => expect(dialog).toHaveTextContent('GitHub API 未连接'))
+    expect(document.querySelector('.tools-error')).toBeNull()
   })
 
   it('links the real GitHub identity and preloads a Chinese summary once', async () => {

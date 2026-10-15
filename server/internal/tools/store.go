@@ -133,32 +133,42 @@ func (s *Store) UpsertRuntimeSettings(ctx context.Context, settings ToolRuntimeS
 }
 
 func (s *Store) UpsertConfig(ctx context.Context, c DiscoveryConfig) error {
+	if c.TriggerMode == "" {
+		c.TriggerMode = TriggerManual
+	}
+	scheduleTime, scheduleWeekday, err := NormalizeDiscoverySchedule(c.TriggerMode, c.ScheduleTime, c.ScheduleWeekday)
+	if err != nil {
+		return err
+	}
 	terms, err := json.Marshal(c.Terms)
 	if err != nil {
 		return err
 	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO tool_discovery_configs (
-			id, name, method, terms, trigger_mode, enabled,
+			id, name, method, terms, trigger_mode, schedule_time, schedule_weekday, enabled,
 			created_by, updated_by, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			method = EXCLUDED.method,
 			terms = EXCLUDED.terms,
 			trigger_mode = EXCLUDED.trigger_mode,
+			schedule_time = EXCLUDED.schedule_time,
+			schedule_weekday = EXCLUDED.schedule_weekday,
 			enabled = EXCLUDED.enabled,
 			deleted_at = NULL,
 			deleted_by = NULL,
 			updated_by = EXCLUDED.updated_by,
 			updated_at = now()`,
-		c.ID, c.Name, c.Method, string(terms), c.TriggerMode, c.Enabled, c.CreatedBy, c.UpdatedBy)
+		c.ID, c.Name, c.Method, string(terms), c.TriggerMode, scheduleTime, scheduleWeekday,
+		c.Enabled, c.CreatedBy, c.UpdatedBy)
 	return err
 }
 
 func (s *Store) GetConfig(ctx context.Context, id string) (DiscoveryConfig, error) {
 	row := s.pool.QueryRow(ctx, `
-		SELECT id, name, method, terms::text, trigger_mode, enabled,
+		SELECT id, name, method, terms::text, trigger_mode, schedule_time, schedule_weekday, enabled,
 		       deleted_at, deleted_by, last_success_at, last_run_at,
 		       last_run_status, last_result_count, last_pages_scanned,
 		       last_pause_requested, last_failure_reason,
@@ -170,7 +180,7 @@ func (s *Store) GetConfig(ctx context.Context, id string) (DiscoveryConfig, erro
 
 func (s *Store) ListConfigs(ctx context.Context) ([]DiscoveryConfig, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, method, terms::text, trigger_mode, enabled,
+		SELECT id, name, method, terms::text, trigger_mode, schedule_time, schedule_weekday, enabled,
 		       deleted_at, deleted_by, last_success_at, last_run_at,
 		       last_run_status, last_result_count, last_pages_scanned,
 		       last_pause_requested, last_failure_reason,
@@ -196,7 +206,7 @@ func (s *Store) ListConfigs(ctx context.Context) ([]DiscoveryConfig, error) {
 
 func (s *Store) ListRunnableConfigs(ctx context.Context, trigger TriggerMode) ([]DiscoveryConfig, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, method, terms::text, trigger_mode, enabled,
+		SELECT id, name, method, terms::text, trigger_mode, schedule_time, schedule_weekday, enabled,
 		       deleted_at, deleted_by, last_success_at, last_run_at,
 		       last_run_status, last_result_count, last_pages_scanned,
 		       last_pause_requested, last_failure_reason,
@@ -206,6 +216,34 @@ func (s *Store) ListRunnableConfigs(ctx context.Context, trigger TriggerMode) ([
 		  AND enabled = true
 		  AND trigger_mode = $1
 		ORDER BY updated_at ASC, id ASC`, trigger)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []DiscoveryConfig
+	for rows.Next() {
+		cfg, err := scanConfig(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cfg)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListScheduledConfigs(ctx context.Context) ([]DiscoveryConfig, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, name, method, terms::text, trigger_mode, schedule_time, schedule_weekday, enabled,
+		       deleted_at, deleted_by, last_success_at, last_run_at,
+		       last_run_status, last_result_count, last_pages_scanned,
+		       last_pause_requested, last_failure_reason,
+		       created_by, updated_by, created_at, updated_at
+		FROM tool_discovery_configs
+		WHERE deleted_at IS NULL
+		  AND enabled = true
+		  AND trigger_mode IN ($1, $2)
+		ORDER BY updated_at ASC, id ASC`, TriggerDaily, TriggerWeekly)
 	if err != nil {
 		return nil, err
 	}
@@ -974,7 +1012,9 @@ func (s *Store) AddMemberReview(ctx context.Context, toolID, reviewer, content s
 	return review, nil
 }
 
-func (s *Store) DeleteTeamTool(ctx context.Context, toolID, reason, operator string) error {
+// MoveTeamToolToToolbox moves a team tool back to the discovered/toolbox list.
+// The tool record, evaluations, snapshots and audit history remain intact.
+func (s *Store) MoveTeamToolToToolbox(ctx context.Context, toolID, reason, operator string) error {
 	reason, err := requireText(reason, "reason", 500)
 	if err != nil {
 		return err
@@ -993,23 +1033,30 @@ func (s *Store) DeleteTeamTool(ctx context.Context, toolID, reason, operator str
 	tag, err := tx.Exec(ctx, `
 		UPDATE tools
 		SET status=$2,
-		    excluded_at=now(),
+		    included_at=NULL,
+		    excluded_at=NULL,
 		    excluded_stage=NULL,
-		    excluded_reason=$3,
+		    excluded_reason=NULL,
 		    status_version=status_version+1,
 		    updated_at=now()
 		WHERE id=$1 AND status=$4`,
-		toolID, ToolExcluded, reason, ToolIncluded)
+		toolID, ToolDiscovered, reason, ToolIncluded)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return statusConflict("tool is not in team tools")
 	}
-	if err := insertStatusEvent(ctx, tx, toolID, ToolIncluded, ToolExcluded, operator, reason, ""); err != nil {
+	if err := insertStatusEvent(ctx, tx, toolID, ToolIncluded, ToolDiscovered, operator, reason, ""); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// DeleteTeamTool is kept as a compatibility wrapper for existing callers.
+// Team tools are no longer deleted; they are moved back to the toolbox.
+func (s *Store) DeleteTeamTool(ctx context.Context, toolID, reason, operator string) error {
+	return s.MoveTeamToolToToolbox(ctx, toolID, reason, operator)
 }
 
 func (s *Store) SaveStarSnapshot(ctx context.Context, snap StarSnapshot) error {
@@ -2183,7 +2230,8 @@ func scanConfig(row pgx.Row) (DiscoveryConfig, error) {
 	var lastRunStatus *string
 	if err := row.Scan(
 		&cfg.ID, &cfg.Name, &cfg.Method, &termsRaw, &cfg.TriggerMode,
-		&cfg.Enabled, &cfg.DeletedAt, &cfg.DeletedBy, &cfg.LastSuccessAt,
+		&cfg.ScheduleTime, &cfg.ScheduleWeekday, &cfg.Enabled,
+		&cfg.DeletedAt, &cfg.DeletedBy, &cfg.LastSuccessAt,
 		&cfg.LastRunAt, &lastRunStatus, &cfg.LastResultCount,
 		&cfg.LastPagesScanned, &cfg.LastPauseRequested, &cfg.LastFailureReason,
 		&cfg.CreatedBy, &cfg.UpdatedBy, &cfg.CreatedAt, &cfg.UpdatedAt,

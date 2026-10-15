@@ -1,5 +1,5 @@
 export type DiscoveryMethod = 'keyword' | 'topic'
-export type TriggerMode = 'manual' | 'weekly'
+export type TriggerMode = 'manual' | 'daily' | 'weekly'
 export type ToolStatus = 'discovered' | 'evaluating' | 'included' | 'excluded'
 export type ToolSort = 'latest' | 'stars' | 'stars7d'
 export type ToolSourceType = 'keyword' | 'topic' | 'manual'
@@ -32,6 +32,8 @@ export interface DiscoveryConfig {
   method: DiscoveryMethod
   terms: string[]
   triggerMode: TriggerMode
+  scheduleTime?: string
+  scheduleWeekday?: number
   enabled: boolean
   lastSuccessAt?: string
   lastRunAt?: string
@@ -59,6 +61,8 @@ export interface SaveConfigInput {
   method: DiscoveryMethod
   terms: string[]
   triggerMode: TriggerMode
+  scheduleTime?: string
+  scheduleWeekday?: number
   enabled?: boolean
   actor: string
 }
@@ -482,8 +486,13 @@ export function updateTeamTool(input: {
   return postToolAPI('/api/tools/team/update', input)
 }
 
-export function deleteTeamTool(toolId: string, operator: string, reason: string): Promise<{ deleted: boolean }> {
+export function moveTeamToolToToolbox(toolId: string, operator: string, reason: string): Promise<{ moved: boolean }> {
   return postToolAPI('/api/tools/team/delete', { toolId, operator, reason })
+}
+
+/** @deprecated Team tools are moved back to the toolbox instead of deleted. */
+export function deleteTeamTool(toolId: string, operator: string, reason: string): Promise<{ moved: boolean }> {
+  return moveTeamToolToToolbox(toolId, operator, reason)
 }
 
 export async function startToolEvaluation(input: {

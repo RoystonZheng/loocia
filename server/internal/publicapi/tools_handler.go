@@ -312,6 +312,8 @@ type configJSON struct {
 	Method             string           `json:"method"`
 	Terms              []string         `json:"terms"`
 	TriggerMode        string           `json:"triggerMode"`
+	ScheduleTime       string           `json:"scheduleTime"`
+	ScheduleWeekday    int              `json:"scheduleWeekday"`
 	Enabled            bool             `json:"enabled"`
 	LastSuccessAt      *time.Time       `json:"lastSuccessAt,omitempty"`
 	LastRunAt          *time.Time       `json:"lastRunAt,omitempty"`
@@ -800,13 +802,15 @@ func (h *ToolAPIHandler) handleListConfigs(w http.ResponseWriter, r *http.Reques
 }
 
 type saveConfigRequest struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Method      string   `json:"method"`
-	Terms       []string `json:"terms"`
-	TriggerMode string   `json:"triggerMode"`
-	Enabled     *bool    `json:"enabled"`
-	Actor       string   `json:"actor"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Method          string   `json:"method"`
+	Terms           []string `json:"terms"`
+	TriggerMode     string   `json:"triggerMode"`
+	ScheduleTime    *string  `json:"scheduleTime"`
+	ScheduleWeekday *int     `json:"scheduleWeekday"`
+	Enabled         *bool    `json:"enabled"`
+	Actor           string   `json:"actor"`
 }
 
 func (h *ToolAPIHandler) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
@@ -856,6 +860,23 @@ func (h *ToolAPIHandler) handleSaveConfig(w http.ResponseWriter, r *http.Request
 	} else {
 		id = newToolAPIID("cfg")
 	}
+	scheduleTime := ""
+	scheduleWeekday := 0
+	if existing != nil {
+		scheduleTime = existing.ScheduleTime
+		scheduleWeekday = existing.ScheduleWeekday
+	}
+	if req.ScheduleTime != nil {
+		scheduleTime = *req.ScheduleTime
+	}
+	if req.ScheduleWeekday != nil {
+		scheduleWeekday = *req.ScheduleWeekday
+	}
+	scheduleTime, scheduleWeekday, err = tools.NormalizeDiscoverySchedule(trigger, scheduleTime, scheduleWeekday)
+	if err != nil {
+		writeToolErr(w, err)
+		return
+	}
 	actor, err := resolveConfigActor(req.Actor, existing)
 	if err != nil {
 		writeToolErr(w, err)
@@ -869,14 +890,16 @@ func (h *ToolAPIHandler) handleSaveConfig(w http.ResponseWriter, r *http.Request
 	}
 
 	cfg := tools.DiscoveryConfig{
-		ID:          id,
-		Name:        name,
-		Method:      method,
-		Terms:       terms,
-		TriggerMode: trigger,
-		Enabled:     enabled,
-		CreatedBy:   createdBy,
-		UpdatedBy:   actor,
+		ID:              id,
+		Name:            name,
+		Method:          method,
+		Terms:           terms,
+		TriggerMode:     trigger,
+		ScheduleTime:    scheduleTime,
+		ScheduleWeekday: scheduleWeekday,
+		Enabled:         enabled,
+		CreatedBy:       createdBy,
+		UpdatedBy:       actor,
 	}
 	if err := h.store.UpsertConfig(r.Context(), cfg); err != nil {
 		writeToolErr(w, err)
@@ -1554,7 +1577,7 @@ func (h *ToolAPIHandler) handleTeamDelete(w http.ResponseWriter, r *http.Request
 		writeToolErr(w, err)
 		return
 	}
-	writeToolOK(w, map[string]bool{"deleted": true})
+	writeToolOK(w, map[string]bool{"moved": true})
 }
 
 type excludeDiscoveredRequest struct {
@@ -1564,30 +1587,7 @@ type excludeDiscoveredRequest struct {
 }
 
 func (h *ToolAPIHandler) handleExcludeDiscovered(w http.ResponseWriter, r *http.Request) {
-	if err := requireToolStore(h.store); err != nil {
-		writeToolErr(w, err)
-		return
-	}
-	var req excludeDiscoveredRequest
-	if err := decodeToolJSON(r, &req); err != nil {
-		writeToolErr(w, err)
-		return
-	}
-	toolID, err := requireToolText(req.ToolID, "toolId", 120)
-	if err != nil {
-		writeToolErr(w, err)
-		return
-	}
-	operator, err := requireToolText(req.Operator, "operator", 80)
-	if err != nil {
-		writeToolErr(w, err)
-		return
-	}
-	if err := h.store.ExcludeDiscovered(r.Context(), toolID, req.Reason, operator); err != nil {
-		writeToolErr(w, err)
-		return
-	}
-	writeToolOK(w, map[string]bool{"excluded": true})
+	writeToolError(w, http.StatusConflict, 409001, "工具百宝箱中的工具不可删除", tools.ErrorStatusConflict)
 }
 
 type startEvaluationRequest struct {
@@ -1705,7 +1705,7 @@ func matchesConfigQuery(cfg tools.DiscoveryConfig, q string) bool {
 	if q == "" {
 		return true
 	}
-	values := []string{cfg.ID, cfg.Name, string(cfg.Method), string(cfg.TriggerMode)}
+	values := []string{cfg.ID, cfg.Name, string(cfg.Method), string(cfg.TriggerMode), cfg.ScheduleTime, strconv.Itoa(cfg.ScheduleWeekday)}
 	values = append(values, cfg.Terms...)
 	for _, v := range values {
 		if strings.Contains(strings.ToLower(v), q) {
@@ -1726,6 +1726,8 @@ func toConfigJSON(cfg tools.DiscoveryConfig) configJSON {
 		Method:             string(cfg.Method),
 		Terms:              terms,
 		TriggerMode:        string(cfg.TriggerMode),
+		ScheduleTime:       cfg.ScheduleTime,
+		ScheduleWeekday:    cfg.ScheduleWeekday,
 		Enabled:            cfg.Enabled,
 		LastSuccessAt:      cfg.LastSuccessAt,
 		LastRunAt:          cfg.LastRunAt,
@@ -2245,10 +2247,12 @@ func parseTriggerMode(raw string) (tools.TriggerMode, error) {
 	switch strings.TrimSpace(raw) {
 	case string(tools.TriggerManual):
 		return tools.TriggerManual, nil
+	case string(tools.TriggerDaily):
+		return tools.TriggerDaily, nil
 	case string(tools.TriggerWeekly):
 		return tools.TriggerWeekly, nil
 	default:
-		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "triggerMode must be manual or weekly"}
+		return "", &tools.DiscoveryError{Class: tools.ErrorValidation, Message: "triggerMode must be manual, daily or weekly"}
 	}
 }
 

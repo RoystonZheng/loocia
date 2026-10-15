@@ -22,6 +22,7 @@ type TriggerMode string
 
 const (
 	TriggerManual TriggerMode = "manual"
+	TriggerDaily  TriggerMode = "daily"
 	TriggerWeekly TriggerMode = "weekly"
 )
 
@@ -72,6 +73,8 @@ type DiscoveryConfig struct {
 	Method             DiscoveryMethod
 	Terms              []string
 	TriggerMode        TriggerMode
+	ScheduleTime       string
+	ScheduleWeekday    int
 	Enabled            bool
 	DeletedAt          *time.Time
 	DeletedBy          *string

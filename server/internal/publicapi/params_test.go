@@ -47,8 +47,12 @@ func TestParseCategoryValidAndInvalid(t *testing.T) {
 	if err != nil || !equalStrings(p.Categories, []string{"paper", "ai-models"}) {
 		t.Fatalf("repeated categories should dedupe while preserving order: %+v err=%v", p.Categories, err)
 	}
-	if _, err := parseListParams(vals("category=nope"), refNow); err == nil {
-		t.Fatal("invalid category should 400")
+	p, err = parseListParams(vals("category=energy-policy"), refNow)
+	if err != nil || !equalStrings(p.Categories, []string{"energy-policy"}) {
+		t.Fatalf("custom category should be accepted: %+v err=%v", p.Categories, err)
+	}
+	if _, err := parseListParams(vals("category=not%20a%20slug"), refNow); err == nil {
+		t.Fatal("invalid category slug should 400")
 	}
 }
 
@@ -165,7 +169,7 @@ func TestParseSourceKind(t *testing.T) {
 	if p.Since == nil || !p.Since.Equal(refNow.Add(-7*24*time.Hour)) {
 		t.Fatalf("rss should keep 7d window: %v", p.Since)
 	}
-	for _, kind := range []string{"html", "aihot"} {
+	for _, kind := range []string{"html", "api", "aihot"} {
 		p, err = parseListParams(vals("source_kind="+kind), refNow)
 		if err != nil {
 			t.Fatalf("source_kind=%s: %v", kind, err)

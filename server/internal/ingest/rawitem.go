@@ -15,7 +15,7 @@ import (
 type RawItem struct {
 	ID          string // = RawID(URL); stable, equals the eventual items.id
 	Source      string // human source name, e.g. "OpenAI Blog"
-	SourceKind  string // "rss" | "html" | "mp" | "aihot"
+	SourceKind  string // "rss" | "html" | "api" | "mp" | "aihot"
 	SourceRole  string // "official" | "professional" | "discovery"
 	URL         string // original third-party URL
 	Title       string // original (pre-translation) title
@@ -28,6 +28,7 @@ type RawItem struct {
 const (
 	SourceKindRSS   = "rss"
 	SourceKindHTML  = "html"
+	SourceKindAPI   = "api"
 	SourceKindMP    = "mp"
 	SourceKindAIHOT = "aihot"
 
@@ -54,7 +55,7 @@ func ValidSourceRole(role string) bool {
 
 func ValidSourceKind(kind string) bool {
 	switch kind {
-	case SourceKindRSS, SourceKindHTML, SourceKindMP, SourceKindAIHOT:
+	case SourceKindRSS, SourceKindHTML, SourceKindAPI, SourceKindMP, SourceKindAIHOT:
 		return true
 	default:
 		return false

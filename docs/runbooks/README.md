@@ -10,6 +10,7 @@
 | `local-dev.md` | 本地环境、启动和测试方法 | 本地开发时 |
 | `local-auto-run.md` | 仿照生产触发器验证本地后端保活和工具自动调度 | 验证代码更新后的自动运行时 |
 | `deployment.md` | 发布、验证和回滚步骤 | 部署系统时 |
+| `source-discovery.md` | 通用主题的信息源发现、配置和 smoke 步骤 | 接入非 AI 主题或新站点时 |
 | `<问题>-troubleshooting.md` | 某类问题的排查流程 | 出现对应故障时 |
 
 ### 平台固定知识

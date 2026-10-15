@@ -201,14 +201,14 @@ GitHub REST API → 工具发现与星标快照 → tools 领域表
 
 来源配置由 `server/internal/pulse/sources.go` 解析，核心字段包括：
 
-`id`、`name`、`url`、`adapter`、`source_kind`、`source_role`、`enabled`、`max_items_per_run`、`fetch_limit`、`max_secondary_per_run`、`timeout_seconds`、`retry_attempts`、`window`、`rate_limit`。
+`id`、`name`、`url`、`adapter`、`source_kind`、`source_role`、`enabled`、`max_items_per_run`、`fetch_limit`、`max_secondary_per_run`、`timeout_seconds`、`retry_attempts`、`window`、`rate_limit`、字段映射和 HTML selector。
 
 当前来源分类：
 
 | 字段 | 可用值 | 作用 |
 |---|---|---|
-| `adapter` | `rss`、`mp_corpus`、`anthropic_news_html`、`aihot_v1_items` | 选择协议适配器 |
-| `source_kind` | `rss`、`html`、`mp`、`aihot` | 进入 raw/item 后的来源类型 |
+| `adapter` | `rss`、`json_api`、`html_list`、`mp_corpus`、`anthropic_news_html`、`aihot_v1_items` | 选择协议适配器 |
+| `source_kind` | `rss`、`html`、`api`、`mp`、`aihot` | 进入 raw/item 后的来源类型 |
 | `source_role` | `official`、`professional`、`discovery` | 影响 LLM 相关性判断和来源标记 |
 | `enabled` | `true`/`false` | 控制本次运行是否采集 |
 | `rate_limit` | `250ms`、`2s`、`10/m`、`1/5s` 等 | 控制同一来源请求节奏 |
@@ -503,7 +503,7 @@ content-type: application/json
 |---|---|
 | `mode` | `selected` 或 `all`，默认 selected |
 | `category` | 可重复传入的分类过滤 |
-| `source_kind` | 可重复传入 `rss`、`html`、`mp`、`aihot` |
+| `source_kind` | 可重复传入 `rss`、`html`、`api`、`mp`、`aihot` |
 | `score_min` | 最低 score |
 | `since` / `until` | 时间范围 |
 | `q` | 关键词；至少 2 个字符，最多 200 个字符 |

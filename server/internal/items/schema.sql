@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS items (
     reason          TEXT,
     image_url       TEXT,
     video_url       TEXT,
-    category        TEXT CHECK (category IN ('ai-models','ai-products','industry','paper','tip')),
+    category        TEXT,
     score           INTEGER CHECK (score BETWEEN 1 AND 5),
     ai_relevance    INTEGER CHECK (ai_relevance BETWEEN 1 AND 5),
     ai_selected     BOOLEAN,
@@ -36,6 +36,11 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS video_url TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS reason TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS body_cn TEXT;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS body_cn_model TEXT;
+
+-- Source plans may define their own category slugs (for example
+-- "macro-economics" or "security"). Remove the historical AI-only check when
+-- upgrading an existing database; API validation still accepts safe slugs.
+ALTER TABLE items DROP CONSTRAINT IF EXISTS items_category_check;
 
 CREATE INDEX IF NOT EXISTS items_sortkey_idx
     ON items (COALESCE(published_at, 'epoch'::timestamptz) DESC, id DESC);

@@ -27,7 +27,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "AIHOT_DATABASE_URL not set")
 		os.Exit(1)
 	}
-	sources, err := pulse.LoadSources(*sourcesPath)
+	plan, err := pulse.LoadPlan(*sourcesPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "sources:", err)
+		os.Exit(1)
+	}
+	sources, err := pulse.LoadSourcesFromPlan(plan)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "sources:", err)
 		os.Exit(1)
@@ -81,6 +86,7 @@ func main() {
 		Translator: pipeline.NewTranslator(translateClient, translateClient.Model()),
 		Terms:      pipeline.NewTermExtractor(termsClient),
 		Sources:    sources,
+		Profile:    plan.Profile,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "run:", err)

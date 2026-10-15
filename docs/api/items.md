@@ -9,8 +9,8 @@
 | 参数 | 类型 | 说明 |
 |---|---|---|
 | `mode` | `selected`、`all` | 默认 `selected`；`all` 返回全部可展示资讯 |
-| `category` | repeated string：`ai-models`、`ai-products`、`industry`、`paper`、`tip` | 可选主题，多值在主题组内 OR；重复值去重，未知值返回 400 |
-| `source_kind` | repeated string：`rss`、`html`、`mp`、`aihot` | 可选来源类型，多值在来源组内 OR；重复值去重，未知值返回 400 |
+| `category` | repeated string：小写字母、数字和连字符组成的 slug（最长 64 字符） | 可选主题，多值在主题组内 OR；重复值去重，非法 slug 返回 400 |
+| `source_kind` | repeated string：`rss`、`html`、`api`、`mp`、`aihot` | 可选来源类型，多值在来源组内 OR；重复值去重，未知值返回 400 |
 | `score_min` | 1-5 | 可选最低阅读评分，返回 `score >= score_min` 的文章；越界或非整数返回 400 |
 | `q` | string | 至少 2 个字符才生效，搜索标题、摘要和正文 |
 | `take` | 1-100 | 默认 50 |

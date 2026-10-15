@@ -21,6 +21,7 @@ type Deps struct {
 	Translator pipeline.Translator    // optional
 	Terms      pipeline.TermExtractor // optional; enables entity/topic extraction
 	Sources    []ingest.Source
+	Profile    ContentProfile
 }
 
 // Summary reports one pulse run.
@@ -75,7 +76,13 @@ func Run(ctx context.Context, d Deps) (Summary, error) {
 	sum.SourceErrors = len(res.Errors)
 	sum.SourceErrorDetails = sourceErrorMessages(res.Errors)
 
-	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricher(d.LLM)).
+	profile := d.Profile
+	if profile.Name == "" {
+		profile = DefaultContentProfile()
+	}
+	proc := pipeline.NewProcessor(rawStore, itemsStore, pipeline.NewEnricherWithProfile(d.LLM, pipeline.Profile{
+		Name: profile.Name, Description: profile.Description, Language: profile.Language, Categories: profile.Categories,
+	})).
 		WithPageResolver(ingest.NewPageResolver()).
 		WithTranslator(d.Translator)
 	if d.Terms != nil {

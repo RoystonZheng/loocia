@@ -38,7 +38,7 @@ pulse.LoadSources
 - `MPCorpusSource` 从 `AIHOT_MP_CORPUS_DIR` 读取本地 Markdown，默认 `professional`，可由 `AIHOT_MP_OFFICIAL_ACCOUNTS` 覆盖官方账号。
 - `AIHOTSource` 只读 `https://aihot.news/api/v1/items`，原文链接优先，二手线索受上限保护，不继承 AIHOT 分数和精选结论。
 
-公共 API 响应结构不变，只扩展 `source_kind` 查询枚举为 `rss/html/mp/aihot`。日报、热点和图谱仍消费 `items.selected`、category、score 等既有字段。
+公共 API 响应结构不变，只扩展 `source_kind` 查询枚举为 `rss/html/api/mp/aihot`，并允许 source plan 自定义安全分类 slug。日报、热点和图谱仍消费 `items.selected`、category、score 等既有字段。
 
 ## 本次工具模块规划
 

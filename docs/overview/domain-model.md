@@ -20,7 +20,7 @@
 
 | 字段 | 枚举 | 含义 |
 |---|---|---|
-| `source_kind` | `rss`、`html`、`mp`、`aihot` | 采集方式，用于来源筛选和部分处理分支 |
+| `source_kind` | `rss`、`html`、`api`、`mp`、`aihot` | 采集方式，用于来源筛选和部分处理分支 |
 | `source_role` | `official`、`professional`、`discovery` | 富化提示词的阅读价值判断口径 |
 
 来源角色规则：

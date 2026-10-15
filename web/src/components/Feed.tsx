@@ -6,11 +6,12 @@ import { HotTopics } from './HotTopics'
 import { categoryLabel, beijingParts } from '../format'
 
 const CATEGORIES = ['ai-models', 'ai-products', 'industry', 'paper', 'tip']
-type SourceKind = 'rss' | 'html' | 'mp' | 'aihot'
+type SourceKind = 'rss' | 'html' | 'api' | 'mp' | 'aihot'
 
 const SOURCES: { key: SourceKind; label: string }[] = [
   { key: 'rss', label: 'RSS/Atom' },
   { key: 'html', label: '网页直采' },
+  { key: 'api', label: 'JSON API' },
   { key: 'mp', label: '公众号' },
   { key: 'aihot', label: 'AIHOT补漏' },
 ]

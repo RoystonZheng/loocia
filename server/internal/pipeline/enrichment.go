@@ -27,6 +27,15 @@ var validCategories = map[string]bool{
 	items.CategoryTip:        true,
 }
 
+// Profile is the enrichment context supplied by a source plan. Categories are
+// slugs chosen by the plan author; legacy AI categories remain the default.
+type Profile struct {
+	Name        string
+	Description string
+	Language    string
+	Categories  []string
+}
+
 const enrichSystemPrompt = `你是 AI 资讯编辑。给定一条资讯的原始标题和正文，输出一个 JSON 对象（只输出 JSON，不要任何解释或代码块外的文字），字段：
 - "title_cn": 简洁的中文标题
 - "summary_cn": 2-3 句中文摘要
@@ -60,6 +69,14 @@ const enrichSystemPrompt = `你是 AI 资讯编辑。给定一条资讯的原始
 const maxPromptBodyRunes = 4000
 
 func buildPrompt(r ingest.RawItem) (system, user string) {
+	return buildPromptForProfile(r, Profile{
+		Name:        "AI资讯",
+		Description: "人工智能、大模型、AI 产品、研究和行业动态",
+		Categories:  []string{"ai-models", "ai-products", "industry", "paper", "tip"},
+	})
+}
+
+func buildPromptForProfile(r ingest.RawItem, profile Profile) (system, user string) {
 	var b strings.Builder
 	if r.Source != "" {
 		b.WriteString("来源名称：")
@@ -90,7 +107,40 @@ func buildPrompt(r ingest.RawItem) (system, user string) {
 		b.WriteString("\n\n正文：\n")
 		b.WriteString(truncateRunes(*r.RawContent, maxPromptBodyRunes))
 	}
-	return enrichSystemPrompt, b.String()
+	if strings.TrimSpace(profile.Name) == "" || isDefaultProfile(profile) {
+		return enrichSystemPrompt, b.String()
+	}
+	categories := normalizedCategories(profile.Categories)
+	if len(categories) == 0 {
+		categories = []string{"general"}
+	}
+	system = fmt.Sprintf(`你是 %s 资讯编辑。给定一条资讯的原始标题和正文，输出一个 JSON 对象（只输出 JSON，不要任何解释或代码块外的文字），字段：
+- "title_cn": 简洁、准确的中文标题
+- "summary_cn": 2-3 句中文摘要
+- "category": 必须是以下之一：%s
+- "relevance": 整数 1-5，与「%s」主题的相关度：5=核心内容、1=几乎无关
+- "score": 整数 1-5，优先考虑事实、证据、方法和可执行信息，压低营销通稿和重复内容。
+- "reason_cn": 一句话（不超过40字）说明这条为什么值得关注
+主题说明：%s
+重要：文本内容里不要出现未转义的英文双引号；需要引用词语或名称时使用中文引号「」或书名号《。`, profile.Name, strings.Join(categories, "、"), profile.Name, profile.Description)
+	return system, b.String()
+}
+
+func isDefaultProfile(profile Profile) bool {
+	if profile.Name != "AI资讯" || profile.Description != "人工智能、大模型、AI 产品、研究和行业动态" {
+		return false
+	}
+	want := []string{"ai-models", "ai-products", "industry", "paper", "tip"}
+	got := normalizedCategories(profile.Categories)
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // truncateRunes returns s capped at n runes (with an ellipsis when cut), safe
@@ -105,6 +155,10 @@ func truncateRunes(s string, n int) string {
 
 // parseEnrichment extracts and validates the JSON object from the model output.
 func parseEnrichment(text string) (Enrichment, error) {
+	return parseEnrichmentForCategories(text, nil)
+}
+
+func parseEnrichmentForCategories(text string, categories []string) (Enrichment, error) {
 	var e Enrichment
 	jsonStr, err := extractJSONObject(text)
 	if err != nil {
@@ -113,7 +167,7 @@ func parseEnrichment(text string) (Enrichment, error) {
 	if err := json.Unmarshal([]byte(jsonStr), &e); err != nil {
 		return e, fmt.Errorf("enrichment json: %w", err)
 	}
-	category, ok := normalizeCategory(e.Category)
+	category, ok := normalizeCategoryForCategories(e.Category, categories)
 	if !ok {
 		return e, fmt.Errorf("invalid category %q", e.Category)
 	}
@@ -127,25 +181,76 @@ func parseEnrichment(text string) (Enrichment, error) {
 }
 
 func normalizeCategory(category string) (string, bool) {
+	return normalizeCategoryForCategories(category, nil)
+}
+
+func normalizeCategoryForCategories(category string, categories []string) (string, bool) {
 	c := strings.ToLower(strings.TrimSpace(category))
 	c = strings.ReplaceAll(c, "_", "-")
-	if validCategories[c] {
+	allowed := validCategories
+	if normalized := normalizedCategories(categories); len(normalized) > 0 {
+		allowed = make(map[string]bool, len(normalized))
+		for _, item := range normalized {
+			allowed[item] = true
+		}
+	}
+	if allowed[c] {
 		return c, true
 	}
 	switch c {
 	case "ai-model", "model", "models", "llm":
-		return items.CategoryAIModels, true
+		return categoryAlias(items.CategoryAIModels, allowed, categories)
 	case "ai-product", "product", "products", "tool", "tools":
-		return items.CategoryAIProducts, true
+		return categoryAlias(items.CategoryAIProducts, allowed, categories)
 	case "research", "paper", "papers":
-		return items.CategoryPaper, true
+		return categoryAlias(items.CategoryPaper, allowed, categories)
 	case "tutorial", "how-to", "howto", "tips", "guide":
-		return items.CategoryTip, true
+		return categoryAlias(items.CategoryTip, allowed, categories)
 	case "business", "market", "news", "discovery", "source-discovery":
-		return items.CategoryIndustry, true
+		return categoryAlias(items.CategoryIndustry, allowed, categories)
 	default:
+		if isCategorySlug(c) && len(normalizedCategories(categories)) > 0 {
+			return c, true
+		}
 		return "", false
 	}
+}
+
+func categoryAlias(category string, allowed map[string]bool, requested []string) (string, bool) {
+	if allowed[category] {
+		return category, true
+	}
+	if len(normalizedCategories(requested)) > 0 && allowed["general"] {
+		return "general", true
+	}
+	return "", false
+}
+
+func normalizedCategories(categories []string) []string {
+	out := make([]string, 0, len(categories))
+	seen := map[string]bool{}
+	for _, category := range categories {
+		category = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(category, "_", "-")))
+		if !isCategorySlug(category) || seen[category] {
+			continue
+		}
+		seen[category] = true
+		out = append(out, category)
+	}
+	return out
+}
+
+func isCategorySlug(category string) bool {
+	if category == "" || len(category) > 64 {
+		return false
+	}
+	for i, r := range category {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || (r == '-' && i > 0) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // clampTier bounds a 1-5 ordinal; out-of-range model output is clamped rather

@@ -3,6 +3,7 @@ package publicapi
 import (
 	"errors"
 	"net/url"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -20,20 +21,15 @@ const (
 	maxQ        = 200
 )
 
-var apiCategories = map[string]bool{
-	items.CategoryAIModels:   true,
-	items.CategoryAIProducts: true,
-	items.CategoryIndustry:   true,
-	items.CategoryPaper:      true,
-	items.CategoryTip:        true,
-}
-
 var apiSourceKinds = map[string]bool{
 	"rss":   true,
 	"html":  true,
+	"api":   true,
 	"mp":    true,
 	"aihot": true,
 }
+
+var categorySlug = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 // parseListParams validates the query against the openapi contract and returns
 // the store-level ListParams. `now` is injected for testability. Returns
@@ -51,7 +47,7 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 		return p, errBadRequest
 	}
 
-	categories, err := parseMultiValue(q, "category", apiCategories)
+	categories, err := parseCategoryValues(q)
 	if err != nil {
 		return p, err
 	}
@@ -121,6 +117,25 @@ func parseListParams(q url.Values, now time.Time) (items.ListParams, error) {
 	}
 
 	return p, nil
+}
+
+func parseCategoryValues(q url.Values) ([]string, error) {
+	var values []string
+	seen := make(map[string]struct{})
+	for _, value := range q["category"] {
+		if value == "" {
+			continue
+		}
+		if !categorySlug.MatchString(value) {
+			return nil, errBadRequest
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values, nil
 }
 
 func parseMultiValue(q url.Values, key string, allowed map[string]bool) ([]string, error) {

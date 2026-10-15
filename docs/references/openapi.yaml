@@ -77,7 +77,7 @@ paths:
             uniqueItems: true
             items:
               type: string
-              enum: ["ai-models", "ai-products", "industry", "paper", "tip"]
+              pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
           description: |
             可选主题(英文 slug)，可重复传多个 `category`；同组内 OR。单值写法继续兼容。
             跟 `/api/public/daily` 返回的 `sections[].label`(中文) 对照:
@@ -98,10 +98,10 @@ paths:
             uniqueItems: true
             items:
               type: string
-              enum: ["rss", "html", "mp", "aihot"]
+              enum: ["rss", "html", "api", "mp", "aihot"]
           description: |
             可选来源类型筛选，可重复传多个 `source_kind`；同组内 OR，单值写法继续兼容。
-            `rss` = RSS/Atom，`html` = 网页直采，`mp` = 公众号语料，`aihot` = AIHOT 补漏候选。
+            `rss` = RSS/Atom，`html` = 网页直采，`api` = JSON API，`mp` = 公众号语料，`aihot` = AIHOT 补漏候选。
             未知值返回 400。`mp` 浏览历史语料时不加默认 7 天窗口；多选中包含 `mp` 时同样打开归档，
             其它来源类型仍受默认窗口约束。
         - name: score_min
@@ -493,7 +493,7 @@ components:
             来源名(如 "OpenAI Blog" / "Anthropic 推特" / "X：Berry Xia (@berry_xia)")。
         sourceKind:
           type: string
-          enum: [rss, html, mp, aihot]
+          enum: [rss, html, api, mp, aihot]
           description: |
             采集通道类型。`source` 仍表示原文来源 / 原始发布方；`sourceKind=aihot`
             表示该条由 AIHOT 补漏通道发现，前端可据此展示 AIHOT 补漏标签。
@@ -506,7 +506,7 @@ components:
           description: 中文摘要
         category:
           type: [string, "null"]
-          enum: ["ai-models", "ai-products", "industry", "paper", "tip", null]
+          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
         score:
           type: [integer, "null"]
           minimum: 0

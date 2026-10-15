@@ -5,7 +5,7 @@ export interface PublicItem {
   url: string
   permalink: string
   source: string
-  sourceKind?: 'rss' | 'html' | 'mp' | 'aihot'
+  sourceKind?: 'rss' | 'html' | 'api' | 'mp' | 'aihot'
   publishedAt?: string
   summary?: string
   imageUrl?: string
@@ -22,7 +22,7 @@ export interface ItemList {
   items: PublicItem[]
 }
 
-export type SourceKind = 'rss' | 'html' | 'mp' | 'aihot'
+export type SourceKind = 'rss' | 'html' | 'api' | 'mp' | 'aihot'
 
 export interface ListQuery {
   mode?: 'selected' | 'all'

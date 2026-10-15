@@ -1,7 +1,6 @@
 package pulse
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,21 +12,34 @@ import (
 
 // SourceConfig is one feed entry in the optional sources JSON file.
 type SourceConfig struct {
-	ID                 string `json:"id,omitempty"`
-	Name               string `json:"name"`
-	URL                string `json:"url"`
-	Adapter            string `json:"adapter,omitempty"`
-	SourceKind         string `json:"source_kind,omitempty"`
-	SourceRole         string `json:"source_role,omitempty"`
-	Enabled            *bool  `json:"enabled,omitempty"`
-	MaxItemsPerRun     int    `json:"max_items_per_run,omitempty"`
-	FetchLimit         int    `json:"fetch_limit,omitempty"`
-	MaxSecondaryPerRun int    `json:"max_secondary_per_run,omitempty"`
-	SecondaryCap       int    `json:"secondary_cap,omitempty"`
-	TimeoutSeconds     int    `json:"timeout_seconds,omitempty"`
-	RetryAttempts      int    `json:"retry_attempts,omitempty"`
-	Window             string `json:"window,omitempty"`
-	RateLimit          string `json:"rate_limit,omitempty"`
+	ID                 string            `json:"id,omitempty"`
+	Name               string            `json:"name"`
+	URL                string            `json:"url"`
+	Adapter            string            `json:"adapter,omitempty"`
+	SourceKind         string            `json:"source_kind,omitempty"`
+	SourceRole         string            `json:"source_role,omitempty"`
+	Enabled            *bool             `json:"enabled,omitempty"`
+	MaxItemsPerRun     int               `json:"max_items_per_run,omitempty"`
+	FetchLimit         int               `json:"fetch_limit,omitempty"`
+	MaxSecondaryPerRun int               `json:"max_secondary_per_run,omitempty"`
+	SecondaryCap       int               `json:"secondary_cap,omitempty"`
+	TimeoutSeconds     int               `json:"timeout_seconds,omitempty"`
+	RetryAttempts      int               `json:"retry_attempts,omitempty"`
+	Window             string            `json:"window,omitempty"`
+	RateLimit          string            `json:"rate_limit,omitempty"`
+	ItemsPath          string            `json:"items_path,omitempty"`
+	TitlePath          string            `json:"title_path,omitempty"`
+	URLPath            string            `json:"url_path,omitempty"`
+	ContentPath        string            `json:"content_path,omitempty"`
+	PublishedAtPath    string            `json:"published_at_path,omitempty"`
+	SourcePath         string            `json:"source_path,omitempty"`
+	HeaderEnv          map[string]string `json:"header_env,omitempty"`
+	ItemSelector       string            `json:"item_selector,omitempty"`
+	LinkSelector       string            `json:"link_selector,omitempty"`
+	TitleSelector      string            `json:"title_selector,omitempty"`
+	DateSelector       string            `json:"date_selector,omitempty"`
+	IncludeKeywords    []string          `json:"include_keywords,omitempty"`
+	ExcludeKeywords    []string          `json:"exclude_keywords,omitempty"`
 }
 
 const (
@@ -35,6 +47,8 @@ const (
 	adapterMPCorpus       = "mp_corpus"
 	adapterAnthropicHTML  = "anthropic_news_html"
 	adapterAIHOTV1Items   = "aihot_v1_items"
+	adapterJSONAPI        = "json_api"
+	adapterHTMLList       = "html_list"
 	defaultAIHOTWindow    = "7d"
 	defaultAIHOTLimit     = 50
 	defaultAIHOTSecondary = 10
@@ -67,17 +81,18 @@ var defaultSources = []SourceConfig{
 // empty, else the JSON file at path. Old [{"name":...,"url":...}] files remain
 // valid RSS configs.
 func LoadSources(path string) ([]ingest.Source, error) {
-	configs := defaultSources
-	if path != "" {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read sources file: %w", err)
-		}
-		configs = nil
-		if err := json.Unmarshal(data, &configs); err != nil {
-			return nil, fmt.Errorf("parse sources file: %w", err)
-		}
+	plan, err := LoadPlan(path)
+	if err != nil {
+		return nil, err
 	}
+	return LoadSourcesFromPlan(plan)
+}
+
+// LoadSourcesFromPlan builds sources and applies profile/source keyword
+// filters. It is exported so the pulse command can pass the same profile to
+// enrichment while keeping source construction compatible for callers.
+func LoadSourcesFromPlan(plan SourcePlan) ([]ingest.Source, error) {
+	configs := plan.Sources
 	var out []ingest.Source
 	for i, c := range configs {
 		src, enabled, err := buildSource(c, i)
@@ -87,16 +102,27 @@ func LoadSources(path string) ([]ingest.Source, error) {
 		if !enabled {
 			continue
 		}
+		include := append([]string{}, plan.Profile.IncludeKeywords...)
+		include = append(include, c.IncludeKeywords...)
+		exclude := append([]string{}, plan.Profile.ExcludeKeywords...)
+		exclude = append(exclude, c.ExcludeKeywords...)
+		if len(include) > 0 || len(exclude) > 0 {
+			src = ingest.NewKeywordFilterSource(src, include, exclude)
+		}
 		out = append(out, src)
 	}
 	// Append the WeChat 公众号 corpus source when configured and the dir exists.
 	// Absent/missing dir → RSS-only (unchanged behavior).
 	if dir := os.Getenv("AIHOT_MP_CORPUS_DIR"); dir != "" {
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			out = append(out, ingest.NewMPCorpusSourceWithOptions(dir, "WeChat MP", ingest.MPCorpusSourceOptions{
+			var mpSource ingest.Source = ingest.NewMPCorpusSourceWithOptions(dir, "WeChat MP", ingest.MPCorpusSourceOptions{
 				DefaultRole:      ingest.SourceRoleProfessional,
 				OfficialAccounts: parseCSV(os.Getenv("AIHOT_MP_OFFICIAL_ACCOUNTS")),
-			}))
+			})
+			if len(plan.Profile.IncludeKeywords) > 0 || len(plan.Profile.ExcludeKeywords) > 0 {
+				mpSource = ingest.NewKeywordFilterSource(mpSource, plan.Profile.IncludeKeywords, plan.Profile.ExcludeKeywords)
+			}
+			out = append(out, mpSource)
 		}
 	}
 	return out, nil
@@ -140,6 +166,19 @@ func buildSource(c SourceConfig, index int) (ingest.Source, bool, error) {
 			SourceRole:     n.sourceRole,
 			MaxItemsPerRun: n.maxItems,
 			Timeout:        n.timeout,
+		})
+	case adapterHTMLList:
+		src = ingest.NewHTMLListSource(n.Name, n.URL, ingest.HTMLListOptions{
+			SourceKind: n.sourceKind, SourceRole: n.sourceRole, MaxItemsPerRun: n.maxItems,
+			ItemSelector: n.ItemSelector, LinkSelector: n.LinkSelector, TitleSelector: n.TitleSelector,
+			DateSelector: n.DateSelector, Timeout: n.timeout,
+		})
+	case adapterJSONAPI:
+		src = ingest.NewJSONAPISource(n.Name, n.URL, ingest.JSONAPIOptions{
+			SourceKind: n.sourceKind, SourceRole: n.sourceRole, MaxItemsPerRun: n.maxItems,
+			ItemsPath: n.ItemsPath, TitlePath: n.TitlePath, URLPath: n.URLPath,
+			ContentPath: n.ContentPath, PublishedAtPath: n.PublishedAtPath, SourcePath: n.SourcePath,
+			HeaderEnv: n.HeaderEnv, Timeout: n.timeout,
 		})
 	case adapterAIHOTV1Items:
 		src = ingest.NewAIHOTSource(n.Name, n.URL, ingest.AIHOTSourceOptions{
@@ -297,6 +336,10 @@ func defaultKindForAdapter(adapter string) string {
 		return ingest.SourceKindRSS
 	case adapterAnthropicHTML:
 		return ingest.SourceKindHTML
+	case adapterHTMLList:
+		return ingest.SourceKindHTML
+	case adapterJSONAPI:
+		return ingest.SourceKindAPI
 	case adapterAIHOTV1Items:
 		return ingest.SourceKindAIHOT
 	case adapterMPCorpus:

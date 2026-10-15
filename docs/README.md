@@ -55,6 +55,8 @@ docs/
 └── superpowers/              # 历史 specs/plans 归档（非当前事实源）
 ```
 
+通用来源接入的 Codex 操作入口见仓库根目录 [`CODEX.md`](../CODEX.md)，长期设计见 [`design/general-source-framework.md`](./design/general-source-framework.md)。
+
 每个目录的 `README.md` 写明该目录的详细约定、文档格式和文件索引。
 
 ## 五、目录职责

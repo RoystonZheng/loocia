@@ -17,6 +17,7 @@
 
 - AI 资讯采集、富化、入库主链路已存在。
 - 信息源扩展已接入 `source_kind=rss/html/mp/aihot` 与 `source_role=official/professional/discovery`，并支持配置启停；AI 动态页的来源和主题筛选支持多选。
+- 通用来源 MVP 已接入：source plan 支持主题 profile、关键词过滤、RSS/Atom、公开 JSON API 和可配置 CSS selector 的 HTML 列表；`cmd/discover-sources` 会输出带证据的候选来源，分类不再限制为 AI 五类。
 - `raw_items` 已持久化 `source_role`，enrichment prompt 已包含来源上下文。
 - AIHOT 补漏源已在未处理队列中优先富化，避免被旧 RSS backlog 阻塞；AIHOT 富化不再追溯原网页抓正文。
 - 富化解析已支持常见 category 别名归一，并只取模型输出中的第一个合法 JSON 对象，降低单条 LLM 输出异常导致的丢条。
